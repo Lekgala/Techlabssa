@@ -1,0 +1,195 @@
+import React, { useRef } from 'react';
+import { Invoice } from '../../types';
+import { Award, Printer, ShieldCheck, CheckCircle, ExternalLink } from 'lucide-react';
+import { useApp } from '../../context/AppContext';
+
+interface PrintableInvoiceProps {
+  invoice: Invoice;
+  allowPrint?: boolean;
+}
+
+export const PrintableInvoice: React.FC<PrintableInvoiceProps> = ({ invoice, allowPrint = true }) => {
+  const containerRef = useRef<HTMLDivElement | null>(null);
+  const { settings } = useApp();
+
+  if (!invoice) {
+    return (
+      <div className="p-8 text-center text-xs text-[#707070] bg-[#FAFAFA] rounded-xl border border-[#E0E0E0]">
+        Invoice data is unavailable.
+      </div>
+    );
+  }
+
+  const handlePrint = () => {
+    if (!containerRef.current) {
+      window.print();
+      return;
+    }
+
+    const originalBody = document.body.innerHTML;
+    const printableNode = containerRef.current.cloneNode(true) as HTMLElement;
+    printableNode.querySelectorAll('.no-print').forEach((node) => node.remove());
+
+    document.body.innerHTML = '';
+    document.body.appendChild(printableNode);
+
+    const restoreBody = () => {
+      document.body.innerHTML = originalBody;
+      window.removeEventListener('afterprint', restoreBody);
+      window.location.reload();
+    };
+
+    window.addEventListener('afterprint', restoreBody, { once: true });
+    requestAnimationFrame(() => window.print());
+  };
+
+  const amountPaid = invoice.status === 'VERIFIED'
+    ? (invoice.paymentOption === 'DEPOSIT' && invoice.balanceZAR > 0 ? invoice.depositZAR : invoice.amountZAR - invoice.balanceZAR)
+    : 0;
+
+  const currentBalanceDue = invoice.status === 'VERIFIED'
+    ? invoice.balanceZAR
+    : invoice.amountZAR;
+
+  return (
+    <div className="space-y-4">
+      {allowPrint && (
+        <div className="flex justify-end no-print">
+          <button
+            onClick={handlePrint}
+            className="flex items-center gap-2 px-5 py-2.5 bg-[#000000] hover:bg-neutral-800 text-white font-bold text-xs uppercase tracking-[0.2em] rounded-xl shadow transition"
+          >
+            <Printer className="w-4 h-4" />
+            <span>Print Invoice to PDF</span>
+          </button>
+        </div>
+      )}
+
+      {/* Official Tax Invoice Container */}
+      <div ref={containerRef} className="certificate-page relative bg-[#FFFFFF] text-[#1A1A1A] p-8 sm:p-12 rounded-2xl border-2 border-[#000000] shadow-xl max-w-4xl mx-auto space-y-8 font-sans">
+        {/* Header */}
+        <div className="flex flex-col sm:flex-row sm:items-start justify-between border-b-2 border-[#000000] pb-6 gap-4">
+          <div>
+            <div className="flex items-center gap-2">
+              <span className="font-bold text-2xl tracking-tighter uppercase text-[#000000]">TechLabs</span>
+              <span className="text-[10px] font-bold font-mono uppercase tracking-[0.2em] text-[#000000] border border-[#000000] px-2 py-0.5 rounded">SA</span>
+            </div>
+            <p className="text-xs font-bold text-[#707070] uppercase mt-1 tracking-wider">
+              {settings?.companyName || 'Madilotane Design (Pty) Ltd'} trading as TechLabs Academy SA
+            </p>
+            <p className="text-[11px] text-[#707070]">Cape Town, South Africa • Admissions: {settings?.admissionsEmail || 'admissions@techlabs.co.za'}</p>
+          </div>
+
+          <div className="text-left sm:text-right space-y-1">
+            <span className="text-[10px] font-mono uppercase font-bold text-white bg-[#000000] px-3 py-1 rounded-full tracking-[0.2em]">
+              OFFICIAL TAX INVOICE
+            </span>
+            <h2 className="text-xl font-mono font-bold text-[#000000] pt-1">{invoice.invoiceNumber}</h2>
+            <p className="text-[11px] text-[#707070] font-mono">Date Issued: {invoice.dueDate ? new Date(invoice.dueDate).toISOString().split('T')[0] : '2026-08-29'}</p>
+            <p className="text-[11px] text-[#707070] font-mono">Due Date: {invoice.dueDate}</p>
+          </div>
+        </div>
+
+        {/* Bill To & Status Bar */}
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-6 bg-[#FAFAFA] p-6 rounded-xl border border-[#E0E0E0]">
+          <div className="space-y-1">
+            <span className="text-[10px] font-mono uppercase text-[#A0A0A0] font-bold block">Billed To (Student):</span>
+            <strong className="text-base text-[#000000] block">{invoice.studentName}</strong>
+            <p className="text-xs text-[#707070] font-mono">{invoice.studentEmail}</p>
+            <p className="text-xs text-[#707070]">Course Tier: <strong className="text-[#000000] font-mono">{invoice.courseTier}</strong></p>
+          </div>
+
+          <div className="space-y-2 sm:text-right flex flex-col justify-between">
+            <div>
+              <span className="text-[10px] font-mono uppercase text-[#A0A0A0] font-bold block">Invoice & Payment Status:</span>
+              <span className={`inline-block text-xs font-mono font-bold uppercase tracking-wider px-3 py-1 rounded-full border ${
+                invoice.balanceZAR === 0 && invoice.status === 'VERIFIED'
+                  ? 'bg-[#000000] text-white border-[#000000]'
+                  : invoice.status === 'VERIFIED'
+                  ? 'bg-[#E0E0E0] text-[#000000] border-[#000000]'
+                  : 'bg-[#FAFAFA] text-[#707070] border-[#E0E0E0]'
+              }`}>
+                {invoice.balanceZAR === 0 && invoice.status === 'VERIFIED'
+                  ? '✔ PAID IN FULL (R0 BALANCE)'
+                  : invoice.status === 'VERIFIED'
+                  ? `✔ DEPOSIT VERIFIED (R${invoice.balanceZAR.toLocaleString()} BALANCE DUE)`
+                  : '⚡ PENDING ADMIN VERIFICATION'}
+              </span>
+            </div>
+            <div>
+              <span className="text-[10px] font-mono uppercase text-[#A0A0A0] font-bold block">Payment Method:</span>
+              <span className="text-xs font-mono font-bold text-[#000000]">{invoice.paymentMethod || 'EFT'}</span>
+            </div>
+          </div>
+        </div>
+
+        {/* Line Items Table */}
+        <div className="overflow-x-auto">
+          <table className="w-full text-left text-xs font-mono">
+            <thead>
+              <tr className="bg-[#000000] text-white uppercase text-[10px] tracking-wider">
+                <th className="p-3.5 font-bold">Item Description</th>
+                <th className="p-3.5 font-bold">Payment Plan</th>
+                <th className="p-3.5 font-bold text-right">Total Fee (ZAR)</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y border-b border-[#E0E0E0]">
+              <tr>
+                <td className="p-4">
+                  <strong className="text-[#000000] block font-sans text-sm">TechLabs IT Support Bootcamp ({invoice.courseTier})</strong>
+                  <span className="text-[11px] text-[#707070]">15-Module Enterprise Infrastructure, VMware, AD & M365 Labs</span>
+                </td>
+                <td className="p-4 uppercase text-[#707070]">
+                  {invoice.paymentOption === 'DEPOSIT' ? 'Deposit + Installments' : 'Full Payment'}
+                </td>
+                <td className="p-4 text-right font-bold text-[#000000] text-sm">
+                  R{invoice.amountZAR.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+
+        {/* Financial Summary & Balance Realtime Breakdown */}
+        <div className="flex flex-col sm:flex-row justify-between items-start gap-6 border-t border-[#E0E0E0] pt-6 font-mono">
+          <div className="bg-[#FAFAFA] p-4 rounded-xl border border-[#E0E0E0] text-xs space-y-2 max-w-sm">
+            <strong className="text-[#000000] block font-bold text-[11px] uppercase tracking-wider">Bank Details for EFT:</strong>
+            <p className="text-[11px] text-[#707070]">
+              Bank: <strong>{settings?.bankName || 'First National Bank (FNB)'}</strong><br />
+              Account Name: <strong>{settings?.accountName || 'Madilotane Design (Pty) Ltd'}</strong><br />
+              Account Number: <strong>{settings?.accountNumber || '62899451201'}</strong><br />
+              Branch Code: <strong>{settings?.branchCode || '250655'}</strong><br />
+              Reference: <strong className="text-[#000000]">{invoice.invoiceNumber}</strong>
+            </p>
+          </div>
+
+          <div className="w-full sm:w-72 space-y-2 text-xs">
+            <div className="flex justify-between text-[#707070]">
+              <span>Total Course Fee:</span>
+              <span>R{invoice.amountZAR.toLocaleString(undefined, { minimumFractionDigits: 2 })}</span>
+            </div>
+            <div className="flex justify-between text-[#707070]">
+              <span>Seat Deposit Required:</span>
+              <span>R{invoice.depositZAR.toLocaleString(undefined, { minimumFractionDigits: 2 })}</span>
+            </div>
+            <div className="flex justify-between text-[#707070] border-b border-[#E0E0E0] pb-2">
+              <span>Amount Paid To Date:</span>
+              <span className="font-bold text-[#000000]">R{amountPaid.toLocaleString(undefined, { minimumFractionDigits: 2 })}</span>
+            </div>
+            <div className="flex justify-between text-sm font-bold text-[#000000] pt-1">
+              <span>Outstanding Balance Due:</span>
+              <span className={currentBalanceDue > 0 ? 'text-[#CC0000]' : 'text-[#008000]'}>
+                R{currentBalanceDue.toLocaleString(undefined, { minimumFractionDigits: 2 })}
+              </span>
+            </div>
+          </div>
+        </div>
+
+        {/* Footer Guarantee */}
+        <div className="border-t border-[#E0E0E0] pt-4 text-center text-[10px] font-mono text-[#707070]">
+          TechLabs Academy SA • Official Tax Invoice • Valid for SA Tax & Employer Sponsorship Reimbursement.
+        </div>
+      </div>
+    </div>
+  );
+};
