@@ -1,0 +1,6 @@
+{
+  "name": "TechLabs Academy SA",
+  "description": "Hands-on practical IT training academy in Cape Town, South Africa. Real VMware labs, Windows Server, Active Directory, Microsoft 365, Entra ID, Intune, Defender, and enterprise troubleshooting.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
