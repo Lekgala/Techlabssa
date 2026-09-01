@@ -1,7 +1,7 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { useApp } from '../../context/AppContext';
-import { apiRequest } from '../../lib/api';
-import { ApplicationStatus, LeadStatus, SupportTicket, Certificate, Invoice, CourseTier, PaymentOption } from '../../types';
+import { apiDownload, apiGetPrivateBlob, apiOpenPrivate, apiRequest } from '../../lib/api';
+import { ApplicationStatus, LeadStatus, SupportTicket, Certificate, Invoice, CourseTier, PaymentOption, AuditLogRecord, StudentTimelineEvent, StaffAccount, AdmissionNote, AdmissionTask, PaymentInstallment } from '../../types';
 import { CertificateView } from '../../components/common/CertificateView';
 import { PrintableInvoice } from '../../components/common/PrintableInvoice';
 import { BulkOperationsUI } from '../../components/admin/BulkOperationsUI';
@@ -32,8 +32,20 @@ import {
   Filter,
   Zap as Zapper,
   Mail,
-  MonitorPlay
+  MonitorPlay,
+  ScrollText
+  ,RotateCw
+  ,ZoomIn
+  ,ZoomOut
 } from 'lucide-react';
+
+type PipelineStage = 'NEW' | 'HARDWARE_REVIEW' | 'APPROVED' | 'AWAITING_DEPOSIT' | 'POP_SUBMITTED' | 'ENROLLED' | 'COMPLETED' | 'OTHER';
+const PIPELINE_STAGES: Array<{ id: Exclude<PipelineStage, 'OTHER'>; label: string }> = [
+  { id: 'NEW', label: 'New' }, { id: 'HARDWARE_REVIEW', label: 'Hardware Review' }, { id: 'APPROVED', label: 'Approved' },
+  { id: 'AWAITING_DEPOSIT', label: 'Awaiting Deposit' }, { id: 'POP_SUBMITTED', label: 'POP Submitted' }, { id: 'ENROLLED', label: 'Enrolled' }, { id: 'COMPLETED', label: 'Completed' },
+];
+type ActionCentreGroup = { count: number; items: Array<{ id: string; label: string; detail: string }> };
+type ActionCentreData = { generatedAt: string; hardware: ActionCentreGroup; pops: ActionCentreGroup; overdue: ActionCentreGroup; cohorts: ActionCentreGroup; emails: ActionCentreGroup; followUps: ActionCentreGroup };
 
 export const AdminDashboard: React.FC = () => {
   const {
@@ -42,6 +54,10 @@ export const AdminDashboard: React.FC = () => {
     logout,
     applications,
     updateApplicationStatus,
+    recordApplicationDecision,
+    transferApplicationCohort,
+    updateStudentRecord,
+    setPaymentRemindersPaused,
     sendApprovalEmail,
     cohorts,
     updateCohort,
@@ -50,18 +66,23 @@ export const AdminDashboard: React.FC = () => {
     leads,
     updateLeadStatus,
     invoices,
+    payments,
     setInvoices,
     verifyInvoicePayment,
     settleInvoiceBalance,
+    verifySubmittedPayment,
+    rejectSubmittedPayment,
     certificates,
     issueCertificate,
     settings,
     updateSettings,
+    saveSettings,
     students,
+    showToast,
     navigate
   } = useApp();
 
-  const [activeTab, setActiveTab] = useState<'OVERVIEW' | 'APPLICATIONS' | 'COHORTS' | 'TICKETS' | 'LEADS' | 'INVOICES' | 'CERTIFICATES' | 'SETTINGS' | 'BULK_OPS' | 'EMAIL_AUTOMATION' | 'VIRTUAL_LEARNING'>('OVERVIEW');
+  const [activeTab, setActiveTab] = useState<'OVERVIEW' | 'APPLICATIONS' | 'COHORTS' | 'TICKETS' | 'LEADS' | 'INVOICES' | 'CERTIFICATES' | 'SETTINGS' | 'STAFF' | 'AUDIT_LOG' | 'BULK_OPS' | 'EMAIL_AUTOMATION' | 'VIRTUAL_LEARNING'>('OVERVIEW');
   const [selectedAppId, setSelectedAppId] = useState<string | null>(null);
   const [editingCohortId, setEditingCohortId] = useState<string | null>(null);
   const [selectedInvoiceForPdf, setSelectedInvoiceForPdf] = useState<Invoice | null>(null);
@@ -75,8 +96,149 @@ export const AdminDashboard: React.FC = () => {
     capacity: 20,
     status: 'Open' as 'Open' | 'Filling Fast' | 'Closed' | 'In Progress' | 'Completed'
   });
-  const [adminForm, setAdminForm] = useState({ email: 'dave@techlabs.co.za', password: 'admin123' });
+  const [adminForm, setAdminForm] = useState({ email: '', password: '' });
   const [adminLoginError, setAdminLoginError] = useState('');
+  const [emailingInvoiceId, setEmailingInvoiceId] = useState<string | null>(null);
+  const [settingsSaving, setSettingsSaving] = useState(false);
+  const [auditLogs, setAuditLogs] = useState<AuditLogRecord[]>([]);
+  const [auditSearch, setAuditSearch] = useState('');
+  const [auditLoading, setAuditLoading] = useState(false);
+  const [pipelineCohort, setPipelineCohort] = useState('ALL');
+  const [pipelineStage, setPipelineStage] = useState<PipelineStage | 'ALL'>('ALL');
+  const [pipelinePayment, setPipelinePayment] = useState('ALL');
+  const [pipelineDateFrom, setPipelineDateFrom] = useState('');
+  const [pipelineDateTo, setPipelineDateTo] = useState('');
+  const [pipelineSearch, setPipelineSearch] = useState('');
+  const [showAdvancedPipelineFilters, setShowAdvancedPipelineFilters] = useState(false);
+  const [studentTimeline, setStudentTimeline] = useState<StudentTimelineEvent[]>([]);
+  const [timelineLoading, setTimelineLoading] = useState(false);
+  const [reviewingPaymentId, setReviewingPaymentId] = useState<string | null>(null);
+  const [popPreview, setPopPreview] = useState<{ url: string; type: string } | null>(null);
+  const [popPreviewLoading, setPopPreviewLoading] = useState(false);
+  const [popZoom, setPopZoom] = useState(1);
+  const [popRotation, setPopRotation] = useState(0);
+  const [confirmedPopAmount, setConfirmedPopAmount] = useState('');
+  const [popRejectionReason, setPopRejectionReason] = useState('');
+  const [staffAccounts, setStaffAccounts] = useState<Array<Omit<StaffAccount, 'passwordHash'>>>([]);
+  const [staffForm, setStaffForm] = useState({ name: '', email: '', password: '', role: 'INSTRUCTOR' as 'ADMIN' | 'INSTRUCTOR' });
+  const [staffSaving, setStaffSaving] = useState(false);
+  const [admissionNotes, setAdmissionNotes] = useState<AdmissionNote[]>([]);
+  const [admissionTasks, setAdmissionTasks] = useState<AdmissionTask[]>([]);
+  const [internalNote, setInternalNote] = useState('');
+  const [assignmentStaffId, setAssignmentStaffId] = useState('');
+  const [taskForm, setTaskForm] = useState({ title: '', dueDate: '', priority: 'MEDIUM' as AdmissionTask['priority'], assignedStaffId: '' });
+  const [workflowSaving, setWorkflowSaving] = useState(false);
+  const [decisionStatus, setDecisionStatus] = useState<'REJECTED' | 'WAITLISTED' | 'WITHDRAWN' | null>(null);
+  const [decisionReason, setDecisionReason] = useState('');
+  const [decisionSaving, setDecisionSaving] = useState(false);
+  const [showCohortTransfer, setShowCohortTransfer] = useState(false);
+  const [transferCohortId, setTransferCohortId] = useState('');
+  const [transferReason, setTransferReason] = useState('');
+  const [transferSaving, setTransferSaving] = useState(false);
+  const [installments, setInstallments] = useState<PaymentInstallment[]>([]);
+  const [editingInstallments, setEditingInstallments] = useState(false);
+  const [installmentRows, setInstallmentRows] = useState<Array<{ label: string; amountZAR: string; dueDate: string }>>([]);
+  const [installmentsSaving, setInstallmentsSaving] = useState(false);
+  const [actionCentre, setActionCentre] = useState<ActionCentreData | null>(null);
+  const [actionCentreLoading, setActionCentreLoading] = useState(false);
+  const [editingStudentRecord, setEditingStudentRecord] = useState(false);
+  const [recordForm, setRecordForm] = useState<Partial<typeof applications[number]>>({});
+  const [recordSaving, setRecordSaving] = useState(false);
+
+  useEffect(() => {
+    if (activeTab !== 'AUDIT_LOG') return;
+    setAuditLoading(true);
+    void apiRequest<AuditLogRecord[]>('/admin/audit-logs').then(setAuditLogs).catch(error => showToast('error', 'Audit Log Unavailable', error instanceof Error ? error.message : 'Could not load audit records.')).finally(() => setAuditLoading(false));
+  }, [activeTab]);
+
+  useEffect(() => {
+    if (activeTab !== 'OVERVIEW') return; setActionCentreLoading(true);
+    void apiRequest<ActionCentreData>('/admin/action-centre').then(setActionCentre).catch(error => showToast('error', 'Action Centre Unavailable', error instanceof Error ? error.message : 'Could not load dashboard alerts.')).finally(() => setActionCentreLoading(false));
+  }, [activeTab]);
+
+  const openActionItem = (kind: keyof Omit<ActionCentreData, 'generatedAt'>, item: { id: string; label: string }) => {
+    if (kind === 'cohorts') { setActiveTab('COHORTS'); return; }
+    if (kind === 'overdue') { setActiveTab('INVOICES'); return; }
+    setActiveTab('APPLICATIONS');
+    const application = kind === 'emails' ? applications.find(candidate => candidate.email.toLowerCase() === item.label.toLowerCase()) : applications.find(candidate => candidate.id === item.id);
+    if (application) { setPipelineSearch(application.referenceNumber); setSelectedAppId(application.id); }
+    if (kind === 'hardware') setPipelineStage('HARDWARE_REVIEW');
+    if (kind === 'pops') setPipelineStage('POP_SUBMITTED');
+  };
+
+  useEffect(() => {
+    if (!['STAFF', 'APPLICATIONS'].includes(activeTab)) return;
+    void apiRequest<Array<Omit<StaffAccount, 'passwordHash'>>>('/admin/staff').then(setStaffAccounts).catch(error => showToast('error', 'Staff Unavailable', error instanceof Error ? error.message : 'Could not load staff accounts.'));
+  }, [activeTab, currentRole]);
+
+  const createStaffAccount = async (event: React.FormEvent) => {
+    event.preventDefault(); setStaffSaving(true);
+    try { const staff = await apiRequest<Omit<StaffAccount, 'passwordHash'>>('/admin/staff', { method: 'POST', body: JSON.stringify(staffForm) }); setStaffAccounts(current => [...current, staff]); setStaffForm({ name: '', email: '', password: '', role: 'INSTRUCTOR' }); showToast('success', 'Staff Account Created', `${staff.name} can now sign in through the admin login.`); }
+    catch (error) { showToast('error', 'Account Not Created', error instanceof Error ? error.message : 'Could not create staff account.'); }
+    finally { setStaffSaving(false); }
+  };
+
+  const removeStaffAccount = async (staff: Omit<StaffAccount, 'passwordHash'>) => {
+    if (!window.confirm(`Remove ${staff.name}'s ${staff.role.toLowerCase()} account?`)) return;
+    try { await apiRequest(`/admin/staff/${encodeURIComponent(staff.id)}`, { method: 'DELETE' }); setStaffAccounts(current => current.filter(item => item.id !== staff.id)); showToast('info', 'Staff Account Removed', `${staff.name} can no longer sign in.`); }
+    catch (error) { showToast('error', 'Account Not Removed', error instanceof Error ? error.message : 'Could not remove staff account.'); }
+  };
+
+  const loadStudentTimeline = async (applicationId: string) => {
+    setTimelineLoading(true);
+    try { setStudentTimeline(await apiRequest<StudentTimelineEvent[]>(`/admin/applications/${encodeURIComponent(applicationId)}/timeline`)); }
+    catch (error) { showToast('error', 'Timeline Unavailable', error instanceof Error ? error.message : 'Could not load the student timeline.'); }
+    finally { setTimelineLoading(false); }
+  };
+
+  useEffect(() => {
+    if (!selectedAppId) { setStudentTimeline([]); setAdmissionNotes([]); setAdmissionTasks([]); return; }
+    void loadStudentTimeline(selectedAppId);
+    setAssignmentStaffId(applications.find(item => item.id === selectedAppId)?.assignedStaffId || '');
+    void apiRequest<{ notes: AdmissionNote[]; tasks: AdmissionTask[] }>(`/admin/applications/${encodeURIComponent(selectedAppId)}/workflow`).then(result => { setAdmissionNotes(result.notes); setAdmissionTasks(result.tasks); }).catch(error => showToast('error', 'Workflow Unavailable', error instanceof Error ? error.message : 'Could not load notes and tasks.'));
+  }, [selectedAppId]);
+
+  const assignApplication = async (applicationId: string, staffId: string) => {
+    setWorkflowSaving(true);
+    try { await apiRequest(`/admin/applications/${encodeURIComponent(applicationId)}/assignment`, { method: 'PUT', body: JSON.stringify({ staffId }) }); setAssignmentStaffId(staffId); showToast('success', 'Assignment Updated', staffId ? 'The application has a new owner.' : 'The application is now unassigned.'); void loadStudentTimeline(applicationId); }
+    catch (error) { showToast('error', 'Assignment Failed', error instanceof Error ? error.message : 'Could not assign the application.'); }
+    finally { setWorkflowSaving(false); }
+  };
+
+  const addInternalNote = async (applicationId: string) => {
+    if (!internalNote.trim()) return; setWorkflowSaving(true);
+    try { const note = await apiRequest<AdmissionNote>(`/admin/applications/${encodeURIComponent(applicationId)}/notes`, { method: 'POST', body: JSON.stringify({ body: internalNote }) }); setAdmissionNotes(current => [note, ...current]); setInternalNote(''); void loadStudentTimeline(applicationId); showToast('success', 'Internal Note Added', 'The note is visible to admissions staff only.'); }
+    catch (error) { showToast('error', 'Note Not Added', error instanceof Error ? error.message : 'Could not save the note.'); }
+    finally { setWorkflowSaving(false); }
+  };
+
+  const createFollowUpTask = async (applicationId: string) => {
+    setWorkflowSaving(true);
+    try { const task = await apiRequest<AdmissionTask>(`/admin/applications/${encodeURIComponent(applicationId)}/tasks`, { method: 'POST', body: JSON.stringify(taskForm) }); setAdmissionTasks(current => [...current, task].sort((a, b) => a.status.localeCompare(b.status) || a.dueDate.localeCompare(b.dueDate))); setTaskForm({ title: '', dueDate: '', priority: 'MEDIUM', assignedStaffId: assignmentStaffId }); void loadStudentTimeline(applicationId); showToast('success', 'Follow-up Created', 'The task was assigned successfully.'); }
+    catch (error) { showToast('error', 'Task Not Created', error instanceof Error ? error.message : 'Could not create the follow-up task.'); }
+    finally { setWorkflowSaving(false); }
+  };
+
+  const toggleFollowUpTask = async (applicationId: string, task: AdmissionTask) => {
+    try { const updated = await apiRequest<AdmissionTask>(`/admin/applications/${encodeURIComponent(applicationId)}/tasks/${encodeURIComponent(task.id)}`, { method: 'PUT', body: JSON.stringify({ completed: task.status !== 'COMPLETED' }) }); setAdmissionTasks(current => current.map(item => item.id === updated.id ? updated : item)); void loadStudentTimeline(applicationId); }
+    catch (error) { showToast('error', 'Task Not Updated', error instanceof Error ? error.message : 'Could not update the task.'); }
+  };
+
+  const openPopReview = async (payment: typeof payments[number]) => {
+    if (popPreview) URL.revokeObjectURL(popPreview.url);
+    setReviewingPaymentId(payment.id); setConfirmedPopAmount(String(payment.amountZAR)); setPopRejectionReason(''); setPopZoom(1); setPopRotation(0); setPopPreview(null); setPopPreviewLoading(true);
+    try { setPopPreview(await apiGetPrivateBlob(`/payments/${encodeURIComponent(payment.id)}/proof`)); }
+    catch (error) { showToast('error', 'POP Preview Unavailable', error instanceof Error ? error.message : 'Could not load the proof of payment.'); }
+    finally { setPopPreviewLoading(false); }
+  };
+  const openStudentDocument = async (applicationId: string, type: string, recordId?: string) => {
+    try {
+      await apiOpenPrivate(`/admin/applications/${encodeURIComponent(applicationId)}/documents/${encodeURIComponent(type)}${recordId ? `/${encodeURIComponent(recordId)}` : ''}`);
+    } catch (error) {
+      showToast('error', 'Document Unavailable', error instanceof Error ? error.message : 'The document could not be opened.');
+    }
+  };
+  const closePopReview = () => { if (popPreview) URL.revokeObjectURL(popPreview.url); setPopPreview(null); setReviewingPaymentId(null); };
 
   // New Ticket Form State
   const [newTicketModal, setNewTicketModal] = useState(false);
@@ -137,20 +299,81 @@ export const AdminDashboard: React.FC = () => {
 
   // Selected Application for Inspection Modal
   const selectedApp = applications.find(a => a.id === selectedAppId);
+  const selectedAppInvoice = selectedApp ? invoices.find(invoice => invoice.studentEmail.toLowerCase() === selectedApp.email.toLowerCase()) : undefined;
+  const selectedAppPayments = selectedAppInvoice ? payments.filter(payment => payment.invoiceId === selectedAppInvoice.id) : [];
+  const selectedPendingPayment = selectedAppPayments.find(payment => payment.status === 'SUBMITTED');
+  const reviewingPayment = payments.find(payment => payment.id === reviewingPaymentId);
+  const reviewingApplication = reviewingPayment ? applications.find(application => application.id === reviewingPayment.studentId) : undefined;
+  const reviewingInvoice = reviewingPayment ? invoices.find(invoice => invoice.id === reviewingPayment.invoiceId) : undefined;
+  const reviewingCohort = reviewingApplication ? cohorts.find(cohort => cohort.id === reviewingApplication.cohortId) : undefined;
+  const reviewingDuplicateCount = reviewingPayment ? payments.filter(payment => payment.id !== reviewingPayment.id && payment.sha256 === reviewingPayment.sha256).length : 0;
+  const selectedAppCohort = selectedApp ? cohorts.find(cohort => cohort.id === selectedApp.cohortId) : undefined;
+  const selectedAppLead = selectedApp ? leads.find(lead => lead.email.toLowerCase() === selectedApp.email.toLowerCase()) : undefined;
 
-  const handleAdminSignIn = (e: React.FormEvent) => {
+  useEffect(() => {
+    if (!selectedAppInvoice) { setInstallments([]); return; }
+    void apiRequest<PaymentInstallment[]>(`/admin/invoices/${encodeURIComponent(selectedAppInvoice.id)}/installments`).then(setInstallments).catch(() => setInstallments([]));
+  }, [selectedAppInvoice?.id]);
+
+  const startInstallmentEditor = () => {
+    if (!selectedAppInvoice) return;
+    if (installments.length) setInstallmentRows(installments.map(item => ({ label: item.label, amountZAR: String(item.amountZAR), dueDate: item.dueDate })));
+    else { const deposit = Math.min(1000, selectedAppInvoice.amountZAR); const remainder = selectedAppInvoice.amountZAR - deposit; setInstallmentRows([{ label: 'Seat deposit', amountZAR: String(deposit), dueDate: selectedAppInvoice.dueDate }, { label: 'Installment 2', amountZAR: String(Math.round(remainder / 2 * 100) / 100), dueDate: '' }, { label: 'Final installment', amountZAR: String(Math.round((remainder - Math.round(remainder / 2 * 100) / 100) * 100) / 100), dueDate: '' }]); }
+    setEditingInstallments(true);
+  };
+  const saveInstallmentPlan = async () => {
+    if (!selectedAppInvoice) return; setInstallmentsSaving(true);
+    try { const result = await apiRequest<PaymentInstallment[]>(`/admin/invoices/${encodeURIComponent(selectedAppInvoice.id)}/installments`, { method: 'PUT', body: JSON.stringify({ installments: installmentRows.map(row => ({ ...row, amountZAR: Number(row.amountZAR) })) }) }); setInstallments(result); setEditingInstallments(false); showToast('success', 'Payment Plan Saved', `${result.length} installments now total R${selectedAppInvoice.amountZAR.toLocaleString()}.`); }
+    catch (error) { showToast('error', 'Payment Plan Not Saved', error instanceof Error ? error.message : 'Could not save the installment schedule.'); }
+    finally { setInstallmentsSaving(false); }
+  };
+
+  const handleAdminSignIn = async (e: React.FormEvent) => {
     e.preventDefault();
-    const ok = adminLogin(adminForm.email, adminForm.password);
+    const ok = await adminLogin(adminForm.email, adminForm.password);
     if (!ok) {
-      setAdminLoginError('Use the TechLabs admin account to continue.');
+      setAdminLoginError('Use an active TechLabs administrator or instructor account to continue.');
       return;
     }
     setAdminLoginError('');
   };
 
   const handleApproveApplication = async (app: typeof applications[number], notes?: string) => {
-    updateApplicationStatus(app.id, 'APPROVED', notes || 'Approved by admissions team. Payment and onboarding instructions issued.');
-    await sendApprovalEmail(app, 'APPROVED');
+    const sent = await sendApprovalEmail(app, 'APPROVED');
+    if (sent) updateApplicationStatus(app.id, 'APPROVED', notes || 'Approved by admissions team. Secure account setup and payment instructions issued.');
+  };
+
+  const submitApplicationDecision = async (applicationId: string) => {
+    if (!decisionStatus || decisionReason.trim().length < 10) return;
+    setDecisionSaving(true); const saved = await recordApplicationDecision(applicationId, decisionStatus, decisionReason.trim()); setDecisionSaving(false);
+    if (saved) { setDecisionStatus(null); setDecisionReason(''); void loadStudentTimeline(applicationId); }
+  };
+
+  const submitCohortTransfer = async (applicationId: string) => {
+    if (!transferCohortId || transferReason.trim().length < 10) return;
+    setTransferSaving(true); const saved = await transferApplicationCohort(applicationId, transferCohortId, transferReason.trim()); setTransferSaving(false);
+    if (saved) { setShowCohortTransfer(false); setTransferCohortId(''); setTransferReason(''); void loadStudentTimeline(applicationId); }
+  };
+  const startStudentRecordEdit = (application: typeof applications[number]) => { setRecordForm({ firstName: application.firstName, lastName: application.lastName, email: application.email, whatsapp: application.whatsapp, city: application.city, province: application.province, selectedTier: application.selectedTier, laptopBrand: application.laptopBrand, cpu: application.cpu, ramGB: application.ramGB, storageType: application.storageType, freeStorageGB: application.freeStorageGB, os: application.os, hasVirtualizationEnabled: application.hasVirtualizationEnabled }); setEditingStudentRecord(true); };
+  const saveStudentRecord = async (applicationId: string) => { setRecordSaving(true); const saved = await updateStudentRecord(applicationId, recordForm); setRecordSaving(false); if (saved) { setEditingStudentRecord(false); void loadStudentTimeline(applicationId); } };
+
+  const handleEmailInvoice = async (invoice: Invoice) => {
+    setEmailingInvoiceId(invoice.id);
+    try {
+      const result = await apiRequest<{ message: string }>(`/invoices/${encodeURIComponent(invoice.id)}/email`, { method: 'POST' });
+      showToast('success', 'Invoice Emailed', result.message);
+    } catch (error) {
+      showToast('error', 'Invoice Email Failed', error instanceof Error ? error.message : 'The invoice could not be emailed.');
+    } finally {
+      setEmailingInvoiceId(null);
+    }
+  };
+
+  const handleSaveSettings = async () => {
+    if (settingsSaving) return;
+    setSettingsSaving(true);
+    await saveSettings();
+    setSettingsSaving(false);
   };
 
   const handleExportCsv = () => {
@@ -225,15 +448,45 @@ export const AdminDashboard: React.FC = () => {
   const totalRevenue = invoices
     .filter(i => i.status === 'VERIFIED')
     .reduce((acc, curr) => {
-      const actualPaid = curr.paymentOption === 'DEPOSIT' && curr.balanceZAR > 0 
-        ? curr.depositZAR 
-        : (curr.amountZAR - curr.balanceZAR);
+      const actualPaid = curr.paidZAR ?? Math.max(0, curr.amountZAR - curr.balanceZAR);
       return acc + actualPaid;
     }, 0);
   const pendingApps = applications.filter(a => a.status === 'NEW' || a.status === 'LAPTOP_REVIEW' || a.status === 'UNDER_REVIEW');
+  const visibleAuditLogs = auditLogs.filter(log => `${log.action} ${log.actorEmail} ${log.entityType} ${log.entityId} ${log.summary}`.toLowerCase().includes(auditSearch.toLowerCase()));
+  const getPipelineStage = (application: typeof applications[number]): PipelineStage => {
+    if (application.status === 'COMPLETED' || certificates.some(certificate => certificate.studentId === application.id)) return 'COMPLETED';
+    if (application.status === 'ENROLLED') return 'ENROLLED';
+    if (['REJECTED', 'WAITLISTED', 'WITHDRAWN'].includes(application.status)) return 'OTHER';
+    if (application.status === 'NEW') return 'NEW';
+    if (application.status === 'UNDER_REVIEW') return 'HARDWARE_REVIEW';
+    const invoice = invoices.find(item => item.studentEmail.toLowerCase() === application.email.toLowerCase());
+    if (!invoice) return 'APPROVED';
+    if (payments.some(payment => payment.invoiceId === invoice.id && payment.status === 'SUBMITTED')) return 'POP_SUBMITTED';
+    if ((invoice.paidZAR ?? 0) >= Math.min(1000, invoice.amountZAR)) return 'ENROLLED';
+    return 'AWAITING_DEPOSIT';
+  };
+  const getPaymentState = (application: typeof applications[number]) => {
+    const invoice = invoices.find(item => item.studentEmail.toLowerCase() === application.email.toLowerCase());
+    if (!invoice) return 'NO_INVOICE';
+    if (payments.some(payment => payment.invoiceId === invoice.id && payment.status === 'SUBMITTED')) return 'POP_SUBMITTED';
+    if (invoice.balanceZAR === 0) return 'PAID_FULL';
+    if ((invoice.paidZAR ?? 0) > 0) return 'PARTIALLY_PAID';
+    return 'UNPAID';
+  };
+  const pipelineBaseApplications = applications.filter(application => (pipelineCohort === 'ALL' || application.cohortId === pipelineCohort)
+      && (pipelinePayment === 'ALL' || getPaymentState(application) === pipelinePayment)
+      && (!pipelineDateFrom || application.submissionDate >= pipelineDateFrom)
+      && (!pipelineDateTo || application.submissionDate <= pipelineDateTo));
+  const filteredApplications = pipelineBaseApplications.filter(application => (pipelineStage === 'ALL' || getPipelineStage(application) === pipelineStage)
+    && `${application.firstName} ${application.lastName} ${application.email} ${application.whatsapp} ${application.referenceNumber}`.toLowerCase().includes(pipelineSearch.trim().toLowerCase()));
+  const reviewApplication = (application: typeof applications[number]) => {
+    setSelectedAppId(application.id);
+    if (application.status === 'NEW') updateApplicationStatus(application.id, 'UNDER_REVIEW', 'Hardware review started by admissions.');
+    window.setTimeout(() => document.getElementById('application-workspace')?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 0);
+  };
   const verifiedStudentsCount = students.length;
 
-  if (currentRole !== 'ADMIN') {
+  if (currentRole !== 'ADMIN' && currentRole !== 'INSTRUCTOR') {
     return (
       <div className="w-full h-screen bg-[#F5F5F5] flex items-center justify-center">
         <div className="max-w-xl w-full px-4">
@@ -275,7 +528,7 @@ export const AdminDashboard: React.FC = () => {
           </form>
 
           <div className="rounded-xl bg-[#FAFAFA] border border-[#E0E0E0] p-3 text-[11px] text-[#707070]">
-            Demo admin login: dave@techlabs.co.za / admin123
+            Administrator access is configured securely on the server.
           </div>
         </div>
       </div>
@@ -370,7 +623,7 @@ export const AdminDashboard: React.FC = () => {
               Academy Administrator Console
             </span>
             <span className="text-xs text-[#707070] font-mono">
-              Lead Instructor: Dave Kitching
+              {currentRole === 'INSTRUCTOR' ? 'Instructor Workspace' : 'Administration Workspace'}
             </span>
           </div>
 
@@ -406,7 +659,8 @@ export const AdminDashboard: React.FC = () => {
           { id: 'COHORTS', label: `Cohorts (${cohorts.length})`, icon: Calendar },
           { id: 'LEADS', label: `Leads CRM (${leads.length})`, icon: MessageSquare },
           { id: 'CERTIFICATES', label: `Certificates (${certificates.length})`, icon: Award },
-          { id: 'SETTINGS', label: 'Settings', icon: Settings }
+          { id: 'AUDIT_LOG', label: 'Audit Log', icon: ScrollText },
+          ...(currentRole === 'ADMIN' ? [{ id: 'STAFF', label: 'Staff Accounts', icon: Users }, { id: 'SETTINGS', label: 'Settings', icon: Settings }] : [])
         ].map((tab) => {
           const Icon = tab.icon;
           const isSelected = activeTab === tab.id;
@@ -460,6 +714,18 @@ export const AdminDashboard: React.FC = () => {
               <p className="text-xs text-[#707070]">Simulated enterprise incidents</p>
             </div>
           </div>
+
+          <section className="bg-white rounded-xl border border-[#E0E0E0] p-5 shadow-sm space-y-4">
+            <div className="flex items-center justify-between gap-3"><div><h3 className="font-bold text-base">Action Centre</h3><p className="text-[11px] text-[#707070]">Admissions, finance and follow-up items requiring attention.</p></div><button type="button" disabled={actionCentreLoading} onClick={() => { setActionCentreLoading(true); void apiRequest<ActionCentreData>('/admin/action-centre').then(setActionCentre).finally(() => setActionCentreLoading(false)); }} className="px-3 py-1.5 border border-[#E0E0E0] rounded-lg text-[10px] font-bold uppercase">{actionCentreLoading ? 'Refreshing…' : 'Refresh'}</button></div>
+            {actionCentre ? <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-3">{([
+              ['hardware', 'Hardware Review', Laptop, 'Applications waiting for laptop verification'],
+              ['pops', 'POP Verification', CreditCard, 'Submitted payments awaiting review'],
+              ['overdue', 'Overdue Balances', AlertTriangle, 'Invoices or installments past due'],
+              ['cohorts', 'Cohort Capacity', Users, 'Active cohorts with three or fewer seats'],
+              ['emails', 'Email Delivery', Mail, 'Failed, bounced or suppressed messages'],
+              ['followUps', 'Student Follow-ups', CheckCircle, 'Students with open internal tasks'],
+            ] as Array<[keyof Omit<ActionCentreData, 'generatedAt'>, string, React.ComponentType<{ className?: string }>, string]>).map(([key, title, Icon, description]) => { const group = actionCentre[key]; return <article key={key} className={`rounded-xl border p-4 space-y-3 ${group.count ? 'border-[#000000]' : 'border-[#E0E0E0]'}`}><div className="flex items-start justify-between gap-3"><div className="flex gap-3"><span className="w-8 h-8 rounded-lg bg-[#FAFAFA] border border-[#E0E0E0] flex items-center justify-center"><Icon className="w-4 h-4" /></span><div><h4 className="text-xs font-bold">{title}</h4><p className="text-[10px] text-[#707070]">{description}</p></div></div><span className={`min-w-7 h-7 px-2 rounded-full flex items-center justify-center text-[11px] font-bold ${group.count ? 'bg-black text-white' : 'bg-[#FAFAFA] text-[#707070]'}`}>{group.count}</span></div>{group.items.length ? <div className="space-y-1.5">{group.items.slice(0, 3).map(item => <button key={item.id} type="button" onClick={() => openActionItem(key, item)} className="w-full text-left p-2 rounded-lg bg-[#FAFAFA] hover:bg-[#EAEAEA]"><strong className="block text-[11px] truncate">{item.label}</strong><span className="block text-[9px] text-[#707070] truncate">{item.detail}</span></button>)}{group.count > 3 && <button type="button" onClick={() => group.items[0] && openActionItem(key, group.items[0])} className="text-[9px] font-bold uppercase hover:underline">View all {group.count}</button>}</div> : <p className="text-[10px] text-[#008000]">No action required.</p>}</article>; })}</div> : <p className="py-8 text-center text-xs text-[#707070]">{actionCentreLoading ? 'Loading action centre…' : 'No alert data available.'}</p>}
+          </section>
 
           {/* Quick Pending Applications Queue */}
           <div className="bg-[#FFFFFF] rounded-xl border border-[#E0E0E0] p-6 space-y-4 shadow-sm">
@@ -553,9 +819,31 @@ export const AdminDashboard: React.FC = () => {
             </div>
           </div>
 
+          <div className="bg-white border border-[#E0E0E0] rounded-xl p-4 shadow-sm space-y-3">
+            <div className="flex gap-2 overflow-x-auto pb-1">
+              <button type="button" onClick={() => setPipelineStage('ALL')} className={`shrink-0 px-3 py-2 rounded-lg border text-[10px] font-bold uppercase ${pipelineStage === 'ALL' ? 'bg-black text-white border-black' : 'bg-white border-[#E0E0E0]'}`}>All <span className="ml-1 opacity-70">{pipelineBaseApplications.length}</span></button>
+              {PIPELINE_STAGES.map(stage => {
+                const count = pipelineBaseApplications.filter(application => getPipelineStage(application) === stage.id).length;
+                return <button key={stage.id} type="button" onClick={() => setPipelineStage(stage.id)} className={`shrink-0 px-3 py-2 rounded-lg border text-[10px] font-bold uppercase ${pipelineStage === stage.id ? 'bg-black text-white border-black' : 'bg-white border-[#E0E0E0]'}`}>{stage.label} <span className="ml-1 opacity-70">{count}</span></button>;
+              })}
+            </div>
+            <div className="flex flex-col lg:flex-row gap-3">
+              <input value={pipelineSearch} onChange={event => setPipelineSearch(event.target.value)} placeholder="Search student, email, phone or reference…" className="flex-1 min-w-0 p-2.5 border border-[#E0E0E0] rounded-lg text-xs" />
+              <select aria-label="Application stage" value={pipelineStage} onChange={event => setPipelineStage(event.target.value as PipelineStage | 'ALL')} className="lg:w-56 p-2.5 border border-[#E0E0E0] rounded-lg bg-white text-xs font-bold"><option value="ALL">All workflow stages</option>{PIPELINE_STAGES.map(stage => <option key={stage.id} value={stage.id}>{stage.label}</option>)}<option value="OTHER">Rejected / Waitlisted</option></select>
+              <button type="button" onClick={() => setShowAdvancedPipelineFilters(value => !value)} className="px-4 py-2.5 border border-[#E0E0E0] rounded-lg text-[10px] font-bold uppercase tracking-wider">{showAdvancedPipelineFilters ? 'Hide filters' : 'More filters'}</button>
+            </div>
+            {showAdvancedPipelineFilters && <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 pt-3 border-t border-[#E0E0E0] text-[10px] font-mono">
+              <label className="space-y-1"><span className="font-bold uppercase text-[#707070]">Cohort</span><select value={pipelineCohort} onChange={event => setPipelineCohort(event.target.value)} className="w-full p-2.5 border border-[#E0E0E0] rounded-lg bg-white"><option value="ALL">All cohorts</option>{cohorts.map(cohort => <option key={cohort.id} value={cohort.id}>{cohort.name}</option>)}</select></label>
+              <label className="space-y-1"><span className="font-bold uppercase text-[#707070]">Payment</span><select value={pipelinePayment} onChange={event => setPipelinePayment(event.target.value)} className="w-full p-2.5 border border-[#E0E0E0] rounded-lg bg-white"><option value="ALL">All payment states</option><option value="UNPAID">Unpaid</option><option value="POP_SUBMITTED">POP submitted</option><option value="PARTIALLY_PAID">Partially paid</option><option value="PAID_FULL">Paid in full</option><option value="NO_INVOICE">No invoice</option></select></label>
+              <label className="space-y-1"><span className="font-bold uppercase text-[#707070]">Applied from</span><input type="date" value={pipelineDateFrom} onChange={event => setPipelineDateFrom(event.target.value)} className="w-full p-2.5 border border-[#E0E0E0] rounded-lg" /></label>
+              <label className="space-y-1"><span className="font-bold uppercase text-[#707070]">Applied to</span><input type="date" value={pipelineDateTo} onChange={event => setPipelineDateTo(event.target.value)} className="w-full p-2.5 border border-[#E0E0E0] rounded-lg" /></label>
+            </div>}
+            <div className="flex items-center justify-between gap-3 text-[11px]"><span className="text-[#707070]"><strong className="text-black">{filteredApplications.length}</strong> applications</span><button type="button" onClick={() => { setPipelineSearch(''); setPipelineCohort('ALL'); setPipelineStage('ALL'); setPipelinePayment('ALL'); setPipelineDateFrom(''); setPipelineDateTo(''); }} className="font-bold uppercase tracking-wider hover:underline">Reset</button></div>
+          </div>
+
           {/* Application Detail Inspection Modal */}
           {selectedApp && (
-            <div className="bg-[#FAFAFA] text-[#1A1A1A] p-6 sm:p-8 rounded-2xl border-2 border-[#000000] shadow-xl space-y-6">
+            <div id="application-workspace" className="bg-[#FAFAFA] text-[#1A1A1A] p-6 sm:p-8 rounded-2xl border-2 border-[#000000] shadow-xl space-y-6 scroll-mt-4">
               <div className="flex items-center justify-between border-b border-[#E0E0E0] pb-3">
                 <div>
                   <span className="text-xs font-mono text-[#707070]">Application Reference: {selectedApp.referenceNumber}</span>
@@ -563,13 +851,12 @@ export const AdminDashboard: React.FC = () => {
                     {selectedApp.firstName} {selectedApp.lastName}
                   </h4>
                 </div>
-                <button
-                  onClick={() => setSelectedAppId(null)}
-                  className="text-xs font-mono uppercase text-[#707070] hover:text-[#000000]"
-                >
-                  Close Inspection
-                </button>
+                <div className="flex items-center gap-2">{currentRole === 'ADMIN' && <button onClick={() => editingStudentRecord ? setEditingStudentRecord(false) : startStudentRecordEdit(selectedApp)} className="px-3 py-1.5 border border-[#E0E0E0] bg-white rounded-lg text-[10px] font-bold uppercase">{editingStudentRecord ? 'Cancel Edit' : 'Edit Record'}</button>}<button onClick={() => setSelectedAppId(null)} className="text-xs font-mono uppercase text-[#707070] hover:text-[#000000]">Close Inspection</button></div>
               </div>
+
+              {editingStudentRecord && <section className="p-5 bg-white rounded-xl border-2 border-black space-y-4"><div><h5 className="font-bold text-sm">Edit Student Record</h5><p className="text-[11px] text-[#707070]">Cohort transfers and installment schedules remain in their dedicated controlled workflows below.</p></div><div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 text-xs">{([
+                ['firstName','First name','text'],['lastName','Last name','text'],['email','Email','email'],['whatsapp','WhatsApp','text'],['city','City','text'],['province','Province','text'],['laptopBrand','Laptop brand/model','text'],['cpu','Processor','text'],['freeStorageGB','Free storage (GB)','number'],['os','Operating system','text']
+              ] as Array<[keyof typeof recordForm,string,string]>).map(([key,label,type]) => <label key={String(key)} className="space-y-1"><span className="text-[10px] font-bold uppercase">{label}</span><input type={type} value={String(recordForm[key] ?? '')} onChange={event => setRecordForm(current => ({ ...current, [key]: type === 'number' ? Number(event.target.value) : event.target.value }))} className="w-full p-2.5 border border-[#E0E0E0] rounded-lg" /></label>)}<label className="space-y-1"><span className="text-[10px] font-bold uppercase">RAM</span><select value={recordForm.ramGB || 16} onChange={event => setRecordForm(current => ({ ...current, ramGB: Number(event.target.value) }))} className="w-full p-2.5 border border-[#E0E0E0] rounded-lg bg-white"><option value={8}>8 GB</option><option value={16}>16 GB</option><option value={32}>32 GB</option><option value={64}>64 GB</option><option value={128}>128 GB</option></select></label><label className="space-y-1"><span className="text-[10px] font-bold uppercase">Storage type</span><select value={recordForm.storageType || ''} onChange={event => setRecordForm(current => ({ ...current, storageType: event.target.value }))} className="w-full p-2.5 border border-[#E0E0E0] rounded-lg bg-white"><option value="NVMe SSD">NVMe SSD</option><option value="SATA SSD">SATA SSD</option><option value="HDD (Hard Disk Drive)">HDD</option></select></label><label className="space-y-1"><span className="text-[10px] font-bold uppercase">Course tier</span><select value={recordForm.selectedTier || 'STARTER'} onChange={event => setRecordForm(current => ({ ...current, selectedTier: event.target.value as CourseTier }))} className="w-full p-2.5 border border-[#E0E0E0] rounded-lg bg-white"><option value="STARTER">Starter</option><option value="PROFESSIONAL">Professional</option><option value="CAREER_ACCELERATOR">Career Accelerator</option></select></label></div><label className="flex items-center gap-2 text-xs"><input type="checkbox" checked={Boolean(recordForm.hasVirtualizationEnabled)} onChange={event => setRecordForm(current => ({ ...current, hasVirtualizationEnabled: event.target.checked }))} className="accent-black" /><span>Hardware virtualization supported/enabled</span></label><div className="flex justify-end"><button type="button" disabled={recordSaving} onClick={() => void saveStudentRecord(selectedApp.id)} className="px-5 py-2.5 bg-black disabled:bg-[#E0E0E0] text-white rounded-xl text-[10px] font-bold uppercase">{recordSaving ? 'Saving…' : 'Save Audited Changes'}</button></div></section>}
 
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 text-xs font-mono">
                 <div className="p-4 bg-[#FFFFFF] rounded-xl border border-[#E0E0E0] space-y-1">
@@ -588,6 +875,96 @@ export const AdminDashboard: React.FC = () => {
                 </div>
               </div>
 
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 text-xs">
+                <section className="p-5 bg-[#FFFFFF] rounded-xl border border-[#E0E0E0] space-y-3">
+                  <div className="flex items-center justify-between"><h5 className="font-bold text-sm">Hardware Inspection</h5><span className={`px-2.5 py-1 rounded-full font-mono text-[10px] font-bold ${selectedApp.isLaptopCompliant ? 'bg-black text-white' : 'bg-[#FAFAFA] border border-[#E0E0E0] text-[#707070]'}`}>{selectedApp.isLaptopCompliant ? 'COMPLIANT' : 'REVIEW REQUIRED'}</span></div>
+                  <div className="grid grid-cols-2 gap-3 font-mono">
+                    <div><span className="text-[#707070] block">Operating system</span><strong>{selectedApp.os}</strong></div>
+                    <div><span className="text-[#707070] block">Processor</span><strong>{selectedApp.cpu}</strong></div>
+                    <div><span className="text-[#707070] block">Memory</span><strong>{selectedApp.ramGB} GB RAM</strong></div>
+                    <div><span className="text-[#707070] block">Storage</span><strong>{selectedApp.storageType} • {selectedApp.freeStorageGB} GB free</strong></div>
+                    <div className="col-span-2"><span className="text-[#707070] block">Hardware virtualization</span><strong>{selectedApp.hasVirtualizationEnabled ? 'Supported / enabled' : 'Not confirmed'}</strong></div>
+                  </div>
+                </section>
+
+                <section className="p-5 bg-[#FFFFFF] rounded-xl border border-[#E0E0E0] space-y-3">
+                  <div className="flex items-center justify-between gap-3"><h5 className="font-bold text-sm">Course & Intake</h5>{currentRole === 'ADMIN' && selectedApp.status !== 'COMPLETED' && <button type="button" onClick={() => { setShowCohortTransfer(value => !value); setTransferCohortId(''); setTransferReason(''); }} className="px-3 py-1.5 border border-[#E0E0E0] rounded-lg text-[10px] font-bold uppercase">{showCohortTransfer ? 'Cancel Transfer' : 'Transfer Cohort'}</button>}</div>
+                  <div className="grid grid-cols-2 gap-3 font-mono">
+                    <div><span className="text-[#707070] block">Tier</span><strong>{selectedApp.selectedTier}</strong></div>
+                    <div><span className="text-[#707070] block">Payment plan</span><strong>{selectedApp.paymentOption || 'DEPOSIT'}</strong></div>
+                    <div className="col-span-2"><span className="text-[#707070] block">Cohort</span><strong>{selectedAppCohort?.name || selectedApp.cohortId}</strong></div>
+                    <div><span className="text-[#707070] block">Submitted</span><strong>{selectedApp.submissionDate}</strong></div>
+                    <div><span className="text-[#707070] block">Marketing consent</span><strong>{selectedApp.marketingConsent ? 'Yes' : 'No'}</strong></div>
+                  </div>
+                  {showCohortTransfer && <div className="pt-3 border-t border-[#E0E0E0] space-y-3"><p className="text-[11px] text-[#707070]">Payments, invoices, POPs, documents, notes, tasks and timeline history remain attached to this student.</p><select aria-label="Destination cohort" value={transferCohortId} onChange={event => setTransferCohortId(event.target.value)} className="w-full p-2.5 bg-white border border-[#E0E0E0] rounded-lg text-xs"><option value="">Select destination cohort…</option>{cohorts.filter(cohort => cohort.id !== selectedApp.cohortId && !['Closed', 'Completed'].includes(cohort.status)).map(cohort => <option key={cohort.id} value={cohort.id}>{cohort.name} · {Math.max(0, cohort.capacity - cohort.enrolledCount)} seats remaining · {cohort.startDate}</option>)}</select><textarea value={transferReason} onChange={event => setTransferReason(event.target.value)} minLength={10} maxLength={1000} rows={3} placeholder="Reason for transferring this student…" className="w-full p-3 border border-[#E0E0E0] rounded-xl text-xs resize-y" /><button type="button" disabled={transferSaving || !transferCohortId || transferReason.trim().length < 10} onClick={() => void submitCohortTransfer(selectedApp.id)} className="px-4 py-2 bg-black disabled:bg-[#E0E0E0] text-white rounded-lg text-[10px] font-bold uppercase">{transferSaving ? 'Transferring…' : 'Confirm Transfer & Email Student'}</button></div>}
+                </section>
+              </div>
+
+              <section className="p-5 bg-[#FFFFFF] rounded-xl border border-[#E0E0E0] space-y-5">
+                <div className="flex flex-col lg:flex-row lg:items-end justify-between gap-3">
+                  <div><h5 className="font-bold text-sm">Admissions Owner & Follow-ups</h5><p className="text-[11px] text-[#707070]">Internal assignments, notes and tasks are never shown to the student.</p></div>
+                  <label className="space-y-1 text-[10px] font-bold uppercase tracking-wider lg:w-72"><span>Application owner</span><select disabled={workflowSaving} value={assignmentStaffId} onChange={event => void assignApplication(selectedApp.id, event.target.value)} className="w-full p-2.5 bg-white border border-[#E0E0E0] rounded-lg text-xs normal-case"><option value="">Unassigned</option>{staffAccounts.filter(staff => staff.active).map(staff => <option key={staff.id} value={staff.id}>{staff.name} · {staff.role}</option>)}</select></label>
+                </div>
+                <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                  <div className="space-y-3">
+                    <h6 className="text-[10px] font-bold uppercase tracking-wider">Internal notes</h6>
+                    <textarea value={internalNote} onChange={event => setInternalNote(event.target.value)} maxLength={2000} rows={3} placeholder="Add review findings, contact attempts or handover context…" className="w-full p-3 border border-[#E0E0E0] rounded-xl text-xs resize-y" />
+                    <button type="button" disabled={workflowSaving || internalNote.trim().length < 2} onClick={() => void addInternalNote(selectedApp.id)} className="px-4 py-2 bg-black disabled:bg-[#E0E0E0] text-white rounded-lg text-[10px] font-bold uppercase">Add Private Note</button>
+                    <div className="space-y-2 max-h-56 overflow-y-auto">{admissionNotes.map(note => <article key={note.id} className="p-3 bg-[#FAFAFA] rounded-xl border border-[#E0E0E0]"><p className="text-xs whitespace-pre-wrap">{note.body}</p><p className="text-[9px] font-mono text-[#707070] mt-2">{note.authorEmail} · {new Date(note.createdAt).toLocaleString('en-ZA')}</p></article>)}{!admissionNotes.length && <p className="text-[11px] text-[#707070]">No private notes yet.</p>}</div>
+                  </div>
+                  <div className="space-y-3">
+                    <h6 className="text-[10px] font-bold uppercase tracking-wider">Follow-up tasks</h6>
+                    <input value={taskForm.title} onChange={event => setTaskForm(current => ({ ...current, title: event.target.value }))} maxLength={300} placeholder="e.g. Call student about laptop upgrade" className="w-full p-2.5 border border-[#E0E0E0] rounded-lg text-xs" />
+                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-2"><input aria-label="Task due date" type="date" value={taskForm.dueDate} onChange={event => setTaskForm(current => ({ ...current, dueDate: event.target.value }))} className="p-2.5 border border-[#E0E0E0] rounded-lg text-xs" /><select aria-label="Task priority" value={taskForm.priority} onChange={event => setTaskForm(current => ({ ...current, priority: event.target.value as AdmissionTask['priority'] }))} className="p-2.5 border border-[#E0E0E0] rounded-lg bg-white text-xs"><option value="LOW">Low</option><option value="MEDIUM">Medium</option><option value="HIGH">High</option></select><select aria-label="Task owner" value={taskForm.assignedStaffId} onChange={event => setTaskForm(current => ({ ...current, assignedStaffId: event.target.value }))} className="p-2.5 border border-[#E0E0E0] rounded-lg bg-white text-xs"><option value="">Owner…</option>{staffAccounts.filter(staff => staff.active).map(staff => <option key={staff.id} value={staff.id}>{staff.name}</option>)}</select></div>
+                    <button type="button" disabled={workflowSaving || taskForm.title.trim().length < 2 || !taskForm.dueDate || !taskForm.assignedStaffId} onClick={() => void createFollowUpTask(selectedApp.id)} className="px-4 py-2 bg-black disabled:bg-[#E0E0E0] text-white rounded-lg text-[10px] font-bold uppercase">Create Follow-up</button>
+                    <div className="space-y-2 max-h-64 overflow-y-auto">{admissionTasks.map(task => { const overdue = task.status === 'OPEN' && task.dueDate < new Date().toISOString().slice(0, 10); return <article key={task.id} className={`p-3 rounded-xl border ${overdue ? 'border-[#CC0000] bg-[#FFF5F5]' : 'border-[#E0E0E0] bg-[#FAFAFA]'} ${task.status === 'COMPLETED' ? 'opacity-60' : ''}`}><div className="flex items-start gap-3"><input type="checkbox" checked={task.status === 'COMPLETED'} onChange={() => void toggleFollowUpTask(selectedApp.id, task)} className="mt-0.5 accent-black" /><div className="min-w-0"><strong className={`text-xs block ${task.status === 'COMPLETED' ? 'line-through' : ''}`}>{task.title}</strong><span className="text-[9px] font-mono text-[#707070]">{task.priority} · Due {task.dueDate} · {task.assignedStaffName}{overdue ? ' · OVERDUE' : ''}</span></div></div></article>})}{!admissionTasks.length && <p className="text-[11px] text-[#707070]">No follow-up tasks yet.</p>}</div>
+                  </div>
+                </div>
+              </section>
+
+              <section className="p-5 bg-[#FFFFFF] rounded-xl border border-[#E0E0E0] space-y-4">
+                <div>
+                  <h5 className="font-bold text-sm">Student Document Centre</h5>
+                  <p className="text-[11px] text-[#707070]">Open the current official PDFs and every submitted proof-of-payment file linked to this application.</p>
+                </div>
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">
+                  <button type="button" onClick={() => void openStudentDocument(selectedApp.id, 'application')} className="p-3 text-left rounded-xl border border-[#E0E0E0] hover:border-black"><strong className="block text-xs">Application Summary</strong><span className="text-[10px] text-[#707070]">Submitted details and declarations</span></button>
+                  {selectedAppInvoice && <button type="button" onClick={() => void openStudentDocument(selectedApp.id, 'invoice')} className="p-3 text-left rounded-xl border border-[#E0E0E0] hover:border-black"><strong className="block text-xs">Invoice PDF</strong><span className="text-[10px] text-[#707070]">{selectedAppInvoice.invoiceNumber}</span></button>}
+                  {selectedAppCohort && <button type="button" onClick={() => void openStudentDocument(selectedApp.id, 'schedule')} className="p-3 text-left rounded-xl border border-[#E0E0E0] hover:border-black"><strong className="block text-xs">Course Schedule</strong><span className="text-[10px] text-[#707070]">{selectedAppCohort.name}</span></button>}
+                  {['ENROLLED', 'COMPLETED'].includes(selectedApp.status) && <button type="button" onClick={() => void openStudentDocument(selectedApp.id, 'admission')} className="p-3 text-left rounded-xl border border-[#E0E0E0] hover:border-black"><strong className="block text-xs">Admission Confirmation</strong><span className="text-[10px] text-[#707070]">Official enrollment letter</span></button>}
+                  {certificates.some(certificate => certificate.studentId === selectedApp.id) && <button type="button" onClick={() => void openStudentDocument(selectedApp.id, 'certificate')} className="p-3 text-left rounded-xl border border-[#E0E0E0] hover:border-black"><strong className="block text-xs">Certificate</strong><span className="text-[10px] text-[#707070]">Completion certificate</span></button>}
+                </div>
+                {selectedAppPayments.length ? <div className="space-y-2 pt-3 border-t border-[#E0E0E0]">
+                  <h6 className="text-[10px] font-bold uppercase tracking-wider">Payment documents</h6>
+                  {selectedAppPayments.map(payment => <div key={payment.id} className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 p-3 bg-[#FAFAFA] rounded-xl text-[11px]"><div><strong className="block">{payment.originalFileName}</strong><span className="text-[#707070]">{payment.type} · {payment.status} · R{payment.amountZAR.toLocaleString()}</span></div><div className="flex flex-wrap gap-2"><button type="button" onClick={() => void apiOpenPrivate(`/payments/${encodeURIComponent(payment.id)}/proof`).catch(error => showToast('error', 'POP Unavailable', error instanceof Error ? error.message : 'Could not open POP.'))} className="px-3 py-1.5 bg-black text-white rounded-lg font-bold text-[10px] uppercase">Original POP</button><button type="button" onClick={() => void openStudentDocument(selectedApp.id, 'pop', payment.id)} className="px-3 py-1.5 bg-white border border-[#E0E0E0] rounded-lg font-bold text-[10px] uppercase">POP Record PDF</button>{payment.status === 'VERIFIED' && <button type="button" onClick={() => void openStudentDocument(selectedApp.id, 'receipt', payment.id)} className="px-3 py-1.5 bg-white border border-[#E0E0E0] rounded-lg font-bold text-[10px] uppercase">Receipt PDF</button>}</div></div>)}
+                </div> : <p className="p-3 bg-[#FAFAFA] rounded-xl text-[11px] text-[#707070]">No payment documents have been submitted yet.</p>}
+              </section>
+
+              <section className="p-5 bg-[#FFFFFF] rounded-xl border border-[#E0E0E0] space-y-4">
+                <div className="flex flex-wrap items-center justify-between gap-3"><div><h5 className="font-bold text-sm">Invoice, Deposit & POP</h5><p className="text-[11px] text-[#707070]">The student is enrolled only after a submitted deposit is verified.</p></div><div className="flex flex-wrap items-center gap-2"><button type="button" onClick={() => void setPaymentRemindersPaused(selectedApp.id, !selectedApp.paymentRemindersPaused)} className={`px-3 py-1.5 rounded-lg font-bold uppercase text-[10px] border ${selectedApp.paymentRemindersPaused ? 'border-[#CC0000] text-[#CC0000] bg-white' : 'border-[#E0E0E0] text-[#000000] bg-[#FAFAFA]'}`}>{selectedApp.paymentRemindersPaused ? 'Resume Reminders' : 'Pause Reminders'}</button>{selectedAppInvoice && <button type="button" disabled={emailingInvoiceId === selectedAppInvoice.id} onClick={() => void handleEmailInvoice(selectedAppInvoice)} className="px-3 py-1.5 bg-black disabled:bg-[#E0E0E0] text-white rounded-lg font-bold uppercase text-[10px]">{emailingInvoiceId === selectedAppInvoice.id ? 'Sending…' : 'Email Invoice'}</button>}<span className="font-mono text-[10px] font-bold px-2.5 py-1 bg-[#FAFAFA] border border-[#E0E0E0] rounded-full">{selectedAppInvoice?.status || 'NO INVOICE'}</span></div></div>
+                {selectedApp.paymentRemindersPaused && <p className="p-3 rounded-xl border border-[#E6AAAA] bg-[#FFF5F5] text-[#9B1C1C] text-[11px] font-bold">Scheduled deposit and balance reminders are paused for this student.</p>}
+                {selectedAppInvoice ? <>
+                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 font-mono text-xs">
+                    <div><span className="text-[#707070] block">Invoice</span><strong>{selectedAppInvoice.invoiceNumber}</strong></div>
+                    <div><span className="text-[#707070] block">Total tuition</span><strong>R{selectedAppInvoice.amountZAR.toLocaleString()}</strong></div>
+                    <div><span className="text-[#707070] block">Paid to date</span><strong className="text-[#008000]">R{(selectedAppInvoice.paidZAR ?? 0).toLocaleString()}</strong></div>
+                    <div><span className="text-[#707070] block">Remaining balance</span><strong className={selectedAppInvoice.balanceZAR > 0 ? 'text-[#CC0000]' : 'text-[#008000]'}>R{selectedAppInvoice.balanceZAR.toLocaleString()}</strong></div>
+                  </div>
+                  {selectedAppInvoice.paymentOption === 'FULL' || ((selectedAppInvoice.paidZAR ?? 0) >= selectedAppInvoice.amountZAR && !installments.length) ? <div className="p-4 bg-[#FAFAFA] border border-[#E0E0E0] rounded-xl"><h6 className="font-bold text-xs">Full Payment</h6><p className="text-[11px] text-[#707070] mt-1">This invoice was paid using the full-payment option. No installment schedule applies.</p></div> : <div className="p-4 bg-[#FAFAFA] border border-[#E0E0E0] rounded-xl space-y-3"><div className="flex items-center justify-between gap-3"><div><h6 className="font-bold text-xs">Installment Schedule</h6><p className="text-[10px] text-[#707070]">Verified payments are allocated from the earliest installment first.</p></div>{currentRole === 'ADMIN' && <button type="button" onClick={editingInstallments ? () => setEditingInstallments(false) : startInstallmentEditor} className="px-3 py-1.5 bg-white border border-[#E0E0E0] rounded-lg text-[10px] font-bold uppercase">{editingInstallments ? 'Cancel' : installments.length ? 'Edit Plan' : 'Create Plan'}</button>}</div>{editingInstallments ? <div className="space-y-2">{installmentRows.map((row, index) => <div key={index} className="grid grid-cols-1 sm:grid-cols-[1fr_130px_150px_auto] gap-2"><input value={row.label} onChange={event => setInstallmentRows(current => current.map((item, rowIndex) => rowIndex === index ? { ...item, label: event.target.value } : item))} placeholder="Installment label" className="p-2 border border-[#E0E0E0] rounded-lg text-xs" /><input type="number" min="0.01" step="0.01" value={row.amountZAR} disabled={index === 0} onChange={event => setInstallmentRows(current => current.map((item, rowIndex) => rowIndex === index ? { ...item, amountZAR: event.target.value } : item))} className="p-2 border border-[#E0E0E0] rounded-lg text-xs disabled:bg-[#E0E0E0]" /><input type="date" value={row.dueDate} onChange={event => setInstallmentRows(current => current.map((item, rowIndex) => rowIndex === index ? { ...item, dueDate: event.target.value } : item))} className="p-2 border border-[#E0E0E0] rounded-lg text-xs" /><button type="button" disabled={installmentRows.length <= 2 || index === 0} onClick={() => setInstallmentRows(current => current.filter((_, rowIndex) => rowIndex !== index))} className="px-2 text-[#CC0000] disabled:text-[#A0A0A0] text-[10px] font-bold">Remove</button></div>)}<div className="flex flex-wrap justify-between gap-2"><button type="button" disabled={installmentRows.length >= 24} onClick={() => setInstallmentRows(current => [...current, { label: `Installment ${current.length + 1}`, amountZAR: '', dueDate: '' }])} className="px-3 py-1.5 bg-white border border-[#E0E0E0] rounded-lg text-[10px] font-bold uppercase">Add Installment</button><div className="flex items-center gap-3"><span className="text-[10px] font-mono">Plan total: R{installmentRows.reduce((sum, row) => sum + (Number(row.amountZAR) || 0), 0).toLocaleString()}</span><button type="button" disabled={installmentsSaving} onClick={() => void saveInstallmentPlan()} className="px-3 py-1.5 bg-black disabled:bg-[#E0E0E0] text-white rounded-lg text-[10px] font-bold uppercase">{installmentsSaving ? 'Saving…' : 'Save Plan'}</button></div></div></div> : installments.length ? <div className="space-y-2">{installments.map(item => { const overdue = item.status === 'OVERDUE'; return <div key={item.id} className={`grid grid-cols-[1fr_auto] gap-3 p-2.5 bg-white rounded-lg border ${overdue ? 'border-[#CC0000]' : 'border-[#E0E0E0]'} text-[11px]`}><div><strong>{item.sequence}. {item.label}</strong><span className="block text-[#707070]">Due {item.dueDate} · R{item.paidZAR.toLocaleString()} of R{item.amountZAR.toLocaleString()} paid</span></div><strong className={overdue ? 'text-[#CC0000]' : item.status === 'PAID' ? 'text-[#008000]' : ''}>{item.status}</strong></div>})}</div> : <p className="text-[11px] text-[#707070]">No installment schedule. The invoice uses its standard deposit and balance terms.</p>}</div>}
+                  {selectedPendingPayment ? <div className="p-4 bg-[#FAFAFA] border border-[#E0E0E0] rounded-xl flex flex-col lg:flex-row lg:items-center justify-between gap-3"><div className="font-mono text-[11px]"><strong className="block text-[#000000]">POP awaiting verification • R{selectedPendingPayment.amountZAR.toLocaleString()}</strong><span className="text-[#707070]">EFT ref: {selectedPendingPayment.eftReference} • {selectedPendingPayment.originalFileName}</span><span className="text-[#707070] block">SHA-256: {selectedPendingPayment.sha256.slice(0, 16)}… • Submitted {new Date(selectedPendingPayment.submittedAt).toLocaleString('en-ZA')}</span></div><button onClick={() => void openPopReview(selectedPendingPayment)} className="px-4 py-2 bg-[#000000] text-white rounded-xl font-bold uppercase text-[10px]">Review POP & Payment</button></div> : <p className="p-3 bg-[#FAFAFA] border border-[#E0E0E0] rounded-xl text-[#707070]">No payment is currently awaiting verification.</p>}
+                  {selectedAppPayments.length > 0 && <div className="space-y-2"><h6 className="font-bold text-[10px] uppercase tracking-wider">Payment audit history</h6>{selectedAppPayments.map(payment => <div key={payment.id} className="flex flex-wrap justify-between gap-2 text-[11px] font-mono border-t border-[#E0E0E0] pt-2"><span>{payment.type} • R{payment.amountZAR.toLocaleString()} • {payment.eftReference}</span><strong>{payment.status}{payment.verifiedAt ? ` • ${new Date(payment.verifiedAt).toLocaleDateString('en-ZA')}` : ''}</strong></div>)}</div>}
+                </> : <p className="text-[#707070]">No linked invoice was found for this application.</p>}
+              </section>
+
+              <section className="p-5 bg-white rounded-xl border border-[#E0E0E0] space-y-4">
+                <div className="flex items-center justify-between gap-3"><div><h5 className="font-bold text-sm">Unified Student Timeline</h5><p className="text-[11px] text-[#707070]">Admissions, communications, finance and learning activity in one chronological record.</p></div><button type="button" disabled={timelineLoading} onClick={() => void loadStudentTimeline(selectedApp.id)} className="px-3 py-1.5 border border-[#E0E0E0] rounded-lg text-[10px] font-bold uppercase">{timelineLoading ? 'Loading…' : 'Refresh'}</button></div>
+                {timelineLoading && !studentTimeline.length ? <p className="py-8 text-center text-xs text-[#707070]">Loading timeline…</p> : studentTimeline.length ? <div className="relative pl-7 space-y-0 before:absolute before:left-[9px] before:top-2 before:bottom-2 before:w-px before:bg-[#D8D8D8]">{studentTimeline.map(event => (
+                  <article key={event.id} className="relative pb-5 last:pb-0"><span className={`absolute -left-7 top-1 w-[19px] h-[19px] rounded-full border-4 border-white ${event.category === 'PAYMENT' ? 'bg-[#008000]' : event.category === 'EMAIL' || event.category === 'INVOICE' ? 'bg-[#4B50B8]' : event.category === 'ENROLLMENT' ? 'bg-black' : event.category === 'NOTE' ? 'bg-[#A05A00]' : 'bg-[#707070]'}`} /><div className="flex flex-col sm:flex-row sm:items-start justify-between gap-1"><div><span className="font-mono text-[9px] font-bold tracking-wider text-[#707070]">{event.category}{event.status ? ` • ${event.status}` : ''}</span><h6 className="text-xs font-bold">{event.title}</h6><p className="text-[11px] text-[#707070] mt-0.5">{event.detail}</p>{event.actorEmail && <p className="text-[9px] font-mono text-[#A0A0A0] mt-1">By {event.actorEmail}</p>}</div><time className="text-[9px] font-mono text-[#707070] shrink-0">{new Date(event.occurredAt).toLocaleString('en-ZA')}</time></div></article>
+                ))}</div> : <p className="py-8 text-center text-xs text-[#707070]">No timeline activity recorded.</p>}
+              </section>
+
+              <section className="p-5 bg-[#FFFFFF] rounded-xl border border-[#E0E0E0] space-y-2 text-xs"><h5 className="font-bold text-sm">Applicant Notes & Skills</h5><p><strong>Known technologies:</strong> {selectedApp.technologiesKnown?.join(', ') || 'None provided'}</p><p><strong>Current role:</strong> {selectedApp.currentRole || 'Not provided'}</p>{selectedApp.adminNotes && <p><strong>Admin notes:</strong> {selectedApp.adminNotes}</p>}{selectedAppLead?.notes?.length ? <div><strong>CRM notes:</strong><ul className="list-disc pl-5 text-[#707070]">{selectedAppLead.notes.map((note, index) => <li key={index}>{note}</li>)}</ul></div> : null}</section>
+
               {/* Status Changer Actions */}
               <div className="flex flex-wrap items-center justify-between gap-3 pt-2 border-t border-[#E0E0E0]">
                 <div className="flex items-center gap-2 text-xs font-mono">
@@ -598,24 +975,28 @@ export const AdminDashboard: React.FC = () => {
                 <div className="flex items-center gap-2">
                   <button
                     onClick={() => void handleApproveApplication(selectedApp, 'Approved by admissions team. Payment and onboarding instructions issued.')}
-                    className="px-4 py-2 bg-[#000000] hover:bg-neutral-800 text-white font-bold rounded-xl text-xs uppercase tracking-wider transition shadow"
+                    disabled={!selectedApp.isLaptopCompliant || ['APPROVED', 'PAYMENT_REQUIRED', 'ENROLLED'].includes(selectedApp.status)}
+                    className="px-4 py-2 bg-[#000000] hover:bg-neutral-800 disabled:bg-[#E0E0E0] disabled:text-[#707070] text-white font-bold rounded-xl text-xs uppercase tracking-wider transition shadow"
                   >
-                    Approve Application & Email Student
+                    {selectedApp.isLaptopCompliant ? 'Approve Hardware & Send Payment Details' : 'Hardware Review Required'}
                   </button>
-                  <button
-                    onClick={() => updateApplicationStatus(selectedApp.id, 'ENROLLED')}
-                    className="px-4 py-2 bg-[#FFFFFF] hover:bg-[#F0F0F0] text-[#000000] font-bold rounded-xl text-xs uppercase tracking-wider border border-[#E0E0E0] transition"
+                  {selectedApp.status === 'ENROLLED' && <button
+                    onClick={() => { setDecisionStatus('WITHDRAWN'); setDecisionReason(''); }}
+                    className="px-4 py-2 bg-white hover:bg-[#FFF5F5] text-[#CC0000] font-bold rounded-xl text-xs uppercase tracking-wider border border-[#CC0000] transition"
                   >
-                    Mark Fully Enrolled
-                  </button>
+                    Cancel Enrollment
+                  </button>}
+                  {!['ENROLLED', 'COMPLETED', 'REJECTED', 'WITHDRAWN'].includes(selectedApp.status) && <button onClick={() => { setDecisionStatus('WAITLISTED'); setDecisionReason(''); }} className="px-4 py-2 bg-white hover:bg-[#FAFAFA] text-[#000000] font-bold rounded-xl text-xs uppercase tracking-wider border border-[#000000] transition">Move to Waitlist</button>}
                   <button
-                    onClick={() => updateApplicationStatus(selectedApp.id, 'REJECTED')}
+                    onClick={() => { setDecisionStatus('REJECTED'); setDecisionReason(''); }}
+                    disabled={['ENROLLED', 'COMPLETED', 'REJECTED', 'WITHDRAWN'].includes(selectedApp.status)}
                     className="px-4 py-2 bg-[#FAFAFA] hover:bg-[#E0E0E0] text-[#707070] hover:text-[#000000] font-bold rounded-xl text-xs uppercase tracking-wider border border-[#E0E0E0] transition"
                   >
                     Reject (Hardware Incompatible)
                   </button>
                 </div>
               </div>
+              {decisionStatus && <section className="p-4 bg-[#FFF8F2] border border-[#D97706] rounded-xl space-y-3"><div><h6 className="text-sm font-bold">Confirm {decisionStatus === 'WITHDRAWN' ? 'Enrollment Cancellation' : decisionStatus === 'WAITLISTED' ? 'Waitlist Decision' : 'Application Rejection'}</h6><p className="text-[11px] text-[#707070]">The reason is mandatory, recorded in the audit log, and included in the email sent to the student.</p></div><textarea autoFocus value={decisionReason} onChange={event => setDecisionReason(event.target.value)} minLength={10} maxLength={1000} rows={4} placeholder={decisionStatus === 'WITHDRAWN' ? 'Explain why the enrollment is being cancelled…' : decisionStatus === 'WAITLISTED' ? 'Explain why the student is being waitlisted…' : 'Explain why the application cannot be approved…'} className="w-full p-3 bg-white border border-[#D97706] rounded-xl text-xs resize-y" /><div className="flex flex-wrap items-center justify-between gap-3"><span className={`text-[10px] font-mono ${decisionReason.trim().length >= 10 ? 'text-[#008000]' : 'text-[#9B1C1C]'}`}>{decisionReason.trim().length}/1000 · minimum 10 characters</span><div className="flex gap-2"><button type="button" disabled={decisionSaving} onClick={() => { setDecisionStatus(null); setDecisionReason(''); }} className="px-4 py-2 bg-white border border-[#E0E0E0] rounded-lg text-[10px] font-bold uppercase">Cancel</button><button type="button" disabled={decisionSaving || decisionReason.trim().length < 10} onClick={() => void submitApplicationDecision(selectedApp.id)} className="px-4 py-2 bg-[#9B1C1C] disabled:bg-[#E0E0E0] text-white rounded-lg text-[10px] font-bold uppercase">{decisionSaving ? 'Recording…' : 'Record Decision & Email Student'}</button></div></div></section>}
             </div>
           )}
 
@@ -635,7 +1016,7 @@ export const AdminDashboard: React.FC = () => {
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-[#E0E0E0]">
-                  {applications.map((app) => (
+                  {filteredApplications.map((app) => (
                     <tr key={app.id} className="hover:bg-[#FAFAFA]">
                       <td className="p-4 font-mono text-[11px]">
                         <strong className="text-[#000000]">{app.referenceNumber}</strong>
@@ -667,19 +1048,20 @@ export const AdminDashboard: React.FC = () => {
                             ? 'bg-[#E0E0E0] text-[#000000] border-[#E0E0E0]' 
                             : 'bg-[#FAFAFA] text-[#707070] border-[#E0E0E0]'
                         }`}>
-                          {app.status}
+                          {PIPELINE_STAGES.find(stage => stage.id === getPipelineStage(app))?.label || app.status}
                         </span>
                       </td>
                       <td className="p-4 text-right">
                         <button
-                          onClick={() => setSelectedAppId(app.id)}
+                          onClick={() => reviewApplication(app)}
                           className="px-3 py-1.5 bg-[#000000] hover:bg-neutral-800 text-white rounded-lg font-bold text-[10px] uppercase tracking-wider transition"
                         >
-                          Review
+                          Open Profile
                         </button>
                       </td>
                     </tr>
                   ))}
+                  {filteredApplications.length === 0 && <tr><td colSpan={7} className="p-10 text-center text-[#707070]">No applications match the selected filters.</td></tr>}
                 </tbody>
               </table>
             </div>
@@ -807,6 +1189,8 @@ export const AdminDashboard: React.FC = () => {
                   <p><strong className="text-[#000000]">Schedule:</strong> {cohort.scheduleFormat}</p>
                   <p><strong className="text-[#000000]">Mode:</strong> {cohort.deliveryMode} ({cohort.location})</p>
                   <p><strong className="text-[#000000]">Enrolled:</strong> <strong className="text-[#000000]">{cohort.enrolledCount} / {cohort.capacity} Students</strong></p>
+                  <p><strong className="text-[#000000]">Remaining:</strong> <strong className={cohort.enrolledCount >= cohort.capacity ? 'text-[#A05A00]' : 'text-[#008000]'}>{Math.max(0, cohort.capacity - cohort.enrolledCount)} seats{cohort.enrolledCount >= cohort.capacity ? ' - waitlist active' : ''}</strong></p>
+                  <p><strong className="text-[#000000]">Waitlisted:</strong> <strong className="text-[#000000]">{applications.filter(application => application.cohortId === cohort.id && application.status === 'WAITLISTED').length} applicants</strong></p>
                 </div>
 
                 <div className="pt-2 border-t border-[#E0E0E0] flex items-center gap-2">
@@ -996,7 +1380,7 @@ export const AdminDashboard: React.FC = () => {
                       </td>
                       <td className="p-4 text-right">
                         <a
-                          href={`https://wa.me/${lead.whatsapp.replace(/[^0-9]/g, '')}?text=Hi%20${encodeURIComponent(lead.name)},%20this%20is%20Dave%20from%20TechLabs%20Academy%20SA.%20I%20saw%20your%20IT%20Support%20inquiry.`}
+                          href={`https://wa.me/${lead.whatsapp.replace(/[^0-9]/g, '')}?text=Hi%20${encodeURIComponent(lead.name)},%20this%20is%20the%20TechLabs%20Academy%20team.%20We%20received%20your%20IT%20Support%20inquiry.`}
                           target="_blank"
                           rel="noopener noreferrer"
                           className="inline-flex items-center gap-1 px-3 py-1 bg-[#000000] hover:bg-neutral-800 text-white rounded-lg text-[10px] uppercase font-bold tracking-wider"
@@ -1032,11 +1416,21 @@ export const AdminDashboard: React.FC = () => {
                     <span className="text-[10px] font-mono text-[#A0A0A0] uppercase font-bold">Invoice #{inv.invoiceNumber}</span>
                     <h4 className="font-bold text-base text-[#000000]">{inv.studentName}</h4>
                   </div>
-                  <span className={`px-2.5 py-1 rounded text-[10px] font-mono font-bold uppercase border ${
-                    inv.status === 'VERIFIED' ? 'bg-[#000000] text-white border-[#000000]' : 'bg-[#FAFAFA] text-[#707070] border-[#E0E0E0]'
-                  }`}>
-                    {inv.status}
-                  </span>
+                  <div className="flex items-center gap-2">
+                    <button
+                      type="button"
+                      disabled={emailingInvoiceId === inv.id}
+                      onClick={() => void handleEmailInvoice(inv)}
+                      className="px-3 py-1.5 bg-[#000000] disabled:bg-[#A0A0A0] text-white rounded-lg font-bold uppercase text-[10px]"
+                    >
+                      {emailingInvoiceId === inv.id ? 'Sending…' : 'Email Invoice'}
+                    </button>
+                    <span className={`px-2.5 py-1 rounded text-[10px] font-mono font-bold uppercase border ${
+                      inv.status === 'VERIFIED' ? 'bg-[#000000] text-white border-[#000000]' : 'bg-[#FAFAFA] text-[#707070] border-[#E0E0E0]'
+                    }`}>
+                      {inv.status}
+                    </span>
+                  </div>
                 </div>
 
                 <div className="grid grid-cols-2 gap-2 text-xs font-mono">
@@ -1061,23 +1455,21 @@ export const AdminDashboard: React.FC = () => {
                 <div className="pt-2 border-t border-[#E0E0E0] flex items-center justify-between">
                   <div className="text-[11px] font-mono">
                     {inv.proofOfPaymentUrl ? (
-                      <span className="inline-flex items-center gap-1.5 text-[#008000] font-bold">
-                        <span>✔ POP Attached ({inv.proofOfPaymentUrl.split('/').pop()})</span>
-                      </span>
+                      <button type="button" onClick={() => { const payment = payments.find(item => item.invoiceId === inv.id && item.status === 'SUBMITTED'); if (payment) void openPopReview(payment); }} className="inline-flex items-center gap-1.5 text-[#000000] underline font-bold">Review submitted POP</button>
                     ) : (
                       <span className="text-[#707070]">POP: Pending Upload</span>
                     )}
                     {inv.paidAt && <span className="block text-[10px] text-[#707070]">Paid: {inv.paidAt} via {inv.paymentMethod || 'EFT'}</span>}
                   </div>
-                  {inv.status !== 'VERIFIED' ? (
-                    <button
-                      onClick={() => verifyInvoicePayment(inv.id)}
-                      className="px-4 py-2 bg-[#000000] hover:bg-neutral-800 text-white font-bold rounded-xl text-xs uppercase tracking-wider transition shadow"
-                    >
-                      Verify EFT Payment & Activate Student
-                    </button>
+                  {payments.some(item => item.invoiceId === inv.id && item.status === 'SUBMITTED') ? (
+                    <div className="flex gap-2">
+                      <button onClick={() => { const payment = payments.find(item => item.invoiceId === inv.id && item.status === 'SUBMITTED'); if (payment) void openPopReview(payment); }} className="px-4 py-2 bg-[#000000] hover:bg-neutral-800 text-white font-bold rounded-xl text-xs uppercase tracking-wider transition shadow">Review POP</button>
+                      <button onClick={() => { const payment = payments.find(item => item.invoiceId === inv.id && item.status === 'SUBMITTED'); const reason = window.prompt('Reason for rejecting this POP:'); if (payment && reason) void rejectSubmittedPayment(payment.id, reason); }} className="px-3 py-2 border border-[#CC0000] text-[#CC0000] font-bold rounded-xl text-xs uppercase">Reject</button>
+                    </div>
+                  ) : inv.status !== 'VERIFIED' && inv.status !== 'PARTIALLY_PAID' ? (
+                    <span className="text-xs text-[#707070]">Awaiting student POP</span>
                   ) : (
-                    <span className="text-xs font-bold text-[#000000] uppercase tracking-wider font-mono">Payment Verified</span>
+                    <span className="text-xs font-bold text-[#000000] uppercase tracking-wider font-mono">{inv.status === 'PARTIALLY_PAID' ? 'Deposit Verified' : 'Payment Verified'}</span>
                   )}
                 </div>
               </div>
@@ -1159,6 +1551,43 @@ export const AdminDashboard: React.FC = () => {
         </div>
       )}
 
+      {activeTab === 'AUDIT_LOG' && (
+        <div className="space-y-6 animate-in fade-in max-w-6xl">
+          <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-4">
+            <div><h3 className="text-2xl font-light tracking-tight">Administrator Audit Log</h3><p className="text-xs text-[#707070]">Append-only history of admissions, payment, invoice, banking and student-record actions.</p></div>
+            <div className="relative w-full sm:w-80"><Search className="w-4 h-4 absolute left-3 top-3 text-[#A0A0A0]" /><input value={auditSearch} onChange={event => setAuditSearch(event.target.value)} placeholder="Search action, admin or record…" className="w-full pl-9 pr-3 py-2.5 border border-[#E0E0E0] rounded-xl text-xs focus:border-black focus:outline-none" /></div>
+          </div>
+          <div className="bg-white border border-[#E0E0E0] rounded-xl overflow-hidden shadow-sm">
+            {auditLoading ? <p className="p-8 text-center text-xs text-[#707070]">Loading audit records…</p> : visibleAuditLogs.length ? <div className="divide-y divide-[#E0E0E0]">{visibleAuditLogs.map(log => (
+              <div key={log.id} className="p-4 sm:p-5 space-y-2 hover:bg-[#FAFAFA]">
+                <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-2"><div><span className="inline-block px-2 py-0.5 bg-black text-white rounded font-mono text-[9px] font-bold tracking-wider">{log.action}</span><strong className="block mt-1 text-sm">{log.summary}</strong></div><time className="font-mono text-[10px] text-[#707070] shrink-0">{new Date(log.createdAt).toLocaleString('en-ZA')}</time></div>
+                <div className="flex flex-wrap gap-x-5 gap-y-1 text-[10px] font-mono text-[#707070]"><span>Admin: <strong className="text-black">{log.actorEmail}</strong></span><span>Record: <strong className="text-black">{log.entityType}/{log.entityId}</strong></span>{log.ipAddress && <span>IP: {log.ipAddress}</span>}</div>
+                {log.changes && <div className="grid grid-cols-1 md:grid-cols-2 gap-2 pt-1">{(Object.entries(log.changes) as Array<[string, { before: unknown; after: unknown }]>).map(([field, change]) => <div key={field} className="p-2.5 bg-white border border-[#E0E0E0] rounded-lg text-[10px] font-mono"><strong className="block uppercase text-[#707070]">{field}</strong><span className="break-all">{JSON.stringify(change.before) ?? 'null'} → {JSON.stringify(change.after) ?? 'null'}</span></div>)}</div>}
+              </div>
+            ))}</div> : <p className="p-8 text-center text-xs text-[#707070]">No matching audit records.</p>}
+          </div>
+        </div>
+      )}
+
+      {activeTab === 'STAFF' && currentRole === 'ADMIN' && (
+        <div className="space-y-6 animate-in fade-in max-w-5xl">
+          <div><h3 className="text-2xl font-light text-[#000000] tracking-tight">Administrators & Instructors</h3><p className="text-xs text-[#707070]">Create individual staff logins and remove access when a staff member leaves.</p></div>
+          <form onSubmit={createStaffAccount} className="bg-white border border-[#E0E0E0] rounded-xl p-6 space-y-4">
+            <h4 className="font-bold text-sm">Add staff account</h4>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-xs">
+              <label className="space-y-1"><span className="font-bold uppercase text-[10px]">Full name</span><input required value={staffForm.name} onChange={event => setStaffForm({ ...staffForm, name: event.target.value })} className="w-full p-3 border border-[#E0E0E0] rounded-xl" /></label>
+              <label className="space-y-1"><span className="font-bold uppercase text-[10px]">Email address</span><input required type="email" value={staffForm.email} onChange={event => setStaffForm({ ...staffForm, email: event.target.value })} className="w-full p-3 border border-[#E0E0E0] rounded-xl" /></label>
+              <label className="space-y-1"><span className="font-bold uppercase text-[10px]">Role</span><select value={staffForm.role} onChange={event => setStaffForm({ ...staffForm, role: event.target.value as 'ADMIN' | 'INSTRUCTOR' })} className="w-full p-3 border border-[#E0E0E0] rounded-xl bg-white"><option value="INSTRUCTOR">Instructor</option><option value="ADMIN">Administrator</option></select></label>
+              <label className="space-y-1"><span className="font-bold uppercase text-[10px]">Temporary password</span><input required type="password" minLength={10} value={staffForm.password} onChange={event => setStaffForm({ ...staffForm, password: event.target.value })} placeholder="10+ chars, upper/lowercase and number" className="w-full p-3 border border-[#E0E0E0] rounded-xl" /></label>
+            </div>
+            <button disabled={staffSaving} className="px-5 py-2.5 bg-black disabled:bg-[#A0A0A0] text-white rounded-xl font-bold text-xs uppercase tracking-wider">{staffSaving ? 'Creating…' : 'Create Staff Login'}</button>
+          </form>
+          <div className="bg-white border border-[#E0E0E0] rounded-xl overflow-hidden">
+            {staffAccounts.length ? <div className="divide-y divide-[#E0E0E0]">{staffAccounts.map(staff => <div key={staff.id} className="p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3"><div><strong className="block text-sm">{staff.name}</strong><span className="text-xs text-[#707070]">{staff.email} • {staff.role}</span><span className="block text-[10px] font-mono text-[#A0A0A0]">Added {new Date(staff.createdAt).toLocaleDateString('en-ZA')} by {staff.createdBy}</span></div><button onClick={() => void removeStaffAccount(staff)} className="px-4 py-2 border border-[#CC0000] text-[#CC0000] rounded-lg font-bold text-[10px] uppercase">Remove Access</button></div>)}</div> : <p className="p-8 text-center text-xs text-[#707070]">No managed staff accounts yet. The environment administrator still has access.</p>}
+          </div>
+        </div>
+      )}
+
       {/* TAB 8: SETTINGS & BANK DETAILS */}
       {activeTab === 'SETTINGS' && (
         <div className="space-y-6 animate-in fade-in max-w-4xl">
@@ -1208,6 +1637,12 @@ export const AdminDashboard: React.FC = () => {
                   className="w-full p-3 bg-[#FAFAFA] border border-[#E0E0E0] rounded-xl text-[#000000] focus:border-[#000000] focus:outline-none"
                 />
               </div>
+            </div>
+
+            <div className="space-y-1">
+              <label className="font-bold text-[#000000] uppercase text-[10px] tracking-wider">Public Lead Instructor Name</label>
+              <input type="text" value={settings.leadInstructorName || ''} onChange={(e) => updateSettings({ leadInstructorName: e.target.value })} placeholder="TechLabs Instructor" className="w-full p-3 bg-[#FAFAFA] border border-[#E0E0E0] rounded-xl text-[#000000] focus:border-[#000000] focus:outline-none" />
+              <p className="text-[10px] text-[#707070]">Used wherever the website refers to the lead instructor. Leave blank to use “TechLabs Instructor”.</p>
             </div>
 
             <div className="pt-4 border-t border-[#E0E0E0] space-y-4">
@@ -1399,6 +1834,13 @@ export const AdminDashboard: React.FC = () => {
                 </div>
               )}
             </div>
+
+            <div className="pt-5 border-t border-[#E0E0E0] flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+              <p className="text-[11px] text-[#707070]">Changes remain editable until you save them. One confirmation will appear after saving.</p>
+              <button type="button" disabled={settingsSaving} onClick={() => void handleSaveSettings()} className="px-6 py-3 bg-black hover:bg-neutral-800 disabled:bg-[#A0A0A0] text-white font-bold rounded-xl text-xs uppercase tracking-[0.18em] shadow transition">
+                {settingsSaving ? 'Saving…' : 'Save All Settings'}
+              </button>
+            </div>
           </div>
         </div>
       )}
@@ -1420,16 +1862,14 @@ export const AdminDashboard: React.FC = () => {
                 itemType="applications"
                 templates={emailTemplates}
                 onBulkApprove={async (ids, sendEmails) => {
-                  console.log(`Bulk approve ${ids.length} applications, send emails: ${sendEmails}`);
-                  // API call would go here
+                  await apiRequest('/bulk/approve', { method: 'POST', body: JSON.stringify({ applicationIds: ids, sendEmails }) });
+                  ids.forEach(id => updateApplicationStatus(id, 'APPROVED'));
                 }}
                 onBulkExport={async (ids, format) => {
-                  console.log(`Export ${ids.length} applications as ${format}`);
-                  // API call would go here
+                  await apiDownload('/bulk/export', { targetIds: ids, targetType: 'applications', format }, `applications.${format}`);
                 }}
                 onBulkEmail={async (ids, templateId) => {
-                  console.log(`Send ${templateId} email to ${ids.length} applications`);
-                  // API call would go here
+                  await apiRequest('/bulk/send-emails', { method: 'POST', body: JSON.stringify({ recipientIds: ids, recipientType: 'applications', templateId }) });
                 }}
               />
             </div>
@@ -1443,10 +1883,10 @@ export const AdminDashboard: React.FC = () => {
                 templates={emailTemplates}
                 onBulkApprove={async () => {}}
                 onBulkExport={async (ids, format) => {
-                  console.log(`Export ${ids.length} leads as ${format}`);
+                  await apiDownload('/bulk/export', { targetIds: ids, targetType: 'leads', format }, `leads.${format}`);
                 }}
                 onBulkEmail={async (ids, templateId) => {
-                  console.log(`Send ${templateId} email to ${ids.length} leads`);
+                  await apiRequest('/bulk/send-emails', { method: 'POST', body: JSON.stringify({ recipientIds: ids, recipientType: 'leads', templateId }) });
                 }}
               />
             </div>
@@ -1465,8 +1905,8 @@ export const AdminDashboard: React.FC = () => {
           <EmailAutomationUI
             templates={emailTemplates}
             onUpdateTemplate={async (id, updates) => {
-              setEmailTemplates(emailTemplates.map(t => t.id === id ? { ...t, ...updates } : t));
-              console.log(`Updated template ${id}`);
+              const updated = await apiRequest<any>(`/automation/templates/${encodeURIComponent(id)}`, { method: 'PUT', body: JSON.stringify(updates) });
+              setEmailTemplates(emailTemplates.map(t => t.id === id ? updated : t));
             }}
             onRenderPreview={async (templateId, variables) => {
               const template = emailTemplates.find(t => t.id === templateId);
@@ -1571,6 +2011,14 @@ export const AdminDashboard: React.FC = () => {
                         </div>
                         <div className="flex items-center gap-2">
                           <button
+                            type="button"
+                            disabled={emailingInvoiceId === invoice.id}
+                            onClick={() => void handleEmailInvoice(invoice)}
+                            className="px-3 py-1 bg-[#000000] disabled:bg-[#A0A0A0] text-white font-bold text-[10px] uppercase tracking-wider rounded-lg transition"
+                          >
+                            {emailingInvoiceId === invoice.id ? 'Sending…' : 'Email Invoice'}
+                          </button>
+                          <button
                             onClick={() => setSelectedInvoiceForPdf(invoice)}
                             className="px-3 py-1 bg-[#FAFAFA] hover:bg-[#E0E0E0] text-[#000000] font-bold text-[10px] uppercase tracking-wider rounded-lg border border-[#E0E0E0] flex items-center gap-1 transition"
                           >
@@ -1582,20 +2030,12 @@ export const AdminDashboard: React.FC = () => {
                           }`}>
                             {invoice.status}
                           </span>
-                          {invoice.status !== 'VERIFIED' && (
+                          {payments.some(item => item.invoiceId === invoice.id && item.status === 'SUBMITTED') && (
                             <button
-                              onClick={() => verifyInvoicePayment(invoice.id)}
+                              onClick={() => { const payment = payments.find(item => item.invoiceId === invoice.id && item.status === 'SUBMITTED'); if (payment) void openPopReview(payment); }}
                               className="px-3 py-1 bg-[#000000] hover:bg-neutral-800 text-white font-bold text-[10px] uppercase tracking-wider rounded-lg shadow"
                             >
-                              Verify Deposit & Enroll
-                            </button>
-                          )}
-                          {invoice.status === 'VERIFIED' && invoice.balanceZAR > 0 && (
-                            <button
-                              onClick={() => settleInvoiceBalance(invoice.id)}
-                              className="px-3 py-1 bg-[#006600] hover:bg-[#004D00] text-white font-bold text-[10px] uppercase tracking-wider rounded-lg shadow"
-                            >
-                              Verify Balance Settlement
+                              Review Submitted POP
                             </button>
                           )}
                         </div>
@@ -1638,6 +2078,31 @@ export const AdminDashboard: React.FC = () => {
               ) : (
                 <div className="p-6 text-center text-[#707070] text-xs">No invoices generated yet</div>
               )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {reviewingPayment && (
+        <div className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center z-[70] p-3 sm:p-5">
+          <div className="bg-white rounded-2xl w-full max-w-7xl max-h-[95vh] overflow-y-auto shadow-2xl">
+            <div className="sticky top-0 z-20 bg-white border-b border-[#E0E0E0] p-4 flex items-center justify-between"><div><h3 className="font-bold text-sm uppercase tracking-wider">Proof of Payment Review</h3><p className="text-[10px] font-mono text-[#707070]">{reviewingPayment.originalFileName} • {reviewingPayment.eftReference}</p></div><button onClick={closePopReview} className="px-4 py-2 bg-black text-white rounded-lg font-bold text-[10px] uppercase">Close</button></div>
+            <div className="grid grid-cols-1 lg:grid-cols-[minmax(0,1.35fr)_minmax(360px,0.65fr)] min-h-[680px]">
+              <section className="bg-[#202020] p-4 overflow-auto flex flex-col">
+                <div className="flex items-center justify-between gap-2 pb-3 text-white"><span className="text-[10px] font-bold uppercase tracking-wider">Document Preview</span>{popPreview?.type.startsWith('image/') && <div className="flex gap-2"><button onClick={() => setPopZoom(value => Math.max(.5, value - .25))} className="p-2 bg-white/10 rounded" title="Zoom out"><ZoomOut className="w-4 h-4" /></button><button onClick={() => setPopZoom(value => Math.min(3, value + .25))} className="p-2 bg-white/10 rounded" title="Zoom in"><ZoomIn className="w-4 h-4" /></button><button onClick={() => setPopRotation(value => (value + 90) % 360)} className="p-2 bg-white/10 rounded" title="Rotate"><RotateCw className="w-4 h-4" /></button></div>}</div>
+                <div className="flex-1 min-h-[580px] bg-[#333] rounded-xl overflow-auto flex items-center justify-center">
+                  {popPreviewLoading ? <p className="text-white text-xs">Loading secure preview…</p> : popPreview?.type === 'application/pdf' ? <iframe title="POP PDF preview" src={popPreview.url} className="w-full h-[650px] bg-white" /> : popPreview?.type.startsWith('image/') ? <img src={popPreview.url} alt="Submitted proof of payment" className="max-w-none transition-transform duration-200" style={{ transform: `rotate(${popRotation}deg) scale(${popZoom})`, maxHeight: popZoom <= 1 ? '620px' : 'none' }} /> : <p className="text-white text-xs">Preview unavailable for this file format.</p>}
+                </div>
+              </section>
+              <aside className="p-5 space-y-5 bg-[#FAFAFA]">
+                {reviewingDuplicateCount > 0 && <div className="p-3 border border-[#CC0000] bg-[#FFF5F5] text-[#9B1C1C] rounded-xl text-xs font-bold">Duplicate warning: this file hash matches {reviewingDuplicateCount} previous payment submission{reviewingDuplicateCount === 1 ? '' : 's'}.</div>}
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-1 gap-4">
+                  <section className="p-4 bg-white border border-[#E0E0E0] rounded-xl text-xs space-y-2"><h4 className="font-bold uppercase text-[10px] tracking-wider">Student & Application</h4><p><strong>{reviewingApplication?.firstName} {reviewingApplication?.lastName}</strong><br />{reviewingApplication?.email}<br />{reviewingApplication?.whatsapp}</p><p className="font-mono text-[10px] text-[#707070]">Application: {reviewingApplication?.referenceNumber}<br />Cohort: {reviewingCohort?.name}<br />Status: {reviewingApplication?.status}</p></section>
+                  <section className="p-4 bg-white border border-[#E0E0E0] rounded-xl text-xs space-y-2"><h4 className="font-bold uppercase text-[10px] tracking-wider">Invoice & Banking</h4><p className="font-mono"><strong>{reviewingInvoice?.invoiceNumber}</strong><br />Invoice total: R{reviewingInvoice?.amountZAR.toLocaleString()}<br />Paid: R{(reviewingInvoice?.paidZAR ?? 0).toLocaleString()}<br />Balance: R{reviewingInvoice?.balanceZAR.toLocaleString()}</p><p className="text-[#707070]">{settings.bankName}<br />{settings.accountName}<br />Account: {settings.accountNumber}<br />Branch: {settings.branchCode}</p></section>
+                </div>
+                <section className="p-4 bg-white border border-[#E0E0E0] rounded-xl space-y-3 text-xs"><h4 className="font-bold uppercase text-[10px] tracking-wider">Verification</h4><div className="grid grid-cols-2 gap-2 font-mono text-[10px]"><span>Submitted amount</span><strong className="text-right">R{reviewingPayment.amountZAR.toLocaleString()}</strong><span>EFT reference</span><strong className="text-right break-all">{reviewingPayment.eftReference}</strong><span>File hash</span><strong className="text-right" title={reviewingPayment.sha256}>{reviewingPayment.sha256.slice(0, 12)}…</strong></div><label className="space-y-1 block"><span className="font-bold uppercase text-[10px]">Confirmed amount received</span><input type="number" min="0.01" step="0.01" value={confirmedPopAmount} onChange={event => setConfirmedPopAmount(event.target.value)} className="w-full p-3 border border-[#E0E0E0] rounded-xl font-mono font-bold" /></label></section>
+                {currentRole === 'ADMIN' && <section className="space-y-3"><button disabled={!Number.isFinite(Number(confirmedPopAmount)) || Number(confirmedPopAmount) <= 0 || reviewingDuplicateCount > 0} onClick={async () => { if (await verifySubmittedPayment(reviewingPayment.id, Number(confirmedPopAmount))) closePopReview(); }} className="w-full py-3 bg-black disabled:bg-[#D0D0D0] text-white disabled:text-[#707070] rounded-xl font-bold text-xs uppercase tracking-wider">Confirm Payment & Recalculate Balance</button><div className="p-4 border border-[#E0E0E0] bg-white rounded-xl space-y-2"><label className="font-bold uppercase text-[10px]">Mandatory rejection reason</label><textarea value={popRejectionReason} onChange={event => setPopRejectionReason(event.target.value)} rows={3} placeholder="Explain clearly what the student must correct…" className="w-full p-3 border border-[#E0E0E0] rounded-xl text-xs" /><button disabled={!popRejectionReason.trim()} onClick={async () => { if (await rejectSubmittedPayment(reviewingPayment.id, popRejectionReason.trim())) closePopReview(); }} className="w-full py-2.5 border border-[#CC0000] disabled:border-[#D0D0D0] text-[#CC0000] disabled:text-[#A0A0A0] rounded-xl font-bold text-[10px] uppercase">Reject POP & Email Student</button></div></section>}
+              </aside>
             </div>
           </div>
         </div>

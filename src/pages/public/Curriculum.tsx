@@ -1,6 +1,7 @@
-import React from 'react';
+import React, { useMemo, useState } from 'react';
 import { useApp } from '../../context/AppContext';
-import { 
+import { buildCurriculumSchedule } from '../../lib/curriculumSchedule';
+import {
   Server, 
   Clock, 
   Calendar, 
@@ -15,8 +16,25 @@ import {
   Sparkles
 } from 'lucide-react';
 
+const selectNextCohort = <T extends { status?: string; startDate?: string }>(cohorts: T[] = []) => {
+  const byStartDate = (left: T, right: T) => (left.startDate || '').localeCompare(right.startDate || '');
+  return cohorts
+    .filter(cohort => !['Closed', 'Completed'].includes(cohort.status || ''))
+    .sort(byStartDate)[0] || [...cohorts].sort(byStartDate)[0];
+};
+
+const formatCohortDate = (value?: string) => {
+  if (!value) return 'To be announced';
+  const date = new Date(`${value}T12:00:00.000Z`);
+  return Number.isFinite(date.getTime())
+    ? date.toLocaleDateString('en-ZA', { day: '2-digit', month: 'short', year: 'numeric', timeZone: 'UTC' })
+    : value;
+};
+
 export const CourseDetail: React.FC = () => {
-  const { navigate, courseModules } = useApp();
+  const { navigate, courseModules, cohorts } = useApp();
+  const nextCohort = useMemo(() => selectNextCohort(cohorts), [cohorts]);
+  const scheduledModules = useMemo(() => buildCurriculumSchedule(courseModules || [], nextCohort), [courseModules, nextCohort]);
 
   return (
     <div className="space-y-16 py-12 bg-[#FFFFFF] text-[#1A1A1A]">
@@ -41,16 +59,16 @@ export const CourseDetail: React.FC = () => {
               <strong className="text-[#000000] text-xs">8–12 Weeks</strong>
             </div>
             <div className="p-3.5 bg-[#FFFFFF] rounded-xl border border-[#E0E0E0]">
-              <span className="text-[#A0A0A0] block text-[10px] uppercase tracking-wider">Schedule:</span>
-              <strong className="text-[#000000] text-xs">Sat + Tue Evenings</strong>
+              <span className="text-[#A0A0A0] block text-[10px] uppercase tracking-wider">Next Cohort:</span>
+              <strong className="text-[#000000] text-xs">{nextCohort?.name || 'To be announced'}</strong>
             </div>
             <div className="p-3.5 bg-[#FFFFFF] rounded-xl border border-[#E0E0E0]">
               <span className="text-[#A0A0A0] block text-[10px] uppercase tracking-wider">Level:</span>
               <strong className="text-[#000000] text-xs">Beginner → Junior IT</strong>
             </div>
             <div className="p-3.5 bg-[#FFFFFF] rounded-xl border border-[#E0E0E0]">
-              <span className="text-[#A0A0A0] block text-[10px] uppercase tracking-wider">Intake:</span>
-              <strong className="text-[#000000] text-xs">October 2026</strong>
+              <span className="text-[#A0A0A0] block text-[10px] uppercase tracking-wider">Course Dates:</span>
+              <strong className="text-[#000000] text-xs">{nextCohort ? `${formatCohortDate(nextCohort.startDate)} - ${formatCohortDate(nextCohort.endDate)}` : 'To be announced'}</strong>
             </div>
           </div>
 
@@ -123,6 +141,11 @@ export const CourseDetail: React.FC = () => {
             <h2 className="text-2xl sm:text-3xl font-light text-[#000000] tracking-tight">
               Curriculum Overview
             </h2>
+            {nextCohort && (
+              <p className="text-xs text-[#707070] mt-2">
+                Dates shown for {nextCohort.name}. They update automatically when the cohort dates change.
+              </p>
+            )}
           </div>
           <button
             onClick={() => navigate('/courses/it-support/curriculum')}
@@ -134,13 +157,13 @@ export const CourseDetail: React.FC = () => {
         </div>
 
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
-          {courseModules.map((mod) => (
+          {scheduledModules.map((mod) => (
             <div key={mod.number} className="bg-[#FFFFFF] p-5 rounded-2xl border border-[#F0F0F0] hover:border-[#000000] space-y-3 transition">
               <div className="flex items-center justify-between">
                 <span className="text-[10px] font-mono font-bold bg-[#FAFAFA] text-[#000000] border border-[#E0E0E0] px-2 py-0.5 rounded">
                   Module {mod.number}
                 </span>
-                <span className="text-[10px] font-mono text-[#A0A0A0]">{mod.duration}</span>
+                <span className="text-[10px] font-mono text-[#A0A0A0]">{mod.scheduleLabel}</span>
               </div>
               <h3 className="font-bold text-sm text-[#000000]">{mod.title}</h3>
               <p className="text-xs text-[#707070] line-clamp-2">{mod.summary}</p>
@@ -216,7 +239,11 @@ export const CourseDetail: React.FC = () => {
 };
 
 export const Curriculum: React.FC = () => {
-  const { navigate, courseModules } = useApp();
+  const { navigate, courseModules, cohorts } = useApp();
+  const defaultCohort = useMemo(() => selectNextCohort(cohorts), [cohorts]);
+  const [selectedCohortId, setSelectedCohortId] = useState(defaultCohort?.id || '');
+  const selectedCohort = cohorts.find(cohort => cohort.id === selectedCohortId) || defaultCohort;
+  const scheduledModules = useMemo(() => buildCurriculumSchedule(courseModules || [], selectedCohort), [courseModules, selectedCohort]);
 
   return (
     <div className="space-y-16 py-12 bg-[#FFFFFF] text-[#1A1A1A]">
@@ -238,12 +265,13 @@ export const Curriculum: React.FC = () => {
           <p className="text-sm text-[#707070] max-w-3xl">
             Each module is anchored by three concrete pillars: theoretical foundations, hands-on VMware/Cloud labs, and realistic enterprise helpdesk tickets.
           </p>
+          {selectedCohort && <div className="max-w-md space-y-1 pt-2"><label className="text-[10px] font-bold uppercase tracking-wider">Curriculum dates for</label><select value={selectedCohort.id} onChange={event => setSelectedCohortId(event.target.value)} className="w-full p-3 bg-white border border-[#E0E0E0] rounded-xl text-xs font-bold">{cohorts.map(cohort => <option key={cohort.id} value={cohort.id}>{cohort.name} ({cohort.startDate} - {cohort.endDate})</option>)}</select></div>}
         </div>
       </div>
 
       {/* 15 Modules Timeline */}
       <div className="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8 space-y-8">
-        {courseModules.map((module) => (
+        {scheduledModules.map((module) => (
           <div 
             key={module.number}
             className="bg-[#FFFFFF] rounded-2xl border border-[#E0E0E0] p-6 sm:p-8 space-y-6 hover:border-[#000000] transition"
@@ -256,7 +284,7 @@ export const Curriculum: React.FC = () => {
                 </span>
                 <div>
                   <h2 className="text-lg font-bold text-[#000000]">{module.title}</h2>
-                  <span className="text-xs text-[#707070] font-mono">{module.duration}</span>
+                  <span className="text-xs text-[#707070] font-mono">{module.scheduleLabel}</span>
                 </div>
               </div>
 

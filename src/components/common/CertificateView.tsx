@@ -129,7 +129,7 @@ export const CertificateView: React.FC<CertificateViewProps> = ({ certificate, a
           {/* Instructor Signature */}
           <div className="space-y-1">
             <div className="font-serif italic text-2xl text-[#1A1A1A] border-b border-[#A0A0A0] pb-1">
-              David Kitching
+              {certificate.instructorName}
             </div>
             <p className="text-xs font-bold text-[#000000]">{certificate.instructorName}</p>
             <p className="text-[10px] text-[#707070]">TechLabs Academy SA Lead Instructor</p>

@@ -120,7 +120,7 @@ export const Career: React.FC = () => {
               </div>
               <h3 className="text-sm font-bold text-[#000000]">Technical Mock Interview</h3>
               <p className="text-[#707070] leading-relaxed">
-                Practice answering real interview scenarios with Lead Instructor Dave: "Walk me through how you troubleshoot a user whose Outlook is stuck on Disconnected."
+                Practice answering real interview scenarios with your TechLabs instructor: "Walk me through how you troubleshoot a user whose Outlook is stuck on Disconnected."
               </p>
             </div>
 
@@ -151,7 +151,7 @@ export const Career: React.FC = () => {
 };
 
 export const About: React.FC = () => {
-  const { navigate } = useApp();
+  const { navigate, settings } = useApp();
 
   return (
     <div className="space-y-16 py-12 bg-[#FFFFFF] text-[#1A1A1A]">
@@ -188,11 +188,11 @@ export const About: React.FC = () => {
             <span className="text-[10px] font-mono uppercase tracking-[0.2em] text-[#A0A0A0] font-bold">
               Lead Technical Instructor
             </span>
-            <h3 className="text-2xl font-bold text-[#000000]">David Kitching</h3>
+            <h3 className="text-2xl font-bold text-[#000000]">{settings.leadInstructorName || 'TechLabs Instruction Team'}</h3>
             <p className="text-xs text-[#707070]">Senior Systems Administrator & IT Mentor</p>
           </div>
           <p className="text-xs text-[#707070] leading-relaxed">
-            With over 12 years of hands-on enterprise infrastructure experience across South African Managed Service Providers (MSPs), corporate networks, Windows Server environments, and Microsoft Cloud migrations, Dave guides every cohort with real-world war stories and practical debugging techniques.
+            Learn from experienced technical instructors with hands-on enterprise infrastructure backgrounds across South African managed services, corporate networks, Windows Server environments, and Microsoft Cloud migrations.
           </p>
           <div className="pt-2 border-t border-[#E0E0E0] flex items-center gap-4 text-xs font-mono text-[#000000]">
             <span>✔ 100% Practical Mentorship</span>

@@ -6,6 +6,7 @@ export type ApplicationStatus =
   | 'APPROVED'
   | 'PAYMENT_REQUIRED'
   | 'ENROLLED'
+  | 'COMPLETED'
   | 'WAITLISTED'
   | 'REJECTED'
   | 'WITHDRAWN';
@@ -38,7 +39,7 @@ export type CourseTier = 'STARTER' | 'PROFESSIONAL' | 'CAREER_ACCELERATOR';
 
 export type PaymentOption = 'FULL' | 'DEPOSIT' | 'INSTALLMENTS';
 
-export type PaymentStatus = 'PENDING' | 'VERIFIED' | 'FAILED' | 'REFUNDED';
+export type PaymentStatus = 'PENDING' | 'AWAITING_VERIFICATION' | 'PARTIALLY_PAID' | 'VERIFIED' | 'FAILED' | 'REFUNDED';
 
 export type AttendanceStatus = 'PRESENT' | 'LATE' | 'ABSENT' | 'EXCUSED';
 
@@ -73,6 +74,7 @@ export interface AcademySettings {
   academyName?: string;
   location?: string;
   companyName?: string;
+  leadInstructorName?: string;
   flashSale?: FlashSaleConfig;
 }
 
@@ -85,6 +87,59 @@ export interface User {
   whatsapp?: string;
   enrolledCourseId?: string;
   cohortId?: string;
+}
+
+export interface StudentCredential {
+  applicationId: string;
+  email: string;
+  passwordHash?: string;
+  emailVerifiedAt?: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export type AuthTokenPurpose = 'SETUP' | 'VERIFY_EMAIL' | 'RESET_PASSWORD' | 'MAGIC_LOGIN';
+
+export interface AuthTokenRecord {
+  id: string;
+  applicationId: string;
+  tokenHash: string;
+  purpose: AuthTokenPurpose;
+  expiresAt: string;
+  createdAt: string;
+  usedAt?: string;
+}
+
+export interface SessionRecord {
+  id: string;
+  tokenHash: string;
+  role: 'ADMIN' | 'INSTRUCTOR' | 'STUDENT';
+  userId: string;
+  email: string;
+  expiresAt: string;
+  createdAt: string;
+}
+
+export interface StaffAccount {
+  id: string;
+  name: string;
+  email: string;
+  role: 'ADMIN' | 'INSTRUCTOR';
+  passwordHash: string;
+  active: boolean;
+  createdAt: string;
+  createdBy: string;
+}
+
+export interface EmailDeliveryRecord {
+  id: string;
+  providerId?: string;
+  recipient: string;
+  subject: string;
+  category: 'APPLICATION_SUBMITTED' | 'APPLICATION_STATUS';
+  status: 'SENT' | 'DELIVERED' | 'BOUNCED' | 'SUPPRESSED' | 'COMPLAINED' | 'FAILED';
+  reason?: string;
+  createdAt: string;
 }
 
 export interface Lead {
@@ -138,6 +193,68 @@ export interface Application {
   submissionDate: string;
   adminNotes?: string;
   paymentOption?: PaymentOption;
+  paymentRemindersPaused?: boolean;
+  assignedStaffId?: string;
+  assignedStaffName?: string;
+  assignedStaffEmail?: string;
+}
+
+export interface AdmissionNote {
+  id: string;
+  applicationId: string;
+  body: string;
+  authorEmail: string;
+  createdAt: string;
+}
+
+export interface AdmissionTask {
+  id: string;
+  applicationId: string;
+  title: string;
+  dueDate: string;
+  priority: 'LOW' | 'MEDIUM' | 'HIGH';
+  status: 'OPEN' | 'COMPLETED';
+  assignedStaffId: string;
+  assignedStaffName: string;
+  assignedStaffEmail: string;
+  createdBy: string;
+  createdAt: string;
+  completedAt?: string;
+  completedBy?: string;
+}
+
+export type PaymentReminderType = 'DEPOSIT_DUE_SOON' | 'DEPOSIT_OVERDUE' | 'BALANCE_BEFORE_WEEK_4' | 'INSTALLMENT_DUE_SOON' | 'INSTALLMENT_OVERDUE';
+
+export interface PaymentReminderRecord {
+  id: string;
+  applicationId: string;
+  invoiceId: string;
+  type: PaymentReminderType;
+  sentAt: string;
+  providerId?: string;
+  installmentId?: string;
+}
+
+export interface AuditLogRecord {
+  id: string;
+  action: string;
+  actorEmail: string;
+  entityType: string;
+  entityId: string;
+  summary: string;
+  changes?: Record<string, { before: unknown; after: unknown }>;
+  ipAddress?: string;
+  createdAt: string;
+}
+
+export interface StudentTimelineEvent {
+  id: string;
+  occurredAt: string;
+  category: 'APPLICATION' | 'HARDWARE' | 'EMAIL' | 'INVOICE' | 'PAYMENT' | 'ENROLLMENT' | 'ATTENDANCE' | 'ASSESSMENT' | 'NOTE';
+  title: string;
+  detail: string;
+  status?: string;
+  actorEmail?: string;
 }
 
 export interface Cohort {
@@ -219,10 +336,12 @@ export interface AttendanceRecord {
 export interface Invoice {
   id: string;
   invoiceNumber: string; // e.g. "INV-TLS-2026-081"
+  invoiceDate?: string;
   studentName: string;
   studentEmail: string;
   courseTier: CourseTier;
   amountZAR: number;
+  paidZAR?: number;
   depositZAR: number;
   balanceZAR: number;
   paymentOption: PaymentOption;
@@ -233,8 +352,41 @@ export interface Invoice {
   proofOfPaymentUrl?: string;
 }
 
+export interface PaymentInstallment {
+  id: string;
+  invoiceId: string;
+  sequence: number;
+  label: string;
+  amountZAR: number;
+  paidZAR: number;
+  dueDate: string;
+  status: 'PENDING' | 'PARTIALLY_PAID' | 'PAID' | 'OVERDUE';
+  paidAt?: string;
+  createdAt: string;
+}
+
+export interface PaymentRecord {
+  id: string;
+  invoiceId: string;
+  studentId: string;
+  amountZAR: number;
+  type: 'DEPOSIT' | 'BALANCE';
+  status: 'SUBMITTED' | 'VERIFIED' | 'REJECTED';
+  originalFileName: string;
+  storageKey: string;
+  mimeType: 'application/pdf' | 'image/jpeg' | 'image/png';
+  sizeBytes: number;
+  sha256: string;
+  eftReference: string;
+  submittedAt: string;
+  verifiedAt?: string;
+  verifiedBy?: string;
+  rejectionReason?: string;
+}
+
 export interface Assessment {
   id: string;
+  studentId?: string;
   title: string;
   moduleNumber: number;
   type: 'Practical Lab Fix' | 'Scenario Simulation' | 'Troubleshooting Documentation';
@@ -248,6 +400,7 @@ export interface Assessment {
 
 export interface Certificate {
   id: string;
+  studentId?: string;
   certificateNumber: string; // e.g. "TLS-2026-00124"
   studentName: string;
   courseName: string;
@@ -322,4 +475,3 @@ export interface VirtualLearningSettings {
   createdAt: string;
   updatedAt: string;
 }
-

@@ -1,5 +1,5 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
-import { apiRequest } from '../lib/api';
+import { apiRequest, apiUpload, setApiSession } from '../lib/api';
 import {
   User,
   Lead,
@@ -19,6 +19,7 @@ import {
   CourseModule,
   AcademySettings,
   FlashSaleConfig
+  ,PaymentRecord
 } from '../types';
 
 export const getTierPrice = (
@@ -65,8 +66,8 @@ const DEFAULT_STUDENT_USER: User = {
 
 const DEFAULT_ADMIN_USER: User = {
   id: 'usr-admin-01',
-  name: 'David Kitching',
-  email: 'dave@techlabs.co.za',
+  name: 'TechLabs Administrator',
+  email: 'admin@techlabs.co.za',
   role: 'ADMIN',
   whatsapp: '+27820000002'
 };
@@ -104,9 +105,9 @@ interface AppContextType {
   currentRole: Role;
   setCurrentRole: (role: Role) => void;
   loginAsStudent: () => void;
-  studentLogin: (email: string, referenceNumber: string) => boolean;
+  studentLogin: (email: string, password: string) => Promise<boolean>;
   loginAsAdmin: () => void;
-  adminLogin: (email: string, password: string) => boolean;
+  adminLogin: (email: string, password: string) => Promise<boolean>;
   logout: () => void;
   students: StudentProfile[];
   
@@ -122,14 +123,20 @@ interface AppContextType {
   certificates: Certificate[];
   attendance: AttendanceRecord[];
   courseModules: CourseModule[];
+  payments: PaymentRecord[];
+  paymentSettings?: Pick<AcademySettings, 'bankName' | 'accountName' | 'accountNumber' | 'branchCode' | 'referenceFormat'>;
   
   // Actions
   addLead: (lead: Omit<Lead, 'id' | 'createdAt' | 'notes'>) => void;
   updateLeadStatus: (id: string, status: LeadStatus) => void;
   addLeadNote: (id: string, note: string) => void;
   
-  submitApplication: (appData: Omit<Application, 'id' | 'referenceNumber' | 'submissionDate' | 'status'>) => string;
+  submitApplication: (appData: Omit<Application, 'id' | 'referenceNumber' | 'submissionDate' | 'status'>) => Promise<string>;
   updateApplicationStatus: (id: string, status: ApplicationStatus, notes?: string) => void;
+  recordApplicationDecision: (id: string, status: 'REJECTED' | 'WAITLISTED' | 'WITHDRAWN', reason: string) => Promise<boolean>;
+  transferApplicationCohort: (id: string, cohortId: string, reason: string) => Promise<boolean>;
+  updateStudentRecord: (id: string, updates: Partial<Application>) => Promise<boolean>;
+  setPaymentRemindersPaused: (id: string, paused: boolean) => Promise<boolean>;
   sendApprovalEmail: (app: Application, type: 'APPROVED' | 'REJECTED' | 'WAITLISTED') => Promise<boolean>;
   
   updateTicketResolution: (ticketId: string, rootCause: string, resolutionNotes: string) => void;
@@ -143,7 +150,9 @@ interface AppContextType {
   qrCheckIn: (studentId: string) => boolean;
   
   recordPayment: (invoiceId: string, paymentMethod: 'EFT' | 'Yoco' | 'PayFast' | 'Card') => void;
-  uploadProofOfPayment: (invoiceId: string, fileName: string) => void;
+  uploadProofOfPayment: (invoiceId: string, file: File, eftReference: string) => Promise<boolean>;
+  verifySubmittedPayment: (paymentId: string, amountZAR: number) => Promise<boolean>;
+  rejectSubmittedPayment: (paymentId: string, reason: string) => Promise<boolean>;
   verifyInvoicePayment: (invoiceId: string) => void;
   settleInvoiceBalance: (invoiceId: string) => void;
   
@@ -162,6 +171,7 @@ interface AppContextType {
   // Settings & Toasts
   settings: AcademySettings;
   updateSettings: (newSettings: Partial<AcademySettings>) => void;
+  saveSettings: () => Promise<boolean>;
   toasts: ToastMessage[];
   showToast: (type: 'success' | 'info' | 'error', title: string, message: string) => void;
   dismissToast: (id: string) => void;
@@ -179,7 +189,7 @@ const INITIAL_ONBOARDING_STEPS: OnboardingStep[] = [
   { id: 7, title: 'Verify Hardware Virtualization', description: 'Ensure VT-x / AMD-V is enabled in your laptop BIOS/UEFI.', completed: true },
   { id: 8, title: 'Download Windows Server & Win11 ISOs', description: 'Download the official Microsoft evaluation ISOs for your lab build.', completed: false, actionLabel: 'ISO Mirrors', actionUrl: '/student/resources' },
   { id: 9, title: 'Deploy Base DC01 Virtual Machine', description: 'Build your initial Windows Server 2022 template machine.', completed: false, actionLabel: 'Open Lab Guide', actionUrl: '/student/labs' },
-  { id: 10, title: 'Attend Live Virtual Orientation', description: 'Meet Lead Instructor Dave Kitching for the kickoff orientation call.', completed: false },
+  { id: 10, title: 'Attend Live Virtual Orientation', description: 'Meet your TechLabs instructor for the cohort kickoff orientation call.', completed: false },
   { id: 11, title: 'Unlock First Class Session', description: 'Module 1 & 2 hands-on lab environment ready for kickoff.', completed: false }
 ];
 
@@ -187,16 +197,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const [hasHydrated, setHasHydrated] = useState(false);
   const hasPersistedOnceRef = React.useRef(false);
 
-  const persistCollection = async <T,>(collection: 'leads' | 'applications' | 'cohorts' | 'tickets' | 'labs' | 'invoices' | 'assessments' | 'certificates' | 'attendance' | 'courseModules', value: T) => {
-    try {
-      await apiRequest(`/${collection}`, {
-        method: 'POST',
-        body: JSON.stringify(value)
-      });
-    } catch (error) {
-      console.warn(`Unable to persist ${collection} to the backend:`, error);
-    }
-  };
+  const persistRecord = (collection: string, id: string, updates: unknown) =>
+    apiRequest(`/${collection}/${encodeURIComponent(id)}`, { method: 'PUT', body: JSON.stringify(updates) })
+      .catch(error => console.warn(`Unable to update ${collection}/${id}:`, error));
 
   const hydrateFromApi = async () => {
     try {
@@ -213,6 +216,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         certificates?: Certificate[];
         attendance?: AttendanceRecord[];
         courseModules?: CourseModule[];
+        settings?: Partial<AcademySettings>;
       }>('/data');
 
       if (data.leads && data.leads.length > 0) setLeads(data.leads);
@@ -225,6 +229,34 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       if (data.certificates && data.certificates.length > 0) setCertificates(data.certificates);
       if (data.attendance && data.attendance.length > 0) setAttendance(data.attendance);
       if (data.courseModules && data.courseModules.length > 0) setCourseModules(data.courseModules);
+      if (data.settings) setSettings(current => ({ ...current, ...data.settings, flashSale: data.settings.flashSale ?? { ...current.flashSale!, enabled: false } }));
+
+      if (localStorage.getItem('techlabs_session')) {
+        try {
+          const restored = await apiRequest<{ user: User }>('/session');
+          setCurrentUser(restored.user);
+          setCurrentRole(restored.user.role);
+          if (restored.user.role === 'ADMIN' || restored.user.role === 'INSTRUCTOR') {
+            const adminData = await apiRequest<any>('/admin/data');
+            setLeads(adminData.leads || []); setApplications(adminData.applications || []); setCohorts(adminData.cohorts || []);
+            setTickets(adminData.tickets || []); setLabs(adminData.labs || []); setInvoices(adminData.invoices || []);
+            setAssessments(adminData.assessments || []); setCertificates(adminData.certificates || []);
+            setAttendance(adminData.attendance || []); setCourseModules(adminData.courseModules || []);
+            setPayments(adminData.payments || []);
+            if (adminData.academySettings) setSettings(adminData.academySettings);
+          } else if (restored.user.role === 'STUDENT') {
+            const studentData = await apiRequest<any>('/student/data');
+            setApplications(studentData.application ? [studentData.application] : []); setInvoices(studentData.invoices || []);
+            setTickets(studentData.tickets || []); setAttendance(studentData.attendance || []);
+            setAssessments(studentData.assessments || []); setCertificates(studentData.certificates || []);
+            setPayments(studentData.payments || []); setPaymentSettings(studentData.paymentSettings);
+          }
+        } catch {
+          setApiSession();
+          setCurrentUser(null);
+          setCurrentRole('VISITOR');
+        }
+      }
     } catch (error) {
       console.warn('Falling back to localStorage data because the backend is unavailable:', error);
     } finally {
@@ -287,73 +319,42 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const [currentRole, setCurrentRole] = useState<Role>('VISITOR');
   const [currentUser, setCurrentUser] = useState<User | null>(null);
 
-  const loginAsStudent = () => {
-    setCurrentRole('STUDENT');
-    setCurrentUser(DEFAULT_STUDENT_USER);
-    showToast('success', 'Logged In as Student', 'Welcome back, Bongani Dlamini!');
-    navigate('/student');
+  const loginAsStudent = () => navigate('/student/login');
+
+  const studentLogin = async (email: string, password: string): Promise<boolean> => {
+    try {
+      const response = await apiRequest<{ token: string; user: User }>('/auth/student', { method: 'POST', body: JSON.stringify({ email, password }) });
+      setApiSession(response.token);
+      setCurrentRole('STUDENT'); setCurrentUser(response.user);
+      const data = await apiRequest<any>('/student/data');
+      setApplications(data.application ? [data.application] : []); setInvoices(data.invoices || []); setTickets(data.tickets || []);
+      setAttendance(data.attendance || []); setAssessments(data.assessments || []); setCertificates(data.certificates || []);
+      setPayments(data.payments || []); setPaymentSettings(data.paymentSettings);
+      showToast('success', 'Signed In', `Welcome back, ${response.user.name.split(' ')[0]}!`); navigate('/student'); return true;
+    } catch {
+      showToast('error', 'Sign In Failed', 'Check your email and password, or use the recovery options below.'); return false;
+    }
   };
 
-  const studentLogin = (email: string, referenceNumber: string): boolean => {
-    const cleanEmail = email.trim().toLowerCase();
-    const cleanRef = referenceNumber.trim().toUpperCase();
+  const loginAsAdmin = () => navigate('/admin/login');
 
-    // Find applicant matching email & reference
-    const app = applications.find(
-      a => a.email.trim().toLowerCase() === cleanEmail && a.referenceNumber.trim().toUpperCase() === cleanRef
-    );
-
-    if (app) {
-      const studentUser: User = {
-        id: app.id,
-        name: `${app.firstName} ${app.lastName}`,
-        email: app.email,
-        role: 'STUDENT',
-        whatsapp: app.whatsapp,
-        cohortId: app.cohortId || 'cohort-oct-2026'
-      };
-
-      setCurrentRole('STUDENT');
-      setCurrentUser(studentUser);
-      showToast('success', 'Signed In', `Welcome back, ${app.firstName}!`);
-      navigate('/student');
-      return true;
+  const adminLogin = async (email: string, password: string): Promise<boolean> => {
+    try {
+      const response = await apiRequest<{ token: string; user: User }>('/auth/admin', { method: 'POST', body: JSON.stringify({ email, password }) });
+      setApiSession(response.token); setCurrentRole(response.user.role); setCurrentUser(response.user);
+      const data = await apiRequest<any>('/admin/data');
+      setLeads(data.leads || []); setApplications(data.applications || []); setCohorts(data.cohorts || []); setTickets(data.tickets || []); setLabs(data.labs || []); setInvoices(data.invoices || []); setAssessments(data.assessments || []); setCertificates(data.certificates || []); setAttendance(data.attendance || []); setCourseModules(data.courseModules || []);
+      setPayments(data.payments || []);
+      if (data.academySettings) setSettings(data.academySettings);
+      showToast('success', 'Admin Signed In', 'Welcome to the TechLabs admissions console.'); navigate('/admin'); return true;
+    } catch {
+      showToast('error', 'Access Denied', 'Invalid administrator credentials.'); return false;
     }
-
-    // Default student user fallback for demo/testing
-    if (cleanEmail === DEFAULT_STUDENT_USER.email.toLowerCase()) {
-      setCurrentRole('STUDENT');
-      setCurrentUser(DEFAULT_STUDENT_USER);
-      showToast('success', 'Signed In', `Welcome back, ${DEFAULT_STUDENT_USER.name}!`);
-      navigate('/student');
-      return true;
-    }
-
-    showToast('error', 'Sign In Failed', 'No application found with matching Email and Reference Number.');
-    return false;
-  };
-
-  const loginAsAdmin = () => {
-    setCurrentRole('ADMIN');
-    setCurrentUser(DEFAULT_ADMIN_USER);
-    showToast('success', 'Logged In as Admin', 'Welcome to TechLabs Administration, David Kitching.');
-    navigate('/admin');
-  };
-
-  const adminLogin = (email: string, password: string): boolean => {
-    if (email.trim().toLowerCase() === DEFAULT_ADMIN_USER.email.toLowerCase() && password === 'admin123') {
-      setCurrentRole('ADMIN');
-      setCurrentUser(DEFAULT_ADMIN_USER);
-      showToast('success', 'Admin Signed In', 'Welcome back to the TechLabs admissions console.');
-      navigate('/admin');
-      return true;
-    }
-
-    showToast('error', 'Access Denied', 'Invalid admin credentials. Use the TechLabs admin account details.');
-    return false;
   };
 
   const logout = () => {
+    void apiRequest('/auth/logout', { method: 'POST' }).catch(() => undefined);
+    setApiSession();
     setCurrentRole('VISITOR');
     setCurrentUser(null);
     showToast('info', 'Logged Out', 'You have been signed out successfully.');
@@ -361,27 +362,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   };
 
   // State Collections with LocalStorage Persistence
-  const [leads, setLeads] = useState<Lead[]>(() => {
-    const saved = localStorage.getItem('techlabs_leads');
-    if (!saved) return INITIAL_LEADS;
-    try {
-      const parsed = JSON.parse(saved);
-      return Array.isArray(parsed) && parsed.length > 0 ? parsed : INITIAL_LEADS;
-    } catch {
-      return INITIAL_LEADS;
-    }
-  });
+  const [leads, setLeads] = useState<Lead[]>([]);
 
-  const [applications, setApplications] = useState<Application[]>(() => {
-    const saved = localStorage.getItem('techlabs_applications');
-    if (!saved) return INITIAL_APPLICATIONS;
-    try {
-      const parsed = JSON.parse(saved);
-      return Array.isArray(parsed) && parsed.length > 0 ? parsed : INITIAL_APPLICATIONS;
-    } catch {
-      return INITIAL_APPLICATIONS;
-    }
-  });
+  const [applications, setApplications] = useState<Application[]>([]);
 
   const [cohorts, setCohorts] = useState<Cohort[]>(() => {
     const saved = localStorage.getItem('techlabs_cohorts');
@@ -396,16 +379,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     }
   });
 
-  const [tickets, setTickets] = useState<SupportTicket[]>(() => {
-    const saved = localStorage.getItem('techlabs_tickets');
-    if (!saved) return REAL_SUPPORT_TICKETS;
-    try {
-      const parsed = JSON.parse(saved);
-      return Array.isArray(parsed) && parsed.length > 0 ? parsed : REAL_SUPPORT_TICKETS;
-    } catch {
-      return REAL_SUPPORT_TICKETS;
-    }
-  });
+  const [tickets, setTickets] = useState<SupportTicket[]>([]);
 
   const [labs, setLabs] = useState<PracticalLab[]>(() => {
     const saved = localStorage.getItem('techlabs_labs');
@@ -418,49 +392,15 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     }
   });
 
-  const [invoices, setInvoices] = useState<Invoice[]>(() => {
-    const saved = localStorage.getItem('techlabs_invoices');
-    if (!saved) return INITIAL_INVOICES;
-    try {
-      const parsed = JSON.parse(saved);
-      return Array.isArray(parsed) && parsed.length > 0 ? parsed : INITIAL_INVOICES;
-    } catch {
-      return INITIAL_INVOICES;
-    }
-  });
+  const [invoices, setInvoices] = useState<Invoice[]>([]);
+  const [payments, setPayments] = useState<PaymentRecord[]>([]);
+  const [paymentSettings, setPaymentSettings] = useState<AppContextType['paymentSettings']>();
 
-  const [assessments, setAssessments] = useState<Assessment[]>(() => {
-    const saved = localStorage.getItem('techlabs_assessments');
-    if (!saved) return INITIAL_ASSESSMENTS;
-    try {
-      const parsed = JSON.parse(saved);
-      return Array.isArray(parsed) && parsed.length > 0 ? parsed : INITIAL_ASSESSMENTS;
-    } catch {
-      return INITIAL_ASSESSMENTS;
-    }
-  });
+  const [assessments, setAssessments] = useState<Assessment[]>([]);
 
-  const [certificates, setCertificates] = useState<Certificate[]>(() => {
-    const saved = localStorage.getItem('techlabs_certificates');
-    if (!saved) return [SAMPLE_CERTIFICATE];
-    try {
-      const parsed = JSON.parse(saved);
-      return Array.isArray(parsed) && parsed.length > 0 ? parsed : [SAMPLE_CERTIFICATE];
-    } catch {
-      return [SAMPLE_CERTIFICATE];
-    }
-  });
+  const [certificates, setCertificates] = useState<Certificate[]>([]);
 
-  const [attendance, setAttendance] = useState<AttendanceRecord[]>(() => {
-    const saved = localStorage.getItem('techlabs_attendance');
-    if (!saved) return INITIAL_ATTENDANCE;
-    try {
-      const parsed = JSON.parse(saved);
-      return Array.isArray(parsed) && parsed.length > 0 ? parsed : INITIAL_ATTENDANCE;
-    } catch {
-      return INITIAL_ATTENDANCE;
-    }
-  });
+  const [attendance, setAttendance] = useState<AttendanceRecord[]>([]);
 
   const [courseModules, setCourseModules] = useState<CourseModule[]>(() => {
     const saved = localStorage.getItem('techlabs_course_modules');
@@ -479,38 +419,23 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   });
 
   const [settings, setSettings] = useState<AcademySettings>(() => {
-    const saved = localStorage.getItem('techlabs_settings');
     const defaults: AcademySettings = {
       whatsappNumber: (import.meta as any).env?.VITE_WHATSAPP_NUMBER || '+27821234567',
       admissionsEmail: (import.meta as any).env?.VITE_ACADEMY_EMAIL || 'admissions@techlabs.co.za',
       campusAddress: 'Cape Town, South Africa',
-      bankName: 'First National Bank (FNB)',
-      accountName: 'Madilotane Design (Pty) Ltd',
-      accountNumber: '62899451201',
-      branchCode: '250655',
+      bankName: 'Provided on your official invoice',
+      accountName: 'Configured by administration',
+      accountNumber: 'Contact admissions',
+      branchCode: 'Contact admissions',
       referenceFormat: 'TLS-ReferenceNumber (e.g. TLS-2026-0089)',
       flashSale: {
-        enabled: true,
+        enabled: false,
         title: '⚡ SPECIAL FLASH SALE: 20% OFF ALL COURSES & BOOTCAMP TIERS!',
         discountPercent: 20,
         endDate: new Date(Date.now() + 7 * 86400000).toISOString().split('T')[0],
         targetTiers: ['STARTER', 'PROFESSIONAL', 'CAREER_ACCELERATOR']
       }
     };
-    if (saved) {
-      try {
-        const parsed = JSON.parse(saved);
-        if (parsed.campusAddress && parsed.campusAddress.includes('Harrington')) {
-          parsed.campusAddress = 'Cape Town, South Africa';
-        }
-        if (parsed.accountName && (parsed.accountName.includes('TechLabs') || parsed.accountName.includes('TechLabs Academy SA'))) {
-          parsed.accountName = 'Madilotane Design (Pty) Ltd';
-        }
-        return { ...defaults, ...parsed };
-      } catch {
-        return defaults;
-      }
-    }
     return defaults;
   });
 
@@ -520,25 +445,14 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     void hydrateFromApi();
   }, []);
 
-  // Sync to localStorage + backend
+  // Public catalog preferences may be cached locally. Personal and operational
+  // records remain server-owned and are loaded only after authentication.
   useEffect(() => {
-    localStorage.setItem('techlabs_leads', JSON.stringify(leads));
     if (!hasHydrated) return;
-    if (!hasPersistedOnceRef.current) {
-      hasPersistedOnceRef.current = true;
-      return;
-    }
-    void persistCollection('leads', leads);
   }, [leads, hasHydrated]);
 
   useEffect(() => {
-    localStorage.setItem('techlabs_applications', JSON.stringify(applications));
     if (!hasHydrated) return;
-    if (!hasPersistedOnceRef.current) {
-      hasPersistedOnceRef.current = true;
-      return;
-    }
-    void persistCollection('applications', applications);
   }, [applications, hasHydrated]);
 
   useEffect(() => {
@@ -548,17 +462,10 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       hasPersistedOnceRef.current = true;
       return;
     }
-    void persistCollection('cohorts', cohorts);
   }, [cohorts, hasHydrated]);
 
   useEffect(() => {
-    localStorage.setItem('techlabs_tickets', JSON.stringify(tickets));
     if (!hasHydrated) return;
-    if (!hasPersistedOnceRef.current) {
-      hasPersistedOnceRef.current = true;
-      return;
-    }
-    void persistCollection('tickets', tickets);
   }, [tickets, hasHydrated]);
 
   useEffect(() => {
@@ -568,27 +475,14 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       hasPersistedOnceRef.current = true;
       return;
     }
-    void persistCollection('labs', labs);
   }, [labs, hasHydrated]);
 
   useEffect(() => {
-    localStorage.setItem('techlabs_invoices', JSON.stringify(invoices));
     if (!hasHydrated) return;
-    if (!hasPersistedOnceRef.current) {
-      hasPersistedOnceRef.current = true;
-      return;
-    }
-    void persistCollection('invoices', invoices);
   }, [invoices, hasHydrated]);
 
   useEffect(() => {
-    localStorage.setItem('techlabs_attendance', JSON.stringify(attendance));
     if (!hasHydrated) return;
-    if (!hasPersistedOnceRef.current) {
-      hasPersistedOnceRef.current = true;
-      return;
-    }
-    void persistCollection('attendance', attendance);
   }, [attendance, hasHydrated]);
 
   useEffect(() => {
@@ -598,7 +492,6 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       hasPersistedOnceRef.current = true;
       return;
     }
-    void persistCollection('courseModules', courseModules);
   }, [courseModules, hasHydrated]);
 
   const getProgressForCohort = (cohortId?: string) => {
@@ -672,10 +565,6 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     localStorage.setItem('techlabs_onboarding', JSON.stringify(onboardingSteps));
   }, [onboardingSteps]);
 
-  useEffect(() => {
-    localStorage.setItem('techlabs_settings', JSON.stringify(settings));
-  }, [settings]);
-
   // Toast Helpers
   const showToast = (type: 'success' | 'info' | 'error', title: string, message: string) => {
     const id = Date.now().toString() + Math.random().toString(36).substring(2, 5);
@@ -698,115 +587,90 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       notes: [`Inquiry received from ${leadData.source}`]
     };
     setLeads(prev => [newLead, ...prev]);
-    showToast('success', 'Inquiry Received', 'Thank you! A TechLabs admissions advisor will reach out via WhatsApp / Email shortly.');
+    void apiRequest<Lead>('/leads', { method: 'POST', body: JSON.stringify(leadData) })
+      .then(saved => setLeads(prev => [saved, ...prev.filter(item => item.id !== newLead.id)]))
+      .catch(() => showToast('error', 'Inquiry Not Saved', 'We could not save your inquiry. Please use the WhatsApp contact option.'));
+    showToast('success', 'Inquiry Received', 'Thank you. Your inquiry has been submitted to admissions.');
   };
 
   const updateLeadStatus = (id: string, status: LeadStatus) => {
     setLeads(prev => prev.map(l => l.id === id ? { ...l, status } : l));
+    void persistRecord('leads', id, { status });
     showToast('info', 'Lead Updated', `Lead status updated to ${status.replace('_', ' ')}`);
   };
 
   const addLeadNote = (id: string, note: string) => {
     setLeads(prev => prev.map(l => l.id === id ? { ...l, notes: [...l.notes, note] } : l));
+    const lead = leads.find(item => item.id === id);
+    if (lead) void persistRecord('leads', id, { notes: [...lead.notes, note] });
     showToast('success', 'Note Added', 'Advisor note saved to lead record.');
   };
 
-  const submitApplication = (appData: Omit<Application, 'id' | 'referenceNumber' | 'submissionDate' | 'status'>): string => {
-    const seq = applications.length + 90;
-    const ref = `TLS-2026-${String(seq).padStart(4, '0')}`;
-    const newApp: Application = {
-      ...appData,
-      id: 'app-' + Date.now(),
-      referenceNumber: ref,
-      submissionDate: new Date().toISOString().split('T')[0],
-      status: 'NEW'
-    };
-
-    setApplications(prev => [newApp, ...prev]);
-    void apiRequest('/applications', {
-      method: 'POST',
-      body: JSON.stringify(newApp)
-    }).catch((error) => {
-      console.warn('Application save to backend failed:', error);
+  const submitApplication = async (appData: Omit<Application, 'id' | 'referenceNumber' | 'submissionDate' | 'status'>): Promise<string> => {
+    const amountZAR = getTierPrice(appData.selectedTier, settings.flashSale).current;
+    const response = await apiRequest<{ application: Application; invoice: Invoice; emailDelivery: { sent: boolean } }>('/applications', {
+      method: 'POST', body: JSON.stringify({ ...appData, amountZAR })
     });
-
-    // Also link into Leads CRM
-    const newLead: Lead = {
-      id: 'lead-' + Date.now(),
-      name: `${appData.firstName} ${appData.lastName}`,
-      email: appData.email,
-      whatsapp: appData.whatsapp,
-      source: 'Website',
-      courseInterest: `Bootcamp (${appData.selectedTier})`,
-      status: 'APPLICATION_SUBMITTED',
-      notes: [`Application submitted with ref ${ref}. Laptop: ${appData.laptopBrand} (${appData.ramGB}GB RAM)`],
-      followUpDate: new Date(Date.now() + 86400000 * 2).toISOString().split('T')[0],
-      createdAt: new Date().toISOString().split('T')[0]
-    };
-    setLeads(prev => [newLead, ...prev]);
-    void apiRequest('/leads', {
-      method: 'POST',
-      body: JSON.stringify(newLead)
-    }).catch((error) => {
-      console.warn('Lead save to backend failed:', error);
-    });
-
-    // Create pending invoice with Flash Sale discount consideration
-    const total = getTierPrice(appData.selectedTier, settings.flashSale).current;
-    const isDeposit = appData.paymentOption === 'DEPOSIT';
-    const depositAmt = isDeposit ? 1000 : total;
-
-    const newInvoice: Invoice = {
-      id: 'inv-' + Date.now(),
-      invoiceNumber: `INV-${ref}`,
-      studentName: `${appData.firstName} ${appData.lastName}`,
-      studentEmail: appData.email,
-      courseTier: appData.selectedTier,
-      amountZAR: total,
-      depositZAR: depositAmt,
-      balanceZAR: total - depositAmt,
-      paymentOption: appData.paymentOption || 'DEPOSIT',
-      status: 'PENDING',
-      dueDate: new Date(Date.now() + 86400000 * 5).toISOString().split('T')[0],
-      paymentMethod: 'EFT'
-    };
-    setInvoices(prev => [newInvoice, ...prev]);
-    void apiRequest('/invoices', {
-      method: 'POST',
-      body: JSON.stringify(newInvoice)
-    }).catch((error) => {
-      console.warn('Invoice save to backend failed:', error);
-    });
-
-    // Sign in newly applied student
-    const studentUser: User = {
-      id: newApp.id,
-      name: `${newApp.firstName} ${newApp.lastName}`,
-      email: newApp.email,
-      role: 'STUDENT',
-      whatsapp: newApp.whatsapp,
-      cohortId: newApp.cohortId || 'cohort-oct-2026'
-    };
-    setCurrentRole('STUDENT');
-    setCurrentUser(studentUser);
-
-    showToast('success', 'Application Submitted!', `Your reference code is ${ref}. Check your email and WhatsApp for confirmation.`);
-    return ref;
+    setApplications(prev => [response.application, ...prev.filter(a => a.id !== response.application.id)]);
+    setInvoices(prev => [response.invoice, ...prev.filter(i => i.id !== response.invoice.id)]);
+    showToast('success', 'Application Submitted!', `Your reference code is ${response.application.referenceNumber}. Save it securely to access your application portal.`);
+    if (response.emailDelivery.sent) {
+      showToast('info', 'Confirmation Sent', `A confirmation email was sent to ${response.application.email}.`);
+    } else {
+      showToast('info', 'Save Your Reference', 'Email confirmation is temporarily unavailable, so please save the reference shown on this page.');
+    }
+    return response.application.referenceNumber;
   };
 
-  const updateApplicationStatus = (id: string, status: ApplicationStatus, notes?: string) => {
-    setApplications(prev => prev.map(a => {
-      if (a.id === id) {
-        return {
-          ...a,
-          status,
-          adminNotes: notes ? (a.adminNotes ? `${a.adminNotes} | ${notes}` : notes) : a.adminNotes
-        };
-      }
-      return a;
-    }));
+  const updateApplicationStatus = async (id: string, status: ApplicationStatus, notes?: string) => {
+    const application = applications.find(item => item.id === id);
+    try {
+      const response = await apiRequest<{ application: Application; cohort?: Cohort; waitlisted?: boolean }>(`/applications/${encodeURIComponent(id)}`, { method: 'PUT', body: JSON.stringify({ status, ...(notes ? { adminNotes: application?.adminNotes ? `${application.adminNotes} | ${notes}` : notes } : {}) }) });
+      setApplications(prev => prev.map(item => item.id === id ? response.application : item));
+      if (response.cohort) setCohorts(prev => prev.map(item => item.id === response.cohort!.id ? response.cohort! : item));
+      showToast(response.waitlisted ? 'info' : 'success', response.waitlisted ? 'Cohort Full' : 'Application Status Updated', response.waitlisted ? 'No seat was available, so the applicant was moved to the waitlist.' : `Application status changed to ${response.application.status}`);
+    } catch (error) { showToast('error', 'Status Update Failed', error instanceof Error ? error.message : 'The application status could not be updated.'); }
+  };
 
-    showToast('info', 'Application Status Updated', `Application status changed to ${status}`);
+  const recordApplicationDecision = async (id: string, status: 'REJECTED' | 'WAITLISTED' | 'WITHDRAWN', reason: string): Promise<boolean> => {
+    try {
+      const response = await apiRequest<{ application: Application; cohort?: Cohort; emailDelivery: { sent: boolean; reason?: string } }>(`/admin/applications/${encodeURIComponent(id)}/decision`, { method: 'POST', body: JSON.stringify({ status, reason }) });
+      setApplications(current => current.map(application => application.id === id ? response.application : application));
+      if (response.cohort) setCohorts(current => current.map(cohort => cohort.id === response.cohort!.id ? response.cohort! : cohort));
+      showToast(response.emailDelivery.sent ? 'success' : 'info', 'Decision Recorded', response.emailDelivery.sent ? 'The application was updated and the student was emailed.' : `The application was updated, but email delivery failed${response.emailDelivery.reason ? `: ${response.emailDelivery.reason}` : '.'}`);
+      return true;
+    } catch (error) { showToast('error', 'Decision Not Recorded', error instanceof Error ? error.message : 'The decision could not be saved.'); return false; }
+  };
+
+  const transferApplicationCohort = async (id: string, cohortId: string, reason: string): Promise<boolean> => {
+    try {
+      const response = await apiRequest<{ application: Application; sourceCohort?: Cohort; targetCohort: Cohort; emailDelivery: { sent: boolean; reason?: string } }>(`/admin/applications/${encodeURIComponent(id)}/transfer`, { method: 'POST', body: JSON.stringify({ cohortId, reason }) });
+      setApplications(current => current.map(application => application.id === id ? response.application : application));
+      setCohorts(current => current.map(cohort => cohort.id === response.targetCohort.id ? response.targetCohort : response.sourceCohort && cohort.id === response.sourceCohort.id ? response.sourceCohort : cohort));
+      showToast(response.emailDelivery.sent ? 'success' : 'info', 'Cohort Transfer Complete', response.emailDelivery.sent ? `Student moved to ${response.targetCohort.name} and notified by email.` : `Student moved to ${response.targetCohort.name}, but the notification email failed${response.emailDelivery.reason ? `: ${response.emailDelivery.reason}` : '.'}`);
+      return true;
+    } catch (error) { showToast('error', 'Transfer Failed', error instanceof Error ? error.message : 'The student could not be transferred.'); return false; }
+  };
+
+  const updateStudentRecord = async (id: string, updates: Partial<Application>): Promise<boolean> => {
+    try {
+      const response = await apiRequest<{ application: Application; invoice?: Invoice }>(`/admin/applications/${encodeURIComponent(id)}/record`, { method: 'PUT', body: JSON.stringify(updates) });
+      setApplications(current => current.map(application => application.id === id ? response.application : application));
+      if (response.invoice) setInvoices(current => current.map(invoice => invoice.id === response.invoice!.id ? response.invoice! : invoice));
+      showToast('success', 'Student Record Updated', 'Corrections were saved and added to the audit log.'); return true;
+    } catch (error) { showToast('error', 'Record Update Failed', error instanceof Error ? error.message : 'The student record could not be updated.'); return false; }
+  };
+
+  const setPaymentRemindersPaused = async (id: string, paused: boolean): Promise<boolean> => {
+    try {
+      await apiRequest(`/applications/${encodeURIComponent(id)}`, { method: 'PUT', body: JSON.stringify({ paymentRemindersPaused: paused }) });
+      setApplications(prev => prev.map(application => application.id === id ? { ...application, paymentRemindersPaused: paused } : application));
+      showToast('success', paused ? 'Reminders Paused' : 'Reminders Resumed', paused ? 'Scheduled payment reminders are paused for this student.' : 'Scheduled payment reminders are active for this student.');
+      return true;
+    } catch (error) {
+      showToast('error', 'Reminder Setting Failed', error instanceof Error ? error.message : 'The reminder preference could not be saved.');
+      return false;
+    }
   };
 
   const sendApprovalEmail = async (app: Application, type: 'APPROVED' | 'REJECTED' | 'WAITLISTED'): Promise<boolean> => {
@@ -848,7 +712,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       }
       return t;
     }));
-    showToast('success', 'Ticket Submitted for Review', 'Your resolution notes have been sent to Lead Instructor Dave.');
+    void apiRequest(`/student/tickets/${encodeURIComponent(ticketId)}`, { method: 'PATCH', body: JSON.stringify({ studentRootCause: rootCause, studentResolutionNotes: resolutionNotes }) });
+    showToast('success', 'Ticket Submitted for Review', 'Your resolution notes have been sent to your instructor.');
   };
 
   const updateTicketStatus = (ticketId: string, status: SupportTicket['status'], notes?: string) => {
@@ -863,6 +728,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       }
       return t;
     }));
+    void persistRecord('tickets', ticketId, { status, ...(notes ? { studentResolutionNotes: notes } : {}) });
     showToast('info', 'Ticket Status Updated', `Ticket marked as ${status}`);
   };
 
@@ -878,6 +744,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       }
       return t;
     }));
+    void persistRecord('tickets', ticketId, { gradeScore, instructorFeedback: feedback, status: 'VERIFIED' });
     showToast('success', 'Ticket Graded', `Assigned ${gradeScore}% with instructor feedback.`);
   };
 
@@ -890,11 +757,14 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       status: 'OPEN'
     };
     setTickets(prev => [newTkt, ...prev]);
+    void apiRequest('/tickets', { method: 'POST', body: JSON.stringify(newTkt) });
     showToast('success', 'Support Ticket Created', `Ticket ${num} published to student queue.`);
   };
 
   const toggleLabComplete = (labId: string) => {
+    const lab = labs.find(item => item.id === labId);
     setLabs(prev => prev.map(l => l.id === labId ? { ...l, isCompleted: !l.isCompleted } : l));
+    if (lab) void persistRecord('labs', labId, { isCompleted: !lab.isCompleted });
     showToast('success', 'Lab Progress Updated', 'Practical lab status updated.');
   };
 
@@ -910,6 +780,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       checkInTime: new Date().toLocaleTimeString('en-ZA', { hour: '2-digit', minute: '2-digit' }) + ' SAST'
     };
     setAttendance(prev => [record, ...prev]);
+    void apiRequest('/attendance', { method: 'POST', body: JSON.stringify(record) });
     showToast('success', 'Attendance Recorded', `Status marked as ${status}`);
   };
 
@@ -932,6 +803,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       }
       return inv;
     }));
+    void persistRecord('invoices', invoiceId, { balanceZAR: 0, status: 'VERIFIED', paidAt: new Date().toISOString().split('T')[0], paymentMethod });
 
     const selectedInvoice = invoices.find(i => i.id === invoiceId);
     if (selectedInvoice) {
@@ -944,28 +816,45 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     showToast('success', 'Payment Received', 'Tuition payment recorded in full! Remaining balance: R0.');
   };
 
-  const uploadProofOfPayment = (invoiceId: string, fileName: string) => {
-    const popUrl = `/uploads/pop/${fileName}`;
-    setInvoices(prev => prev.map(inv => {
-      if (inv.id === invoiceId) {
-        return {
-          ...inv,
-          proofOfPaymentUrl: popUrl
-        };
-      }
-      return inv;
-    }));
-
-    // Update matching application status if applicable
-    const inv = invoices.find(i => i.id === invoiceId);
-    if (inv) {
-      const app = applications.find(a => a.email.toLowerCase() === inv.studentEmail.toLowerCase());
-      if (app && app.status !== 'ENROLLED') {
-        updateApplicationStatus(app.id, 'PAYMENT_REQUIRED', `POP uploaded: ${fileName}`);
-      }
+  const uploadProofOfPayment = async (invoiceId: string, file: File, eftReference: string): Promise<boolean> => {
+    try {
+      const response = await apiUpload<{ payment: PaymentRecord; invoice: Invoice }>(`/student/invoices/${encodeURIComponent(invoiceId)}/proof`, file, { 'X-EFT-Reference': eftReference });
+      setPayments(prev => [response.payment, ...prev]);
+      setInvoices(prev => prev.map(item => item.id === invoiceId ? response.invoice : item));
+      showToast('success', 'POP Submitted', 'Your deposit is awaiting verification by admissions.');
+      return true;
+    } catch (error) {
+      showToast('error', 'Upload Failed', error instanceof Error ? error.message : 'The proof of payment could not be uploaded.');
+      return false;
     }
+  };
 
-    showToast('success', 'Proof of Payment Uploaded', `File ${fileName} attached to invoice and sent to admissions.`);
+  const verifySubmittedPayment = async (paymentId: string, amountZAR: number): Promise<boolean> => {
+    try {
+      const response = await apiRequest<{ payment: PaymentRecord; invoice: Invoice; application: Application; cohort?: Cohort; waitlisted?: boolean }>(`/admin/payments/${encodeURIComponent(paymentId)}/verify`, { method: 'POST', body: JSON.stringify({ amountZAR }) });
+      setPayments(prev => prev.map(item => item.id === paymentId ? response.payment : item));
+      setInvoices(prev => prev.map(item => item.id === response.invoice.id ? response.invoice : item));
+      setApplications(prev => prev.map(item => item.id === response.application.id ? response.application : item));
+      if (response.cohort) setCohorts(prev => prev.map(item => item.id === response.cohort!.id ? response.cohort! : item));
+      showToast(response.waitlisted ? 'info' : 'success', response.waitlisted ? 'Payment Verified - Waitlisted' : 'Deposit Verified', response.waitlisted ? `R${amountZAR.toLocaleString()} recorded. The cohort is full, so the applicant was moved to the waitlist.` : `R${amountZAR.toLocaleString()} recorded. The student is now enrolled.`);
+      return true;
+    } catch (error) {
+      showToast('error', 'Verification Failed', error instanceof Error ? error.message : 'Payment could not be verified.');
+      return false;
+    }
+  };
+
+  const rejectSubmittedPayment = async (paymentId: string, reason: string): Promise<boolean> => {
+    try {
+      const response = await apiRequest<{ payment: PaymentRecord; invoice?: Invoice }>(`/admin/payments/${encodeURIComponent(paymentId)}/reject`, { method: 'POST', body: JSON.stringify({ reason }) });
+      setPayments(prev => prev.map(item => item.id === paymentId ? response.payment : item));
+      if (response.invoice) setInvoices(prev => prev.map(item => item.id === response.invoice!.id ? response.invoice! : item));
+      showToast('info', 'POP Rejected', 'The proof was rejected and can be submitted again.');
+      return true;
+    } catch (error) {
+      showToast('error', 'Rejection Failed', error instanceof Error ? error.message : 'Payment could not be rejected.');
+      return false;
+    }
   };
 
   const verifyInvoicePayment = (invoiceId: string) => {
@@ -981,6 +870,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       }
       return inv;
     }));
+    void persistRecord('invoices', invoiceId, { balanceZAR: 0, status: 'VERIFIED', paidAt: new Date().toISOString().split('T')[0] });
 
     if (selectedInvoice) {
       const matchingApp = applications.find(a => a.email.toLowerCase() === selectedInvoice.studentEmail.toLowerCase());
@@ -1041,6 +931,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       qrCodeData: `https://techlabs.co.za/verify/${num}`
     };
     setCertificates(prev => [newCert, ...prev]);
+    void apiRequest('/certificates', { method: 'POST', body: JSON.stringify(newCert) });
     showToast('success', 'Certificate Issued!', `Certificate ${num} generated and published.`);
     return newCert;
   };
@@ -1056,16 +947,21 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       enrolledCount: 0
     };
     setCohorts(prev => [...prev, newCohort]);
+    void apiRequest('/cohorts', { method: 'POST', body: JSON.stringify(newCohort) });
     showToast('success', 'Cohort Created', `${cohortData.name} is now active.`);
   };
 
-  const updateCohort = (id: string, updates: Partial<Cohort>) => {
-    setCohorts(prev => prev.map(c => c.id === id ? { ...c, ...updates } : c));
-    showToast('info', 'Cohort Updated', 'Cohort details were updated successfully.');
+  const updateCohort = async (id: string, updates: Partial<Cohort>) => {
+    try {
+      const cohort = await apiRequest<Cohort>(`/cohorts/${encodeURIComponent(id)}`, { method: 'PUT', body: JSON.stringify(updates) });
+      setCohorts(prev => prev.map(item => item.id === id ? cohort : item));
+      showToast('success', 'Cohort Updated', 'Cohort details were updated successfully.');
+    } catch (error) { showToast('error', 'Cohort Update Failed', error instanceof Error ? error.message : 'The cohort could not be updated.'); }
   };
 
   const updateCohortStatus = (id: string, status: Cohort['status']) => {
     setCohorts(prev => prev.map(c => c.id === id ? { ...c, status } : c));
+    void persistRecord('cohorts', id, { status });
     showToast('info', 'Cohort Status Updated', `Cohort status updated to ${status}`);
   };
 
@@ -1079,7 +975,19 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   const updateSettings = (newSettings: Partial<AcademySettings>) => {
     setSettings(prev => ({ ...prev, ...newSettings }));
-    showToast('success', 'Settings Saved', 'Academy configuration updated.');
+  };
+
+  const saveSettings = async (): Promise<boolean> => {
+    if (currentRole !== 'ADMIN') return false;
+    try {
+      const saved = await apiRequest<AcademySettings>('/settings', { method: 'PUT', body: JSON.stringify(settings) });
+      setSettings(saved);
+      showToast('success', 'Settings Saved', 'All academy and banking settings were updated.');
+      return true;
+    } catch (error) {
+      showToast('error', 'Settings Not Saved', error instanceof Error ? error.message : 'The server could not save the settings.');
+      return false;
+    }
   };
 
   return (
@@ -1104,6 +1012,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         labs,
         invoices,
         setInvoices,
+        payments,
+        paymentSettings,
         assessments,
         certificates,
         attendance,
@@ -1112,6 +1022,10 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         addLeadNote,
         submitApplication,
         updateApplicationStatus,
+        recordApplicationDecision,
+        transferApplicationCohort,
+        updateStudentRecord,
+        setPaymentRemindersPaused,
         sendApprovalEmail,
         updateTicketResolution,
         updateTicketStatus,
@@ -1122,6 +1036,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         qrCheckIn,
         recordPayment,
         uploadProofOfPayment,
+        verifySubmittedPayment,
+        rejectSubmittedPayment,
         verifyInvoicePayment,
         settleInvoiceBalance,
         issueCertificate,
@@ -1134,6 +1050,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         onboardingProgressPercent,
         settings,
         updateSettings,
+        saveSettings,
         toasts,
         showToast,
         dismissToast

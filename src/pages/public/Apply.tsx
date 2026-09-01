@@ -27,6 +27,8 @@ export const Apply: React.FC = () => {
   const { submitApplication, studentLogin, cohorts, navigate, settings } = useApp();
   const [currentStep, setCurrentStep] = useState(1);
   const [submittedRef, setSubmittedRef] = useState<string | null>(null);
+  const [submissionError, setSubmissionError] = useState('');
+  const [submitting, setSubmitting] = useState(false);
 
   // Form State
   const [formData, setFormData] = useState({
@@ -89,14 +91,17 @@ export const Apply: React.FC = () => {
   const isStorageCompliant = formData.freeStorageGB >= 100;
   const isLaptopReady = isRamCompliant && isStorageCompliant && formData.hasVirtualizationEnabled;
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!formData.acceptedTerms || !formData.acceptedPrivacy) {
       alert('Please accept the Terms & Conditions and Privacy Policy to proceed.');
       return;
     }
 
-    const ref = submitApplication({
+    setSubmitting(true);
+    setSubmissionError('');
+    try {
+      const ref = await submitApplication({
       firstName: formData.firstName,
       lastName: formData.lastName,
       email: formData.email,
@@ -122,19 +127,20 @@ export const Apply: React.FC = () => {
       acceptedPrivacy: formData.acceptedPrivacy,
       marketingConsent: formData.marketingConsent,
       paymentOption: formData.paymentOption
-    });
+      });
 
-    setSubmittedRef(ref);
+      setSubmittedRef(ref);
 
     // Fire celebration confetti
-    try {
-      confetti({
-        particleCount: 80,
-        spread: 70,
-        origin: { y: 0.6 }
-      });
-    } catch (e) {
-      // safe fallback
+      try {
+        confetti({ particleCount: 80, spread: 70, origin: { y: 0.6 } });
+      } catch {
+        // Celebration is optional.
+      }
+    } catch (error) {
+      setSubmissionError(error instanceof Error ? error.message : 'The application could not be submitted.');
+    } finally {
+      setSubmitting(false);
     }
   };
 
@@ -692,6 +698,7 @@ export const Apply: React.FC = () => {
               <div className="space-y-3 text-xs">
                 {cohorts.map((cohort) => {
                   const selected = formData.cohortId === cohort.id;
+                  const seatsLeft = Math.max(0, cohort.capacity - cohort.enrolledCount);
                   return (
                     <div
                       key={cohort.id}
@@ -710,6 +717,7 @@ export const Apply: React.FC = () => {
                           </span>
                         </div>
                         <p className="text-[#707070]">{cohort.scheduleFormat}</p>
+                        <p className={`text-[10px] font-mono font-bold ${seatsLeft > 0 ? 'text-[#000000]' : 'text-[#A05A00]'}`}>{seatsLeft > 0 ? `${seatsLeft} of ${cohort.capacity} seats remaining` : 'Cohort full - applications join the waitlist'}</p>
                         <p className="text-[10px] text-[#A0A0A0] font-mono">Starts: {cohort.startDate} • Location: {cohort.location}</p>
                       </div>
 
@@ -834,6 +842,7 @@ export const Apply: React.FC = () => {
           )}
 
           {/* Form Actions Footer */}
+          {submissionError && <div className="mt-6 p-4 rounded-xl border border-[#E6AAAA] bg-[#FFF5F5] text-[#9B1C1C] text-xs font-bold">{submissionError}</div>}
           <div className="flex items-center justify-between pt-8 border-t border-[#F0F0F0]">
             {currentStep > 1 ? (
               <button
@@ -857,10 +866,11 @@ export const Apply: React.FC = () => {
             ) : (
               <button
                 type="submit"
-                className="px-8 py-3.5 bg-[#000000] hover:bg-neutral-800 text-white font-bold rounded-xl text-xs uppercase tracking-[0.2em] shadow transition flex items-center gap-2"
+                disabled={submitting}
+                className="px-8 py-3.5 bg-[#000000] hover:bg-neutral-800 disabled:bg-[#A0A0A0] text-white font-bold rounded-xl text-xs uppercase tracking-[0.2em] shadow transition flex items-center gap-2"
               >
                 <Sparkles className="w-4 h-4" />
-                <span>Submit Application</span>
+                <span>{submitting ? 'Submitting…' : 'Submit Application'}</span>
               </button>
             )}
           </div>
@@ -871,7 +881,7 @@ export const Apply: React.FC = () => {
 };
 
 export const Payment: React.FC = () => {
-  const { settings, invoices, currentUser, uploadProofOfPayment, recordPayment } = useApp();
+  const { invoices, payments, paymentSettings, currentUser, uploadProofOfPayment, navigate } = useApp();
 
   // Pick the invoice matching the logged-in student, or fallback to first available
   const userInvoice = currentUser?.email
@@ -881,21 +891,29 @@ export const Payment: React.FC = () => {
   const [selectedInvoiceId, setSelectedInvoiceId] = useState(userInvoice?.id || invoices[0]?.id || '');
   const [copied, setCopied] = useState(false);
   const [popUploaded, setPopUploaded] = useState(false);
+  const [eftReference, setEftReference] = useState('');
+  const [uploading, setUploading] = useState(false);
+  const [selectedPopFile, setSelectedPopFile] = useState<File | null>(null);
+  const [popError, setPopError] = useState('');
   const [showInvoiceModal, setShowInvoiceModal] = useState(false);
 
   const selectedInvoice = invoices.find(i => i.id === selectedInvoiceId) || userInvoice || invoices[0];
 
   const handleCopyBanking = () => {
     const txt = `TechLabs Banking Details (Madilotane Design Pty Ltd):
-Bank: ${settings.bankName}
-Account Name: ${settings.accountName}
-Account Number: ${settings.accountNumber}
-Branch Code: ${settings.branchCode}
+Bank: ${paymentSettings?.bankName}
+Account Name: ${paymentSettings?.accountName}
+Account Number: ${paymentSettings?.accountNumber}
+Branch Code: ${paymentSettings?.branchCode}
 Reference: ${selectedInvoice?.invoiceNumber || 'TLS-Reference'}`;
     navigator.clipboard.writeText(txt);
     setCopied(true);
     setTimeout(() => setCopied(false), 3000);
   };
+
+  if (!currentUser || !selectedInvoice || !paymentSettings) {
+    return <div className="max-w-2xl mx-auto px-4 py-20 text-center space-y-4"><h1 className="text-3xl font-light">Payment details are not available yet</h1><p className="text-sm text-[#707070]">Banking details and POP upload unlock after admissions approves your application. Sign in to your applicant portal to check the latest status.</p></div>;
+  }
 
   return (
     <div className="space-y-16 py-12 bg-[#FFFFFF] text-[#1A1A1A]">
@@ -958,15 +976,13 @@ Reference: ${selectedInvoice?.invoiceNumber || 'TLS-Reference'}`;
             <div>
               <span className="text-[#A0A0A0] block uppercase text-[9px] font-mono">Amount Paid To Date:</span>
               <strong className="text-[#008000]">
-                R{(selectedInvoice?.status === 'VERIFIED'
-                  ? (selectedInvoice.paymentOption === 'DEPOSIT' && selectedInvoice.balanceZAR > 0 ? selectedInvoice.depositZAR : selectedInvoice.amountZAR - selectedInvoice.balanceZAR)
-                  : 0).toLocaleString()}
+                R{(selectedInvoice?.paidZAR ?? 0).toLocaleString()}
               </strong>
             </div>
             <div>
               <span className="text-[#A0A0A0] block uppercase text-[9px] font-mono">Remaining Balance Due:</span>
-              <strong className={((selectedInvoice?.status === 'VERIFIED' ? selectedInvoice.balanceZAR : selectedInvoice?.amountZAR) || 0) > 0 ? 'text-[#CC0000]' : 'text-[#008000]'}>
-                R{((selectedInvoice?.status === 'VERIFIED' ? selectedInvoice.balanceZAR : selectedInvoice?.amountZAR) || 0).toLocaleString()}
+              <strong className={(selectedInvoice?.balanceZAR || 0) > 0 ? 'text-[#CC0000]' : 'text-[#008000]'}>
+                R{(selectedInvoice?.balanceZAR || 0).toLocaleString()}
               </strong>
             </div>
           </div>
@@ -991,19 +1007,19 @@ Reference: ${selectedInvoice?.invoiceNumber || 'TLS-Reference'}`;
           <div className="bg-[#FAFAFA] p-4 rounded-xl border border-[#E0E0E0] space-y-2 font-mono text-xs text-[#1A1A1A]">
             <div className="flex justify-between">
               <span className="text-[#707070]">Bank Name:</span>
-              <strong>{settings.bankName}</strong>
+              <strong>{paymentSettings?.bankName}</strong>
             </div>
             <div className="flex justify-between">
               <span className="text-[#707070]">Account Name:</span>
-              <strong>{settings.accountName}</strong>
+              <strong>{paymentSettings?.accountName}</strong>
             </div>
             <div className="flex justify-between">
               <span className="text-[#707070]">Account Number:</span>
-              <strong className="text-[#000000]">{settings.accountNumber}</strong>
+              <strong className="text-[#000000]">{paymentSettings?.accountNumber}</strong>
             </div>
             <div className="flex justify-between">
               <span className="text-[#707070]">Branch Code:</span>
-              <strong>{settings.branchCode}</strong>
+              <strong>{paymentSettings?.branchCode}</strong>
             </div>
             <div className="flex justify-between pt-1 border-t border-[#E0E0E0] text-[#000000]">
               <span className="text-[#707070]">Payment Reference:</span>
@@ -1013,45 +1029,42 @@ Reference: ${selectedInvoice?.invoiceNumber || 'TLS-Reference'}`;
 
           {/* Proof of Payment Upload & Direct Settle */}
           <div className="pt-2 space-y-3">
+            <div className="space-y-1">
+              <label className="font-bold text-xs uppercase tracking-wider text-[#000000] block">EFT payment reference</label>
+              <input value={eftReference} onChange={(event) => setEftReference(event.target.value)} placeholder={selectedInvoice?.invoiceNumber || 'Invoice reference'} className="w-full p-3 bg-[#FAFAFA] border border-[#E0E0E0] rounded-xl font-mono text-xs" />
+            </div>
             <label className="font-bold text-xs uppercase tracking-wider text-[#000000] block">
               Upload Proof of Payment (POP / PDF / Image):
             </label>
-            <div className="border border-dashed border-[#E0E0E0] rounded-xl p-4 text-center cursor-pointer hover:bg-[#FAFAFA] transition">
+            <label htmlFor="pop-upload" className="border border-dashed border-[#E0E0E0] rounded-xl p-6 text-center cursor-pointer hover:bg-[#FAFAFA] transition block">
               <input
                 type="file"
+                accept="application/pdf,image/jpeg,image/png"
                 id="pop-upload"
                 className="hidden"
                 onChange={(e) => {
                   const file = e.target.files?.[0];
-                  const fileName = file ? file.name : 'EFT_Payment_Receipt.pdf';
-                  setPopUploaded(true);
-                  if (selectedInvoice) {
-                    uploadProofOfPayment(selectedInvoice.id, fileName);
-                  }
+                  setPopError('');
+                  if (!file) return;
+                  if (!['application/pdf', 'image/jpeg', 'image/png'].includes(file.type)) { setSelectedPopFile(null); setPopError('Please choose a PDF, JPG, or PNG file.'); return; }
+                  if (file.size > 5 * 1024 * 1024) { setSelectedPopFile(null); setPopError('The selected file is larger than 5 MB.'); return; }
+                  setSelectedPopFile(file);
                 }}
               />
-              <label htmlFor="pop-upload" className="cursor-pointer text-[#707070] block">
+              <span className="cursor-pointer text-[#707070] block">
                 {popUploaded || selectedInvoice?.proofOfPaymentUrl ? (
                   <span className="text-[#008000] font-bold">✔ POP Uploaded ({selectedInvoice?.proofOfPaymentUrl?.split('/').pop() || 'EFT_Payment_Receipt.pdf'})</span>
+                ) : selectedPopFile ? (
+                  <span><strong className="text-[#000000] block">{selectedPopFile.name}</strong>{(selectedPopFile.size / 1024).toFixed(1)} KB • Click to choose a different file</span>
                 ) : (
-                  <span>Drag & drop proof of payment or <strong className="text-[#000000]">browse file</strong></span>
+                  <span>Select a PDF, JPG, or PNG <strong className="text-[#000000]">proof of payment</strong> (max 5 MB)</span>
                 )}
-              </label>
-            </div>
+              </span>
+            </label>
+            {popError && <p className="text-[#CC0000] font-bold text-xs">{popError}</p>}
+            {!payments.some(payment => payment.invoiceId === selectedInvoice?.id && payment.status === 'SUBMITTED') && !popUploaded && <button type="button" disabled={!selectedPopFile || !eftReference.trim() || uploading} onClick={async () => { if (!selectedPopFile || !selectedInvoice) return; if (!eftReference.trim()) { setPopError('Enter the EFT payment reference before submitting.'); return; } setUploading(true); setPopError(''); const uploaded = await uploadProofOfPayment(selectedInvoice.id, selectedPopFile, eftReference.trim()); setPopUploaded(uploaded); if (uploaded) setSelectedPopFile(null); setUploading(false); }} className="w-full py-3 bg-[#000000] hover:bg-neutral-800 disabled:bg-[#E0E0E0] disabled:text-[#707070] text-white font-bold text-xs uppercase tracking-[0.15em] rounded-xl transition">{uploading ? 'Uploading POP securely…' : 'Submit POP for Verification'}</button>}
 
-            {/* Direct Instant EFT Settle Action */}
-            {selectedInvoice && selectedInvoice.balanceZAR > 0 && (
-              <button
-                type="button"
-                onClick={() => {
-                  recordPayment(selectedInvoice.id, 'EFT');
-                  setPopUploaded(true);
-                }}
-                className="w-full py-3 bg-[#000000] hover:bg-neutral-800 text-white font-bold text-xs uppercase tracking-[0.2em] rounded-xl shadow transition flex items-center justify-center gap-2"
-              >
-                <span>Submit EFT Payment Details for Verification (R{selectedInvoice.balanceZAR.toLocaleString()})</span>
-              </button>
-            )}
+            {(payments.some(payment => payment.invoiceId === selectedInvoice?.id && payment.status === 'SUBMITTED') || popUploaded) && <div className="space-y-3"><p className="p-3 rounded-xl bg-[#FAFAFA] border border-[#E0E0E0] font-bold text-center">Deposit awaiting admissions verification</p><button type="button" onClick={() => navigate('/student')} className="w-full py-3 bg-[#FFFFFF] hover:bg-[#F0F0F0] text-[#000000] border border-[#000000] font-bold text-xs uppercase tracking-[0.15em] rounded-xl transition">Return to Student Portal</button></div>}
           </div>
         </div>
       </div>

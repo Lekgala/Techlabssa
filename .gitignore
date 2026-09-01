@@ -4,5 +4,7 @@ dist/
 coverage/
 .DS_Store
 *.log
+server/data/*.db*
+server/data/payment-proofs/
 .env*
 !.env.example

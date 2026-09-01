@@ -26,8 +26,8 @@ export const CURRENT_USER_STUDENT: User = {
 
 export const CURRENT_USER_ADMIN: User = {
   id: 'usr-admin-01',
-  name: 'David Kitching',
-  email: 'dave@techlabs.co.za',
+  name: 'TechLabs Administrator',
+  email: 'admin@techlabs.co.za',
   role: 'ADMIN',
   avatar: 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=150&auto=format&fit=crop&q=80',
   whatsapp: '+27 82 123 4567'
@@ -916,7 +916,7 @@ export const SAMPLE_CERTIFICATE: Certificate = {
   studentName: 'Bongani Dlamini',
   courseName: 'IT Support & Enterprise Administration Bootcamp',
   completionDate: '05 December 2026',
-  instructorName: 'David Kitching (Lead Technical Instructor)',
+  instructorName: 'TechLabs Instructor',
   verificationUrl: 'https://techlabs.co.za/verify/TLS-2026-00124',
   gradeDistinction: 'Distinction (94.5% Practical Exam Score)',
   qrCodeData: 'https://techlabs.co.za/verify/TLS-2026-00124',

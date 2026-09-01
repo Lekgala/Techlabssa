@@ -3,6 +3,7 @@ import { useApp } from '../../context/AppContext';
 import { CertificateView } from '../../components/common/CertificateView';
 import { Certificate } from '../../types';
 import { ShieldCheck, CheckCircle, AlertTriangle } from 'lucide-react';
+import { apiRequest } from '../../lib/api';
 
 export const Courses: React.FC = () => {
   const { navigate } = useApp();
@@ -88,15 +89,17 @@ export const Courses: React.FC = () => {
 };
 
 export const VerifyCertificate: React.FC = () => {
-  const { getCertificateByNumber } = useApp();
-  const [certInput, setCertInput] = useState('TLS-2026-00124');
-  const [foundCert, setFoundCert] = useState<Certificate | undefined>(() => getCertificateByNumber('TLS-2026-00124'));
-  const [searched, setSearched] = useState(true);
+  const [certInput, setCertInput] = useState('');
+  const [foundCert, setFoundCert] = useState<Certificate | undefined>();
+  const [searched, setSearched] = useState(false);
 
-  const handleSearch = (e: React.FormEvent) => {
+  const handleSearch = async (e: React.FormEvent) => {
     e.preventDefault();
-    const result = getCertificateByNumber(certInput.trim());
-    setFoundCert(result);
+    try {
+      setFoundCert(await apiRequest<Certificate>(`/certificates/${encodeURIComponent(certInput.trim())}`));
+    } catch {
+      setFoundCert(undefined);
+    }
     setSearched(true);
   };
 
