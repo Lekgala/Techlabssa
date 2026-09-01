@@ -1,9 +1,12 @@
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { useApp } from '../../context/AppContext';
 import { REAL_SUPPORT_TICKETS, COHORTS, SAMPLE_CERTIFICATE, COURSE_MODULES } from '../../data/mockData';
 import { TicketCard } from '../../components/common/TicketCard';
 import { CertificateView } from '../../components/common/CertificateView';
 import { PrintableInvoice } from '../../components/common/PrintableInvoice';
+import { apiOpenPrivate, apiRequest } from '../../lib/api';
+import type { PaymentInstallment } from '../../types';
+import { buildCurriculumSchedule } from '../../lib/curriculumSchedule';
 import { 
   Server, 
   Layers, 
@@ -22,8 +25,32 @@ import {
   Zap,
   Flame,
   FileCheck,
-  Video
+  Video,
+  FolderOpen,
+  FileText,
+  Receipt,
+  CalendarDays
 } from 'lucide-react';
+
+const DocumentCard: React.FC<{
+  icon: React.ComponentType<{ className?: string }>;
+  title: string;
+  detail: string;
+  available: boolean;
+  actionLabel: string;
+  onAction: () => void;
+}> = ({ icon: Icon, title, detail, available, actionLabel, onAction }) => (
+  <article className="p-5 bg-[#FFFFFF] rounded-xl border border-[#E0E0E0] shadow-sm space-y-4 flex flex-col justify-between">
+    <div className="space-y-3">
+      <div className="flex items-center justify-between">
+        <span className="w-9 h-9 rounded-lg bg-[#FAFAFA] border border-[#E0E0E0] flex items-center justify-center"><Icon className="w-4 h-4" /></span>
+        <span className={`text-[9px] font-mono font-bold uppercase tracking-wider ${available ? 'text-[#008000]' : 'text-[#707070]'}`}>{available ? 'Available' : 'Not yet available'}</span>
+      </div>
+      <div><h4 className="font-bold text-sm text-[#000000]">{title}</h4><p className="text-[11px] text-[#707070] mt-1">{detail}</p></div>
+    </div>
+    <button type="button" disabled={!available} onClick={onAction} className="w-full py-2.5 bg-[#000000] disabled:bg-[#E0E0E0] disabled:text-[#707070] text-white font-bold text-[10px] rounded-lg uppercase tracking-wider transition">{actionLabel}</button>
+  </article>
+);
 
 export const StudentDashboard: React.FC = () => {
   const { 
@@ -36,12 +63,17 @@ export const StudentDashboard: React.FC = () => {
     courseModules,
     applications,
     invoices,
+    payments,
+    labs,
+    assessments,
     navigate 
   } = useApp();
 
-  const [activeTab, setActiveTab] = useState<'OVERVIEW' | 'MODULES' | 'LABS' | 'TICKETS' | 'DOWNLOADS' | 'CERTIFICATE'>('OVERVIEW');
+  const [activeTab, setActiveTab] = useState<'OVERVIEW' | 'DOCUMENTS' | 'MODULES' | 'LABS' | 'TICKETS' | 'DOWNLOADS' | 'CERTIFICATE'>('OVERVIEW');
   const [selectedTicketId, setSelectedTicketId] = useState<string | null>(null);
   const [showInvoiceModal, setShowInvoiceModal] = useState(false);
+  const [documentError, setDocumentError] = useState('');
+  const [installments, setInstallments] = useState<PaymentInstallment[]>([]);
 
   // Resolution modal state
   const [resolutionText, setResolutionText] = useState('');
@@ -59,40 +91,41 @@ export const StudentDashboard: React.FC = () => {
   const studentInvoice = (invoices || []).find(
     i => i.studentEmail.trim().toLowerCase() === (currentStudent?.email || '').trim().toLowerCase()
   );
+  useEffect(() => { if (studentInvoice) void apiRequest<PaymentInstallment[]>('/student/payment-plan').then(setInstallments).catch(() => setInstallments([])); else setInstallments([]); }, [studentInvoice?.id, studentInvoice?.paidZAR]);
 
-  const isFullyEnrolled = studentApp ? studentApp.status === 'ENROLLED' : true; // Default enrolled if demo user without app
+  const isFullyEnrolled = studentApp?.status === 'ENROLLED';
 
   const studentCert = (certificates && certificates.length > 0)
-    ? (certificates.find(c => c.studentId === currentStudent?.id) || certificates[0])
-    : SAMPLE_CERTIFICATE;
+    ? certificates.find(c => c.studentId === currentStudent?.id)
+    : undefined;
 
-  const assignedTickets = (tickets || []).filter(t => t && (t.assignedStudentId === currentStudent?.id || !t.assignedStudentId));
+  const assignedTickets = (tickets || []).filter(t => t?.assignedStudentId === currentStudent?.id);
+  const studentPayments = (payments || []).filter(payment => payment.studentId === currentStudent?.id);
+  const verifiedPayments = studentPayments.filter(payment => payment.status === 'VERIFIED');
+
+  const openDocument = async (path: string) => {
+    setDocumentError('');
+    try { await apiOpenPrivate(path); }
+    catch (error) { setDocumentError(error instanceof Error ? error.message : 'The PDF could not be opened.'); }
+  };
 
   const modulesToUse = (courseModules && courseModules.length > 0) ? courseModules : COURSE_MODULES;
+  const scheduledModules = useMemo(() => buildCurriculumSchedule(modulesToUse, studentCohort), [modulesToUse, studentCohort]);
 
   const moduleProgress = useMemo(() => {
-    if (!studentCohort?.startDate || !modulesToUse.length) {
+    if (!modulesToUse.length) {
       return { completedModules: 0, progressPercent: 0, totalModules: 0 };
     }
-
-    const start = new Date(`${studentCohort.startDate}T00:00:00`);
-    const now = new Date();
-    let completedModules = 0;
-
-    modulesToUse.forEach((module, index) => {
-      const moduleDate = new Date(start);
-      moduleDate.setDate(start.getDate() + index * 7);
-      if (moduleDate <= now) {
-        completedModules += 1;
-      }
-    });
+    const verifiedModules = new Set<number>();
+    assessments.filter(item => item.status === 'Graded' && (item.studentScore ?? 0) >= 80).forEach(item => verifiedModules.add(item.moduleNumber));
+    const completedModules = verifiedModules.size;
 
     return {
       completedModules,
       totalModules: modulesToUse.length,
       progressPercent: Math.min(100, Math.round((completedModules / modulesToUse.length) * 100))
     };
-  }, [modulesToUse, studentCohort]);
+  }, [modulesToUse, assessments]);
 
   const handleSimulatePS = () => {
     if (!psCommand.trim()) return;
@@ -139,7 +172,7 @@ export const StudentDashboard: React.FC = () => {
           </p>
         </div>
 
-        <div className="flex flex-wrap items-center gap-3">
+        {isFullyEnrolled && <div className="flex flex-wrap items-center gap-3">
           <a
             href="https://teams.microsoft.com"
             target="_blank"
@@ -151,7 +184,7 @@ export const StudentDashboard: React.FC = () => {
           </a>
 
           <a
-            href={`https://wa.me/${(settings?.whatsappNumber || '+27821234567').replace(/[^0-9]/g, '')}?text=Hi%20Dave!%20I'm%20working%20on%20Lab%204%20and%20need%20quick%20mentor%20assistance.`}
+            href={`https://wa.me/${(settings?.whatsappNumber || '+27821234567').replace(/[^0-9]/g, '')}?text=Hi!%20I'm%20working%20on%20Lab%204%20and%20need%20mentor%20assistance.`}
             target="_blank"
             rel="noopener noreferrer"
             className="px-4 py-2.5 bg-[#000000] hover:bg-neutral-800 text-white font-bold rounded-xl text-xs uppercase tracking-[0.2em] flex items-center gap-1.5 transition shadow"
@@ -166,7 +199,7 @@ export const StudentDashboard: React.FC = () => {
           >
             Support Tickets ({assignedTickets.filter(t => t.status === 'IN_PROGRESS').length} Active)
           </button>
-        </div>
+        </div>}
       </div>
 
       {/* Tuition & Installment Payment Banner */}
@@ -211,9 +244,7 @@ export const StudentDashboard: React.FC = () => {
             <div>
               <span className="text-[#707070] text-[9px] uppercase block">Paid to Date</span>
               <strong className="text-[#008000]">
-                R{(studentInvoice.status === 'VERIFIED'
-                  ? (studentInvoice.paymentOption === 'DEPOSIT' && studentInvoice.balanceZAR > 0 ? studentInvoice.depositZAR : studentInvoice.amountZAR - studentInvoice.balanceZAR)
-                  : 0).toLocaleString()}
+                R{(studentInvoice.paidZAR ?? 0).toLocaleString()}
               </strong>
             </div>
             <div>
@@ -223,6 +254,7 @@ export const StudentDashboard: React.FC = () => {
               </strong>
             </div>
           </div>
+          {studentInvoice.paymentOption !== 'FULL' && installments.length > 0 && <div className="space-y-2"><div className="flex items-center justify-between"><strong className="text-[10px] uppercase tracking-wider">Your installment schedule</strong><span className="text-[9px] text-[#707070]">Payments apply oldest first</span></div>{installments.map(item => <div key={item.id} className={`grid grid-cols-[1fr_auto] gap-3 p-3 rounded-xl border ${item.status === 'OVERDUE' ? 'border-[#CC0000] bg-[#FFF5F5]' : 'border-[#E0E0E0] bg-[#FAFAFA]'}`}><div><strong className="block text-[#000000]">{item.sequence}. {item.label}</strong><span className="text-[10px] text-[#707070]">Due {item.dueDate} · R{item.paidZAR.toLocaleString()} of R{item.amountZAR.toLocaleString()} paid</span></div><strong className={item.status === 'OVERDUE' ? 'text-[#CC0000]' : item.status === 'PAID' ? 'text-[#008000]' : ''}>{item.status}</strong></div>)}</div>}
 
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pt-1">
             <p className="text-[11px] text-[#707070] font-sans">
@@ -330,6 +362,7 @@ export const StudentDashboard: React.FC = () => {
       <div className="bg-[#FAFAFA] p-1.5 rounded-xl border border-[#E0E0E0] shadow-sm flex items-center gap-1 overflow-x-auto text-xs font-bold font-mono">
         {[
           { id: 'OVERVIEW', label: 'Dashboard Overview', icon: Sparkles },
+          { id: 'DOCUMENTS', label: 'Document Centre', icon: FolderOpen },
           { id: 'MODULES', label: '15 Modules & Lessons', icon: Layers },
           { id: 'LABS', label: 'Virtual Machine Labs', icon: Server },
           { id: 'TICKETS', label: 'Assigned Incident Tickets', icon: Terminal },
@@ -378,7 +411,7 @@ export const StudentDashboard: React.FC = () => {
               <span className="text-[10px] font-mono text-[#A0A0A0] uppercase font-bold tracking-wider">Resolved Support Tickets</span>
               <div className="flex items-baseline justify-between">
                 <span className="text-3xl font-light text-[#000000]">
-                  {tickets.filter(t => t.status === 'RESOLVED').length} / {tickets.length}
+                  {assignedTickets.filter(t => t.status === 'RESOLVED').length} / {assignedTickets.length}
                 </span>
                 <span className="text-[10px] font-mono text-[#000000] bg-[#FAFAFA] border border-[#E0E0E0] px-2 py-0.5 rounded uppercase font-bold">
                   85% Practical Pass
@@ -437,6 +470,51 @@ export const StudentDashboard: React.FC = () => {
         </div>
       )}
 
+      {/* TAB CONTENT: DOCUMENT CENTRE */}
+      {activeTab === 'DOCUMENTS' && (
+        <div className="space-y-6 animate-in fade-in">
+          <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-3">
+            <div className="space-y-1">
+              <h3 className="text-2xl font-light text-[#000000] tracking-tight">Student Document Centre</h3>
+              <p className="text-xs text-[#707070]">Your admissions, payment, course, and completion records in one secure place.</p>
+            </div>
+            <span className="text-[10px] font-mono font-bold uppercase tracking-wider text-[#707070]">Ref: {studentApp?.referenceNumber || 'Pending'}</span>
+          </div>
+
+          {documentError && <p className="p-3 rounded-xl border border-[#CC0000] text-[#CC0000] text-xs font-bold">{documentError}</p>}
+
+          <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
+            <DocumentCard icon={FileText} title="Official Invoice" detail={studentInvoice ? `${studentInvoice.invoiceNumber} • Balance R${studentInvoice.balanceZAR.toLocaleString()}` : 'Created after application approval'} available={Boolean(studentInvoice)} actionLabel="Open PDF" onAction={() => void openDocument('/student/documents/invoice')} />
+
+            <DocumentCard icon={FileCheck} title="Admission Confirmation" detail={isFullyEnrolled ? `Enrollment confirmed for ${studentCohort?.name}` : 'Available once your seat deposit is verified'} available={isFullyEnrolled} actionLabel="Open PDF" onAction={() => void openDocument('/student/documents/admission')} />
+
+            <DocumentCard icon={CalendarDays} title="Course Schedule" detail={studentCohort?.scheduleFormat || 'Schedule pending'} available={Boolean(studentCohort)} actionLabel="Open PDF" onAction={() => void openDocument('/student/documents/schedule')} />
+
+            <DocumentCard icon={Award} title="Certificate" detail={studentCert ? `${studentCert.certificateNumber} • Issued ${studentCert.completionDate}` : 'Available after successful course completion'} available={Boolean(studentCert)} actionLabel="Open PDF" onAction={() => void openDocument('/student/documents/certificate')} />
+          </div>
+
+          <section className="space-y-3">
+            <h4 className="font-bold text-sm text-[#000000]">Payment receipts</h4>
+            {verifiedPayments.length ? <div className="divide-y divide-[#E0E0E0] border border-[#E0E0E0] rounded-xl overflow-hidden">{verifiedPayments.map(payment => (
+              <div key={payment.id} className="p-4 bg-white flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs">
+                <div><strong className="block text-[#000000]">{payment.type === 'DEPOSIT' ? 'Seat deposit receipt' : 'Balance payment receipt'} • R{payment.amountZAR.toLocaleString()}</strong><span className="text-[#707070]">Verified {payment.verifiedAt ? new Date(payment.verifiedAt).toLocaleString('en-ZA') : ''} • EFT ref {payment.eftReference}</span></div>
+                <button onClick={() => void openDocument(`/student/documents/receipt/${encodeURIComponent(payment.id)}`)} className="px-4 py-2 bg-[#000000] text-white font-bold rounded-lg uppercase tracking-wider">Open PDF</button>
+              </div>
+            ))}</div> : <p className="p-4 bg-[#FAFAFA] border border-[#E0E0E0] rounded-xl text-xs text-[#707070]">Receipts appear here after admissions verifies a payment.</p>}
+          </section>
+
+          <section className="space-y-3">
+            <h4 className="font-bold text-sm text-[#000000]">Submitted proofs of payment</h4>
+            {studentPayments.length ? <div className="divide-y divide-[#E0E0E0] border border-[#E0E0E0] rounded-xl overflow-hidden">{studentPayments.map(payment => (
+              <div key={payment.id} className="p-4 bg-white flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs">
+                <div><strong className="block text-[#000000]">{payment.originalFileName}</strong><span className="text-[#707070]">Uploaded {new Date(payment.submittedAt).toLocaleString('en-ZA')} • <span className="font-bold">{payment.status}</span></span></div>
+                <button onClick={() => void openDocument(`/student/documents/pop/${encodeURIComponent(payment.id)}`)} className="px-4 py-2 border border-[#000000] text-[#000000] font-bold rounded-lg uppercase tracking-wider">Open PDF</button>
+              </div>
+            ))}</div> : <p className="p-4 bg-[#FAFAFA] border border-[#E0E0E0] rounded-xl text-xs text-[#707070]">No proofs of payment have been submitted yet.</p>}
+          </section>
+        </div>
+      )}
+
       {/* TAB CONTENT: 2. MODULES */}
       {activeTab === 'MODULES' && (
         <div className="space-y-6 animate-in fade-in">
@@ -458,9 +536,9 @@ export const StudentDashboard: React.FC = () => {
           )}
 
           <div className="space-y-4">
-            {courseModules.map((mod, idx) => {
+            {scheduledModules.map((mod, idx) => {
               const isCompleted = idx < moduleProgress.completedModules;
-              const isCurrent = idx === Math.min(moduleProgress.completedModules, courseModules.length - 1) && moduleProgress.progressPercent < 100;
+              const isCurrent = idx === Math.min(moduleProgress.completedModules, scheduledModules.length - 1) && moduleProgress.progressPercent < 100;
 
               return (
                 <div
@@ -487,7 +565,7 @@ export const StudentDashboard: React.FC = () => {
 
                       <div>
                         <h4 className="font-bold text-base">{mod.title}</h4>
-                        <span className={`text-xs font-mono ${isCurrent ? 'text-neutral-400' : 'text-[#707070]'}`}>{mod.duration}</span>
+                        <span className={`text-xs font-mono ${isCurrent ? 'text-neutral-400' : 'text-[#707070]'}`}>{mod.scheduleLabel}</span>
                       </div>
                     </div>
 
@@ -666,7 +744,7 @@ export const StudentDashboard: React.FC = () => {
           )}
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-            {tickets.map(ticket => (
+            {assignedTickets.map(ticket => (
               <div key={ticket.id} className="space-y-2">
                 <TicketCard ticket={ticket} />
                 {ticket.status !== 'RESOLVED' && (

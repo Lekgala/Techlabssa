@@ -1,6 +1,6 @@
 import React, { useRef } from 'react';
 import { Invoice } from '../../types';
-import { Award, Printer, ShieldCheck, CheckCircle, ExternalLink } from 'lucide-react';
+import { Printer } from 'lucide-react';
 import { useApp } from '../../context/AppContext';
 
 interface PrintableInvoiceProps {
@@ -10,7 +10,7 @@ interface PrintableInvoiceProps {
 
 export const PrintableInvoice: React.FC<PrintableInvoiceProps> = ({ invoice, allowPrint = true }) => {
   const containerRef = useRef<HTMLDivElement | null>(null);
-  const { settings } = useApp();
+  const { settings, payments } = useApp();
 
   if (!invoice) {
     return (
@@ -43,13 +43,9 @@ export const PrintableInvoice: React.FC<PrintableInvoiceProps> = ({ invoice, all
     requestAnimationFrame(() => window.print());
   };
 
-  const amountPaid = invoice.status === 'VERIFIED'
-    ? (invoice.paymentOption === 'DEPOSIT' && invoice.balanceZAR > 0 ? invoice.depositZAR : invoice.amountZAR - invoice.balanceZAR)
-    : 0;
-
-  const currentBalanceDue = invoice.status === 'VERIFIED'
-    ? invoice.balanceZAR
-    : invoice.amountZAR;
+  const amountPaid = invoice.paidZAR ?? Math.max(0, invoice.amountZAR - invoice.balanceZAR);
+  const currentBalanceDue = invoice.balanceZAR;
+  const invoicePayments = payments.filter(payment => payment.invoiceId === invoice.id).sort((a, b) => a.submittedAt.localeCompare(b.submittedAt));
 
   return (
     <div className="space-y-4">
@@ -65,27 +61,28 @@ export const PrintableInvoice: React.FC<PrintableInvoiceProps> = ({ invoice, all
         </div>
       )}
 
-      {/* Official Tax Invoice Container */}
-      <div ref={containerRef} className="certificate-page relative bg-[#FFFFFF] text-[#1A1A1A] p-8 sm:p-12 rounded-2xl border-2 border-[#000000] shadow-xl max-w-4xl mx-auto space-y-8 font-sans">
+      <div ref={containerRef} className="certificate-page relative overflow-hidden bg-[#FFFFFF] text-[#1A1A1A] p-8 sm:p-12 rounded-2xl border border-[#D8D8D8] shadow-xl max-w-4xl mx-auto space-y-8 font-sans">
+        <div className="absolute inset-x-0 top-0 h-2 bg-black" />
         {/* Header */}
         <div className="flex flex-col sm:flex-row sm:items-start justify-between border-b-2 border-[#000000] pb-6 gap-4">
           <div>
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-3">
+              <span className="w-6 h-6 bg-black rotate-45 inline-block shrink-0" />
               <span className="font-bold text-2xl tracking-tighter uppercase text-[#000000]">TechLabs</span>
               <span className="text-[10px] font-bold font-mono uppercase tracking-[0.2em] text-[#000000] border border-[#000000] px-2 py-0.5 rounded">SA</span>
             </div>
             <p className="text-xs font-bold text-[#707070] uppercase mt-1 tracking-wider">
               {settings?.companyName || 'Madilotane Design (Pty) Ltd'} trading as TechLabs Academy SA
             </p>
-            <p className="text-[11px] text-[#707070]">Cape Town, South Africa • Admissions: {settings?.admissionsEmail || 'admissions@techlabs.co.za'}</p>
+            <p className="text-[11px] text-[#707070]">{settings?.campusAddress || settings?.location || 'Cape Town, South Africa'} • {settings?.admissionsEmail}</p>
           </div>
 
           <div className="text-left sm:text-right space-y-1">
             <span className="text-[10px] font-mono uppercase font-bold text-white bg-[#000000] px-3 py-1 rounded-full tracking-[0.2em]">
-              OFFICIAL TAX INVOICE
+              INVOICE
             </span>
             <h2 className="text-xl font-mono font-bold text-[#000000] pt-1">{invoice.invoiceNumber}</h2>
-            <p className="text-[11px] text-[#707070] font-mono">Date Issued: {invoice.dueDate ? new Date(invoice.dueDate).toISOString().split('T')[0] : '2026-08-29'}</p>
+            <p className="text-[11px] text-[#707070] font-mono">Date Issued: {invoice.invoiceDate || 'Not recorded'}</p>
             <p className="text-[11px] text-[#707070] font-mono">Due Date: {invoice.dueDate}</p>
           </div>
         </div>
@@ -105,15 +102,15 @@ export const PrintableInvoice: React.FC<PrintableInvoiceProps> = ({ invoice, all
               <span className={`inline-block text-xs font-mono font-bold uppercase tracking-wider px-3 py-1 rounded-full border ${
                 invoice.balanceZAR === 0 && invoice.status === 'VERIFIED'
                   ? 'bg-[#000000] text-white border-[#000000]'
-                  : invoice.status === 'VERIFIED'
+                  : ['PARTIALLY_PAID', 'VERIFIED'].includes(invoice.status)
                   ? 'bg-[#E0E0E0] text-[#000000] border-[#000000]'
                   : 'bg-[#FAFAFA] text-[#707070] border-[#E0E0E0]'
               }`}>
                 {invoice.balanceZAR === 0 && invoice.status === 'VERIFIED'
-                  ? '✔ PAID IN FULL (R0 BALANCE)'
-                  : invoice.status === 'VERIFIED'
-                  ? `✔ DEPOSIT VERIFIED (R${invoice.balanceZAR.toLocaleString()} BALANCE DUE)`
-                  : '⚡ PENDING ADMIN VERIFICATION'}
+                  ? 'PAID IN FULL — R0 BALANCE'
+                  : ['PARTIALLY_PAID', 'VERIFIED'].includes(invoice.status)
+                  ? `PAYMENT VERIFIED — R${invoice.balanceZAR.toLocaleString()} BALANCE DUE`
+                  : invoice.status === 'AWAITING_VERIFICATION' ? 'PAYMENT AWAITING VERIFICATION' : 'PAYMENT PENDING'}
               </span>
             </div>
             <div>
@@ -185,9 +182,26 @@ export const PrintableInvoice: React.FC<PrintableInvoiceProps> = ({ invoice, all
           </div>
         </div>
 
+        <div className="space-y-3">
+          <div className="bg-[#F3F3F3] px-4 py-2 text-[10px] font-bold font-mono tracking-[0.18em] uppercase">Payment History</div>
+          {invoicePayments.length ? (
+            <div className="divide-y divide-[#E0E0E0] border-y border-[#E0E0E0]">
+              {invoicePayments.map(payment => (
+                <div key={payment.id} className="grid grid-cols-2 sm:grid-cols-5 gap-2 py-2.5 text-[10px] font-mono">
+                  <span>{(payment.verifiedAt || payment.submittedAt).slice(0, 10)}</span>
+                  <span>{payment.type}</span>
+                  <strong>R{payment.amountZAR.toLocaleString(undefined, { minimumFractionDigits: 2 })}</strong>
+                  <span className="truncate">{payment.eftReference}</span>
+                  <strong className="sm:text-right">{payment.status}</strong>
+                </div>
+              ))}
+            </div>
+          ) : <p className="text-[11px] text-[#707070]">No payments recorded against this invoice.</p>}
+        </div>
+
         {/* Footer Guarantee */}
         <div className="border-t border-[#E0E0E0] pt-4 text-center text-[10px] font-mono text-[#707070]">
-          TechLabs Academy SA • Official Tax Invoice • Valid for SA Tax & Employer Sponsorship Reimbursement.
+          {settings?.academyName || 'TechLabs Academy SA'} • Computer-generated invoice • No signature required.
         </div>
       </div>
     </div>

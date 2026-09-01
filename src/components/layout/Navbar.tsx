@@ -199,7 +199,7 @@ export const Navbar: React.FC = () => {
               >
                 Student Portal
               </button>
-            ) : currentRole === 'ADMIN' ? (
+            ) : currentRole === 'ADMIN' || currentRole === 'INSTRUCTOR' ? (
               <button
                 id="nav-portal-admin-btn"
                 onClick={() => handleNav('/admin')}
@@ -280,7 +280,7 @@ export const Navbar: React.FC = () => {
               >
                 My Dashboard
               </button>
-            ) : currentRole === 'ADMIN' ? (
+            ) : currentRole === 'ADMIN' || currentRole === 'INSTRUCTOR' ? (
               <button
                 onClick={() => handleNav('/admin')}
                 className="w-full py-2.5 bg-[#FAFAFA] text-[#000000] text-center font-bold text-xs uppercase tracking-wider rounded-xl border border-[#E0E0E0]"

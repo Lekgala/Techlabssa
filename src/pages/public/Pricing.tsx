@@ -270,7 +270,7 @@ export const Intakes: React.FC = () => {
 
       <div className="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8 space-y-6">
         {cohorts.map((cohort) => {
-          const seatsLeft = cohort.capacity - cohort.enrolledCount;
+          const seatsLeft = Math.max(0, cohort.capacity - cohort.enrolledCount);
           const isFillingFast = cohort.status === 'Filling Fast';
 
           return (
@@ -296,7 +296,7 @@ export const Intakes: React.FC = () => {
                 <div className="text-left sm:text-right">
                   <span className="text-[10px] font-mono uppercase tracking-wider text-[#A0A0A0] block">Capacity</span>
                   <strong className="text-[#000000] font-mono text-xs">
-                    {cohort.enrolledCount} / {cohort.capacity} Seats ({seatsLeft} Left)
+                    {cohort.enrolledCount} / {cohort.capacity} Seats ({seatsLeft > 0 ? `${seatsLeft} Left` : 'Waitlist Only'})
                   </strong>
                 </div>
               </div>

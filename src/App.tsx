@@ -53,7 +53,13 @@ const AppContent: React.FC = () => {
     if (path === '/refunds' || path === '/refund-policy') return <RefundPolicy />;
     if (path.startsWith('/verify')) return <VerifyCertificate />;
 
-    return <Home />;
+    return (
+      <section className="max-w-3xl mx-auto px-4 py-24 text-center space-y-5">
+        <p className="font-mono text-sm text-[#707070]">404</p>
+        <h1 className="text-4xl font-light">Page not found</h1>
+        <button onClick={() => window.history.back()} className="px-5 py-3 rounded-xl bg-black text-white font-bold">Go back</button>
+      </section>
+    );
   };
 
   return (

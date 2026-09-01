@@ -323,7 +323,7 @@ export class VirtualLearningService {
         meetingLink: `https://teams.microsoft.com/l/meetup-join/cohort-${cohortId}-session-${i + 1}`,
         meetingId: `teamsmeeting${cohortId}${i + 1}`,
         instructorId: 'instr-001',
-        instructorName: 'Dave Tutor',
+        instructorName: 'TechLabs Instructor',
         description: `Learn ${topics[i]} with live demonstrations and Q&A.`,
         agenda: [
           'Welcome & recap from last week',

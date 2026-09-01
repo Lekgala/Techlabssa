@@ -26,6 +26,18 @@ import type {
   SessionAttendance,
   VirtualLearningSettings,
   CourseModule,
+  EmailDeliveryRecord,
+  AcademySettings,
+  PaymentRecord,
+  StudentCredential,
+  AuthTokenRecord,
+  SessionRecord,
+  PaymentReminderRecord,
+  AuditLogRecord,
+  StaffAccount,
+  AdmissionNote,
+  AdmissionTask,
+  PaymentInstallment,
 } from '../../src/types';
 
 // Re-export types for use in server code
@@ -44,15 +56,18 @@ export type {
   SessionAttendance,
   VirtualLearningSettings,
   CourseModule,
+  EmailDeliveryRecord,
+  AcademySettings,
+  PaymentRecord,
 };
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
-const DB_PATH = path.join(__dirname, 'techlabs.db');
+const DB_PATH = path.resolve(process.env.TECHLABS_DB_PATH || path.join(__dirname, 'techlabs.db'));
 
 export type TechlabsDatabase = {
   currentUser: User | null;
-  currentRole: 'VISITOR' | 'STUDENT' | 'ADMIN';
+  currentRole: 'VISITOR' | 'STUDENT' | 'INSTRUCTOR' | 'ADMIN';
   leads: Lead[];
   applications: Application[];
   cohorts: Cohort[];
@@ -66,6 +81,18 @@ export type TechlabsDatabase = {
   sessionAttendance: SessionAttendance[];
   virtualLearningSettings: VirtualLearningSettings[];
   courseModules: CourseModule[];
+  emailDeliveries: EmailDeliveryRecord[];
+  academySettings: AcademySettings;
+  payments: PaymentRecord[];
+  studentCredentials: StudentCredential[];
+  authTokens: AuthTokenRecord[];
+  sessions: SessionRecord[];
+  paymentReminders: PaymentReminderRecord[];
+  auditLogs: AuditLogRecord[];
+  staffAccounts: StaffAccount[];
+  admissionNotes: AdmissionNote[];
+  admissionTasks: AdmissionTask[];
+  paymentInstallments: PaymentInstallment[];
 };
 
 const defaultDatabase: TechlabsDatabase = {
@@ -201,6 +228,38 @@ const defaultDatabase: TechlabsDatabase = {
   sessionAttendance: [],
   virtualLearningSettings: [],
   courseModules: COURSE_MODULES,
+  emailDeliveries: [],
+  academySettings: {
+    academyName: 'TechLabs Academy SA',
+    companyName: 'Madilotane Design (Pty) Ltd',
+    location: 'Cape Town, South Africa',
+    campusAddress: 'Cape Town, South Africa',
+    whatsappNumber: process.env.PUBLIC_WHATSAPP_NUMBER || '+27000000000',
+    admissionsEmail: 'admissions@madilotane.co.za',
+    bankName: 'Provided on your official invoice',
+    accountName: 'Configured by administration',
+    accountNumber: 'Contact admissions',
+    branchCode: 'Contact admissions',
+    referenceFormat: 'TLS-ReferenceNumber',
+    leadInstructorName: 'TechLabs Instructor',
+    flashSale: {
+      enabled: false,
+      title: 'Special course offer',
+      discountPercent: 20,
+      endDate: '',
+      targetTiers: ['STARTER', 'PROFESSIONAL', 'CAREER_ACCELERATOR'],
+    },
+  },
+  payments: [],
+  studentCredentials: [],
+  authTokens: [],
+  sessions: [],
+  paymentReminders: [],
+  auditLogs: [],
+  staffAccounts: [],
+  admissionNotes: [],
+  admissionTasks: [],
+  paymentInstallments: [],
 };
 
 const db = new Database(DB_PATH);
@@ -234,26 +293,44 @@ ensureSeeded();
 export async function getDatabase(): Promise<TechlabsDatabase> {
   const rows = db.prepare('SELECT key, value FROM collections').all() as Array<{ key: string; value: string }>;
   const recordMap = Object.fromEntries(rows.map((row) => [row.key, JSON.parse(row.value)]));
+  const applications = recordMap.applications ?? defaultDatabase.applications;
 
   return {
     currentUser: null,
     currentRole: 'VISITOR',
-    leads: (recordMap.leads && recordMap.leads.length > 0) ? recordMap.leads : defaultDatabase.leads,
-    applications: (recordMap.applications && recordMap.applications.length > 0) ? recordMap.applications : defaultDatabase.applications,
-    cohorts: ((recordMap.cohorts && recordMap.cohorts.length > 0) ? recordMap.cohorts : defaultDatabase.cohorts).map((c: any) => ({
+    leads: recordMap.leads ?? defaultDatabase.leads,
+    applications,
+    cohorts: (recordMap.cohorts ?? defaultDatabase.cohorts).map((c: any) => ({
       ...c,
-      deliveryMode: c.deliveryMode === 'Cape Town On-Campus' ? '100% Virtual Learning' : c.deliveryMode
+      deliveryMode: c.deliveryMode === 'Cape Town On-Campus' ? '100% Virtual Learning' : c.deliveryMode,
+      enrolledCount: applications.filter((application: Application) => application.cohortId === c.id && ['ENROLLED', 'COMPLETED'].includes(application.status)).length,
     })),
-    tickets: (recordMap.tickets && recordMap.tickets.length > 0) ? recordMap.tickets : defaultDatabase.tickets,
-    labs: (recordMap.labs && recordMap.labs.length > 0) ? recordMap.labs : defaultDatabase.labs,
-    invoices: (recordMap.invoices && recordMap.invoices.length > 0) ? recordMap.invoices : defaultDatabase.invoices,
-    assessments: (recordMap.assessments && recordMap.assessments.length > 0) ? recordMap.assessments : defaultDatabase.assessments,
-    certificates: (recordMap.certificates && recordMap.certificates.length > 0) ? recordMap.certificates : defaultDatabase.certificates,
-    attendance: (recordMap.attendance && recordMap.attendance.length > 0) ? recordMap.attendance : defaultDatabase.attendance,
+    tickets: recordMap.tickets ?? defaultDatabase.tickets,
+    labs: recordMap.labs ?? defaultDatabase.labs,
+    invoices: (recordMap.invoices ?? defaultDatabase.invoices).map((invoice: Invoice) => ({
+      ...invoice,
+      paidZAR: invoice.paidZAR ?? (invoice.status === 'VERIFIED' ? Math.max(0, invoice.amountZAR - invoice.balanceZAR) : 0),
+      balanceZAR: invoice.paidZAR === undefined && invoice.status === 'PENDING' ? invoice.amountZAR : invoice.balanceZAR,
+    })),
+    assessments: recordMap.assessments ?? defaultDatabase.assessments,
+    certificates: (recordMap.certificates ?? defaultDatabase.certificates).map((certificate: Certificate) => ({ ...certificate, instructorName: /dave|david kitching/i.test(certificate.instructorName) ? 'TechLabs Instructor' : certificate.instructorName })),
+    attendance: recordMap.attendance ?? defaultDatabase.attendance,
     virtualSessions: recordMap.virtualSessions ?? defaultDatabase.virtualSessions,
     sessionAttendance: recordMap.sessionAttendance ?? defaultDatabase.sessionAttendance,
     virtualLearningSettings: recordMap.virtualLearningSettings ?? defaultDatabase.virtualLearningSettings,
-    courseModules: (recordMap.courseModules && recordMap.courseModules.length > 0) ? recordMap.courseModules : defaultDatabase.courseModules,
+    courseModules: recordMap.courseModules ?? defaultDatabase.courseModules,
+    emailDeliveries: recordMap.emailDeliveries ?? defaultDatabase.emailDeliveries,
+    academySettings: recordMap.academySettings ?? defaultDatabase.academySettings,
+    payments: recordMap.payments ?? defaultDatabase.payments,
+    studentCredentials: recordMap.studentCredentials ?? [],
+    authTokens: recordMap.authTokens ?? [],
+    sessions: recordMap.sessions ?? [],
+    paymentReminders: recordMap.paymentReminders ?? [],
+    auditLogs: recordMap.auditLogs ?? [],
+    staffAccounts: recordMap.staffAccounts ?? [],
+    admissionNotes: recordMap.admissionNotes ?? [],
+    admissionTasks: recordMap.admissionTasks ?? [],
+    paymentInstallments: recordMap.paymentInstallments ?? [],
   };
 }
 
