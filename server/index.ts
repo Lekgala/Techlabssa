@@ -10,7 +10,7 @@ import { emailAutomationEngine } from './services/email-automation';
 import { bulkOperationsService } from './services/bulk-operations';
 import { escapeHtml, sendEmail } from './services/email-service';
 import { runPaymentReminders } from './services/payment-reminders';
-import { buildCurriculumSchedule } from '../src/lib/curriculumSchedule';
+import { buildCohortCalendar, buildCurriculumSchedule } from '../src/lib/curriculumSchedule';
 
 type Session = { role: 'ADMIN' | 'INSTRUCTOR' | 'STUDENT'; userId: string; email: string; expiresAt: number };
 type AuthedRequest = Request & { session?: Session; rawBody?: string };
@@ -35,6 +35,22 @@ const safeEqual = (left: string, right: string) => {
 };
 const requiredText = (value: unknown, max = 200) => typeof value === 'string' && value.trim().length > 0 && value.length <= max;
 const validEmail = (value: unknown) => requiredText(value, 254) && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value as string);
+const calculateTuition = (tier: string, settings: Awaited<ReturnType<typeof getDatabase>>['academySettings']) => {
+  const prices: Record<string, number> = { STARTER: 1999, PROFESSIONAL: 3499, CAREER_ACCELERATOR: 4999 };
+  const configuredPrice = settings.courseTierPricing?.[tier as 'STARTER' | 'PROFESSIONAL' | 'CAREER_ACCELERATOR']?.priceZAR;
+  const base = configuredPrice ?? prices[tier];
+  if (!base) return undefined;
+  const sale = settings.flashSale;
+  const targeted = sale?.enabled && sale.discountPercent > 0 && sale.discountPercent < 100 && (!sale.targetTiers?.length || sale.targetTiers.includes(tier as any));
+  return targeted ? Math.round(base * (1 - sale.discountPercent / 100)) : base;
+};
+const renderStoredTemplate = (db: Awaited<ReturnType<typeof getDatabase>>, templateId: string, variables: Record<string, unknown>) => {
+  const template = db.emailTemplates.find(item => item.id === templateId && item.enabled);
+  if (!template) return null;
+  let subject = template.subject; let html = template.htmlBody;
+  for (const [key, value] of Object.entries(variables)) { const placeholder = new RegExp(`\\{${key}\\}`, 'g'); subject = subject.replace(placeholder, String(value)); html = html.replace(placeholder, String(value)); }
+  return { subject, html };
+};
 const makeId = (prefix: string) => `${prefix}-${crypto.randomUUID()}`;
 const maskAuditValue = (key: string, value: unknown) => key === 'accountNumber' && typeof value === 'string' ? `****${value.slice(-4)}` : value;
 const auditChanges = (before: Record<string, any>, after: Record<string, any>, keys: string[]) => Object.fromEntries(keys.filter(key => JSON.stringify(before[key]) !== JSON.stringify(after[key])).map(key => [key, { before: maskAuditValue(key, before[key]), after: maskAuditValue(key, after[key]) }]));
@@ -212,7 +228,8 @@ app.post('/api/auth/request-access', rateLimit('request-access', 5, 15 * 60 * 10
   const raw = createAuthToken(db, application.id, purpose, purpose === 'MAGIC_LOGIN' ? 15 : 60);
   const link = portalLink(purpose === 'MAGIC_LOGIN' ? 'magic' : purpose === 'SETUP' ? 'setup' : purpose === 'VERIFY_EMAIL' ? 'verify' : 'reset', raw);
   const subject = purpose === 'MAGIC_LOGIN' ? 'Your secure TechLabs sign-in link' : purpose === 'SETUP' ? 'Create your TechLabs portal password' : purpose === 'VERIFY_EMAIL' ? 'Verify your TechLabs email address' : 'Reset your TechLabs portal password';
-  const delivery = await sendEmail({ to: email, subject, html: `<h2>${escapeHtml(subject)}</h2><p>Hello ${escapeHtml(application.firstName)},</p><p><a href="${escapeHtml(link)}" style="display:inline-block;padding:12px 18px;background:#000;color:#fff;text-decoration:none;border-radius:8px">Continue securely</a></p><p>This link expires in ${purpose === 'MAGIC_LOGIN' ? '15 minutes' : '1 hour'} and can only be used once. If you did not request it, ignore this email.</p><p>Regards,<br>TechLabs Academy</p>` });
+  const action = purpose === 'MAGIC_LOGIN' ? 'sign in to your student portal' : purpose === 'SETUP' ? 'create your student portal password and verify your email' : purpose === 'VERIFY_EMAIL' ? 'verify your email address' : 'set a new student portal password';
+  const delivery = await sendEmail({ to: email, subject, html: `<h2>${escapeHtml(subject)}</h2><p>Hello ${escapeHtml(application.firstName)},</p><p>Use the secure link below to ${escapeHtml(action)}.</p><p><a href="${escapeHtml(link)}" style="display:inline-block;padding:12px 18px;background:#000;color:#fff;text-decoration:none;border-radius:8px">Continue securely</a></p><p>This link expires in ${purpose === 'MAGIC_LOGIN' ? '15 minutes' : '1 hour'} and can be used once. Complete this step in the same browser before returning to the portal.</p><p>If you did not request this email, ignore it. If the link has expired, request a new one from the student login page; do not contact admissions for a replacement link.</p><p>Regards,<br>TechLabs Academy</p>` });
   db.emailDeliveries.unshift({ id: makeId('email'), providerId: delivery.id, recipient: email, subject, category: 'APPLICATION_STATUS', status: delivery.sent ? 'SENT' : 'FAILED', reason: delivery.reason, createdAt: now });
   await saveDatabase(db); res.json(generic);
 });
@@ -417,8 +434,15 @@ app.get('/api/student/payment-plan', authenticate, requireRole('STUDENT'), async
 app.put('/api/settings', authenticate, requireRole('ADMIN'), async (req: AuthedRequest, res) => {
   const db = await getDatabase();
   const updates = req.body || {};
-  const allowedKeys = ['academyName','companyName','location','campusAddress','whatsappNumber','admissionsEmail','leadInstructorName','bankName','accountName','accountNumber','branchCode','referenceFormat','flashSale'];
+  const allowedKeys = ['academyName','companyName','location','campusAddress','whatsappNumber','studentSupportWhatsappNumber','admissionsEmail','leadInstructorName','bankName','accountName','accountNumber','branchCode','referenceFormat','flashSale','courseTierPricing'];
   const safeUpdates = Object.fromEntries(Object.entries(updates).filter(([key]) => allowedKeys.includes(key)));
+  if (safeUpdates.courseTierPricing !== undefined) {
+    const pricing = safeUpdates.courseTierPricing as Record<string, { priceZAR?: unknown; displayName?: unknown; description?: unknown; features?: unknown; badgeLabel?: unknown }>;
+    const tiers = ['STARTER', 'PROFESSIONAL', 'CAREER_ACCELERATOR'];
+    if (!pricing || typeof pricing !== 'object' || tiers.some(tier => !Number.isFinite(Number(pricing[tier]?.priceZAR)) || Number(pricing[tier].priceZAR) < 1 || Number(pricing[tier].priceZAR) > 100_000)) return res.status(400).json({ error: 'Each course tier price must be between R1 and R100,000' });
+    if (tiers.some(tier => (pricing[tier].displayName !== undefined && !requiredText(pricing[tier].displayName, 80)) || (pricing[tier].description !== undefined && !requiredText(pricing[tier].description, 400)) || (pricing[tier].badgeLabel !== undefined && !requiredText(pricing[tier].badgeLabel, 40)) || (pricing[tier].features !== undefined && (!Array.isArray(pricing[tier].features) || pricing[tier].features.length > 10 || pricing[tier].features.some(feature => !requiredText(feature, 160)))))) return res.status(400).json({ error: 'Tier card content is invalid' });
+    safeUpdates.courseTierPricing = Object.fromEntries(tiers.map(tier => [tier, { ...pricing[tier], priceZAR: Math.round(Number(pricing[tier].priceZAR) * 100) / 100, ...(Array.isArray(pricing[tier].features) ? { features: pricing[tier].features.map(feature => String(feature).trim()).filter(Boolean) } : {}) }]));
+  }
   const before = { ...db.academySettings };
   db.academySettings = { ...db.academySettings, ...safeUpdates };
   const changes = auditChanges(before, db.academySettings, Object.keys(safeUpdates));
@@ -460,8 +484,8 @@ app.get(['/api/student/documents/:type/:recordId?', '/api/admin/applications/:ap
     filename = `admission-${application.referenceNumber}.pdf`;
   } else if (req.params.type === 'schedule') {
     if (!cohort) return res.status(404).json({ error: 'Course schedule is not available yet' });
-    const scheduledModules = buildCurriculumSchedule(db.courseModules, cohort);
-    pdf = generateBrandedDocumentPDF({ documentTitle: 'Course Schedule', documentNumber: cohort.id, issuedDate, ...branding, sections: [{ heading: 'Cohort', lines: [{ label: 'Cohort', value: cohort.name, bold: true }, { label: 'Programme', value: 'TechLabs IT Support Bootcamp' }, { label: 'Course dates', value: `${cohort.startDate} to ${cohort.endDate}` }, { label: 'Class schedule', value: cohort.scheduleFormat }, { label: 'Delivery', value: `${cohort.deliveryMode} - ${cohort.location}` }] }, { heading: 'Curriculum Timeline', lines: scheduledModules.map(module => ({ label: `Module ${module.number}`, value: `${module.scheduleLabel} - ${module.title}`, bold: module.number === 1 || module.number === scheduledModules.length })) }], closingNote: 'Module dates are generated from the cohort dates and update automatically when the cohort schedule changes.' });
+    const visibleModules = db.courseModules.filter(module => module.published !== false); const scheduledModules = buildCurriculumSchedule(visibleModules, cohort); const induction = buildCohortCalendar(visibleModules, cohort).find(event => event.type === 'INDUCTION');
+    pdf = generateBrandedDocumentPDF({ documentTitle: 'Course Schedule', documentNumber: cohort.id, issuedDate, ...branding, sections: [{ heading: 'Cohort', lines: [{ label: 'Cohort', value: cohort.name, bold: true }, { label: 'Programme', value: 'TechLabs IT Support Bootcamp' }, { label: 'Course dates', value: `${cohort.startDate} to ${cohort.endDate}` }, { label: 'Class schedule', value: cohort.scheduleFormat }, { label: 'Delivery', value: `${cohort.deliveryMode} - ${cohort.location}` }] }, { heading: 'Induction', lines: [{ label: 'Student induction', value: `${induction?.date || cohort.startDate} - portal orientation, course expectations, support channels, and lab-readiness check`, bold: true }] }, { heading: 'Curriculum Timeline', lines: scheduledModules.map(module => ({ label: `Module ${module.number}`, value: `${module.scheduleLabel} - ${module.title}`, bold: module.number === 1 || module.number === scheduledModules.length })) }], closingNote: 'Induction and module dates are generated from the cohort dates and update automatically when the cohort schedule changes.' });
     filename = `course-schedule-${cohort.id}.pdf`;
   } else if (req.params.type === 'receipt') {
     const payment = db.payments.find(item => item.id === req.params.recordId && item.studentId === application.id && item.status === 'VERIFIED');
@@ -476,7 +500,7 @@ app.get(['/api/student/documents/:type/:recordId?', '/api/admin/applications/:ap
   } else if (req.params.type === 'certificate') {
     const certificate = db.certificates.find(item => item.studentId === application.id);
     if (!certificate) return res.status(404).json({ error: 'Certificate is not available yet' });
-    pdf = generateBrandedDocumentPDF({ documentTitle: 'Certificate', documentNumber: certificate.certificateNumber, issuedDate: certificate.completionDate, ...branding, sections: [{ heading: 'Certificate of Completion', lines: [{ value: 'This certifies that', bold: true }, { value: certificate.studentName, bold: true }, { value: `has successfully completed ${certificate.courseName}.` }, { label: 'Completion date', value: certificate.completionDate }, { label: 'Instructor', value: certificate.instructorName }, ...(certificate.gradeDistinction ? [{ label: 'Achievement', value: certificate.gradeDistinction, bold: true }] : [])] }, { heading: 'Verification', lines: [{ label: 'Certificate number', value: certificate.certificateNumber, bold: true }, { label: 'Verification URL', value: certificate.verificationUrl }] }], closingNote: 'This certificate can be verified using the certificate number shown above.' });
+    pdf = generateBrandedDocumentPDF({ documentTitle: 'Certificate of Completion', documentNumber: certificate.certificateNumber, issuedDate: certificate.completionDate, ...branding, sections: [{ heading: 'Certificate of Completion', lines: [{ value: 'This records that', bold: true }, { value: certificate.studentName, bold: true }, { value: `has successfully completed ${certificate.courseName}.` }, { label: 'Completion date', value: certificate.completionDate }, { label: 'Instructor', value: certificate.instructorName }, ...(certificate.gradeDistinction ? [{ label: 'Achievement', value: certificate.gradeDistinction, bold: true }] : [])] }, { heading: 'TechLabs Verification', lines: [{ label: 'Certificate number', value: certificate.certificateNumber, bold: true }, { label: 'Verification URL', value: certificate.verificationUrl }] }], closingNote: 'Independent, non-accredited practical training. This is not an SAQA/NQF qualification, SETA/QCTO-accredited award, university qualification, or Microsoft/vendor certification. Employment is not guaranteed.' });
     filename = `certificate-${certificate.certificateNumber}.pdf`;
   } else return res.status(404).json({ error: 'Document type not found' });
 
@@ -545,11 +569,12 @@ app.post('/api/admin/payments/:id/verify', authenticate, requireRole('ADMIN'), s
   cohort.enrolledCount = db.applications.filter(item => item.cohortId === cohort.id && ['ENROLLED', 'COMPLETED'].includes(item.status)).length;
   const fullyPaid = invoice.balanceZAR === 0;
   const waitlisted = application.status === 'WAITLISTED';
-  const subject = waitlisted ? `Payment confirmed - cohort waitlist - ${invoice.invoiceNumber}` : fullyPaid ? `Full payment confirmed - ${invoice.invoiceNumber}` : payment.type === 'DEPOSIT' ? 'Your TechLabs seat is secured' : 'Your TechLabs payment was verified';
+  const paymentTemplate = !waitlisted ? renderStoredTemplate(db, 'tpl-payment-verified', { studentName: escapeHtml(`${application.firstName} ${application.lastName}`), amount: confirmedAmount.toLocaleString('en-ZA'), cohortName: escapeHtml(cohort.name), courseStartDate: escapeHtml(cohort.startDate) }) : null;
+  const subject = waitlisted ? `Payment confirmed - cohort waitlist - ${invoice.invoiceNumber}` : fullyPaid ? `Full payment confirmed - ${invoice.invoiceNumber}` : paymentTemplate?.subject || (payment.type === 'DEPOSIT' ? 'Your TechLabs seat is secured' : 'Your TechLabs payment was verified');
   addAudit(db, req, 'PAYMENT_VERIFIED', 'payment', payment.id, `${payment.type} payment of R${confirmedAmount.toLocaleString('en-ZA')} verified for ${invoice.invoiceNumber}${waitlisted ? '; cohort full, applicant waitlisted' : ''}`, { confirmedAmountZAR: { before: submittedAmount, after: confirmedAmount }, paidZAR: { before: previousPaid, after: invoice.paidZAR }, balanceZAR: { before: previousBalance, after: invoice.balanceZAR }, applicationStatus: { before: previousApplicationStatus, after: application.status }, cohortEnrolledCount: { before: cohort.enrolledCount - (hasSeat && !wasEnrolled ? 1 : 0), after: cohort.enrolledCount } });
   // Financial state must be durable even when the email provider is slow or unavailable.
   await saveDatabase(db);
-  const delivery = await sendEmail({ to: application.email, subject, html: `<h2>${waitlisted ? 'Payment confirmed - waitlist update' : fullyPaid ? 'Full payment confirmed' : 'Payment verified'}</h2><p>Hello ${escapeHtml(application.firstName)},</p><p>We verified your ${payment.type.toLowerCase()} payment of <strong>R${confirmedAmount.toLocaleString('en-ZA')}</strong>.</p><p><strong>Amount paid:</strong> R${invoice.paidZAR.toLocaleString('en-ZA')}<br><strong>Remaining balance:</strong> R${invoice.balanceZAR.toLocaleString('en-ZA')}</p>${waitlisted ? `<p>The ${escapeHtml(cohort.name)} cohort has reached its capacity of ${cohort.capacity}. Your application has been moved to the waitlist and admissions will contact you when a seat becomes available.</p>` : fullyPaid ? '<p>Your tuition is paid in full. No further payment is due.</p>' : payment.type === 'DEPOSIT' ? '<p>Your seat is now secured and your student learning access is active.</p>' : ''}<p>Regards,<br>TechLabs Academy</p>` });
+  const delivery = await sendEmail({ to: application.email, subject, html: `${paymentTemplate?.html || `<h2>${waitlisted ? 'Payment confirmed - waitlist update' : fullyPaid ? 'Full payment confirmed' : 'Payment verified'}</h2><p>Hello ${escapeHtml(application.firstName)},</p><p>We verified your ${payment.type.toLowerCase()} payment of <strong>R${confirmedAmount.toLocaleString('en-ZA')}</strong>.</p>`}<p><strong>Amount paid:</strong> R${invoice.paidZAR.toLocaleString('en-ZA')}<br><strong>Remaining balance:</strong> R${invoice.balanceZAR.toLocaleString('en-ZA')}</p>${waitlisted ? `<p>The ${escapeHtml(cohort.name)} cohort has reached capacity. Your application is on the waitlist.</p>` : fullyPaid ? '<p>Your tuition is paid in full. No further payment is due.</p>' : payment.type === 'DEPOSIT' ? '<p>Your seat is secured and student access is active.</p>' : ''}<p>Regards,<br>TechLabs Academy</p>` });
   db.emailDeliveries.unshift({ id: makeId('email'), providerId: delivery.id, recipient: application.email, subject, category: 'APPLICATION_STATUS', status: delivery.sent ? 'SENT' : 'FAILED', reason: delivery.reason, createdAt: new Date().toISOString() });
   await saveDatabase(db);
   res.json({ payment, invoice, application, cohort, waitlisted, emailDelivery: delivery });
@@ -565,7 +590,7 @@ app.post('/api/admin/payments/:id/reject', authenticate, requireRole('ADMIN'), a
   let emailDelivery;
   if (application && invoice) {
     const subject = `Proof of payment needs attention - ${invoice.invoiceNumber}`;
-    emailDelivery = await sendEmail({ to: application.email, subject, html: `<h2>Proof of payment not approved</h2><p>Hello ${escapeHtml(application.firstName)},</p><p>Admissions could not approve your uploaded proof of payment.</p><p><strong>Reason:</strong> ${escapeHtml(reason)}</p><p>Please sign in to the portal and upload a corrected bank-generated PDF or image. Your balance has not changed.</p><p>Regards,<br>TechLabs Academy</p>` });
+    emailDelivery = await sendEmail({ to: application.email, subject, html: `<h2>Proof of payment needs attention</h2><p>Hello ${escapeHtml(application.firstName)},</p><p>Admissions could not approve the proof of payment you uploaded.</p><p><strong>Reason:</strong> ${escapeHtml(reason)}</p><h3>What to do now</h3><ol><li>Sign in to the student portal and check the invoice number, required amount, and banking details.</li><li>Upload one clear, bank-generated proof of payment as a PDF, JPG, or PNG using the correct invoice reference.</li><li>Wait for the portal status or an email update before uploading another copy.</li></ol><p>Your balance has not changed. Reply to this email only if the reason above does not explain what needs to be corrected.</p><p>Regards,<br>TechLabs Academy</p>` });
     db.emailDeliveries.unshift({ id: makeId('email'), providerId: emailDelivery.id, recipient: application.email, subject, category: 'APPLICATION_STATUS', status: emailDelivery.sent ? 'SENT' : 'FAILED', reason: emailDelivery.reason, createdAt: new Date().toISOString() });
   }
   addAudit(db, req, 'POP_REJECTED', 'payment', payment.id, `POP rejected${invoice ? ` for ${invoice.invoiceNumber}` : ''}: ${reason}`, { status: { before: 'SUBMITTED', after: 'REJECTED' }, rejectionReason: { before: null, after: reason } });
@@ -579,24 +604,26 @@ app.post('/api/applications', rateLimit('applications', 5, 60 * 60 * 1000), asyn
   const db = await getDatabase();
   const normalizedEmail = data.email.trim().toLowerCase();
   const normalizedCohortId = data.cohortId.trim();
-  if (!db.cohorts.some(item => item.id === normalizedCohortId)) return res.status(400).json({ error: 'The selected cohort is not available' });
+  const selectedCohort = db.cohorts.find(item => item.id === normalizedCohortId);
+  if (!selectedCohort || !['Open', 'Filling Fast'].includes(selectedCohort.status)) return res.status(409).json({ error: 'The selected cohort is no longer accepting applications. Please choose an open cohort.' });
+  const selectedTier = String(data.selectedTier || ''); const paymentOption = String(data.paymentOption || '');
+  const tuitionAmount = calculateTuition(selectedTier, db.academySettings);
+  if (!tuitionAmount || !['DEPOSIT', 'FULL'].includes(paymentOption)) return res.status(400).json({ error: 'A valid course tier and payment option are required' });
   if (db.applications.some(item => item.email.trim().toLowerCase() === normalizedEmail && item.cohortId.trim() === normalizedCohortId)) {
     return res.status(409).json({ error: 'This email address already has an application for the selected cohort. Sign in to the student portal or choose a different cohort.' });
   }
   const referenceNumber = `TLS-${new Date().getFullYear()}-${String(db.applications.length + 1).padStart(4, '0')}`;
-  const application = { ...data, id: makeId('app'), referenceNumber, email: normalizedEmail, cohortId: normalizedCohortId, submissionDate: new Date().toISOString().slice(0, 10), status: 'NEW' };
-  const amount = Number(data.amountZAR); const safeAmount = Number.isFinite(amount) && amount > 0 ? amount : 0;
-  const deposit = data.paymentOption === 'FULL' ? safeAmount : Math.min(1000, safeAmount);
+  const { amountZAR: _ignoredClientAmount, ...safeApplicationData } = data;
+  const application = { ...safeApplicationData, selectedTier, paymentOption, id: makeId('app'), referenceNumber, email: normalizedEmail, cohortId: normalizedCohortId, submissionDate: new Date().toISOString().slice(0, 10), status: 'NEW' };
+  const deposit = paymentOption === 'FULL' ? tuitionAmount : Math.min(1000, tuitionAmount);
   const lead = { id: makeId('lead'), name: `${data.firstName} ${data.lastName}`, email: application.email, whatsapp: data.whatsapp, source: 'Website', courseInterest: `Bootcamp (${data.selectedTier})`, status: 'APPLICATION_SUBMITTED', notes: [`Application submitted with ref ${referenceNumber}`], followUpDate: new Date(Date.now() + 172800000).toISOString().slice(0, 10), createdAt: new Date().toISOString().slice(0, 10) };
-  const invoice = { id: makeId('inv'), invoiceNumber: `INV-${referenceNumber}`, invoiceDate: new Date().toISOString().slice(0, 10), studentName: lead.name, studentEmail: application.email, courseTier: data.selectedTier, amountZAR: safeAmount, paidZAR: 0, depositZAR: deposit, balanceZAR: safeAmount, paymentOption: data.paymentOption || 'DEPOSIT', status: 'PENDING', dueDate: new Date(Date.now() + 432000000).toISOString().slice(0, 10), paymentMethod: 'EFT' };
+  const invoice = { id: makeId('inv'), invoiceNumber: `INV-${referenceNumber}`, invoiceDate: new Date().toISOString().slice(0, 10), studentName: lead.name, studentEmail: application.email, courseTier: selectedTier, amountZAR: tuitionAmount, paidZAR: 0, depositZAR: deposit, balanceZAR: tuitionAmount, paymentOption, status: 'PENDING', dueDate: new Date(Date.now() + 432000000).toISOString().slice(0, 10), paymentMethod: 'EFT' };
   db.applications = [application, ...db.applications] as any; db.leads = [lead, ...db.leads] as any; db.invoices = [invoice, ...db.invoices] as any;
   await saveDatabase(db);
-  const emailDelivery = await sendEmail({
-    to: application.email,
-    subject: `Application received — ${referenceNumber}`,
-    html: `<h2>Thank you, ${escapeHtml(application.firstName)}!</h2><p>We received your TechLabs Academy application.</p><p><strong>Reference number:</strong> ${escapeHtml(referenceNumber)}</p><p>Keep this reference secure. You will use it with your email address to access the applicant portal.</p><p>Our admissions team will review your application and contact you with the next steps.</p><p>Regards,<br>TechLabs Academy</p>`,
-  });
-  db.emailDeliveries = [{ id: makeId('email'), providerId: emailDelivery.id, recipient: application.email, subject: `Application received — ${referenceNumber}`, category: 'APPLICATION_SUBMITTED', status: emailDelivery.sent ? 'SENT' : 'FAILED', reason: emailDelivery.reason, createdAt: new Date().toISOString() }, ...db.emailDeliveries];
+  const submittedTemplate = renderStoredTemplate(db, 'tpl-app-submitted', { studentName: escapeHtml(`${application.firstName} ${application.lastName}`), cohortName: escapeHtml(selectedCohort.name), referenceNumber: escapeHtml(referenceNumber) });
+  const submittedSubject = submittedTemplate?.subject || `Application received — ${referenceNumber}`;
+  const emailDelivery = await sendEmail({ to: application.email, subject: submittedSubject, html: submittedTemplate?.html || `<h2>Thank you, ${escapeHtml(application.firstName)}!</h2><p>We received your application.</p><p><strong>Reference:</strong> ${escapeHtml(referenceNumber)}</p><p>Regards,<br>TechLabs Academy</p>` });
+  db.emailDeliveries = [{ id: makeId('email'), providerId: emailDelivery.id, recipient: application.email, subject: submittedSubject, category: 'APPLICATION_SUBMITTED', status: emailDelivery.sent ? 'SENT' : 'FAILED', reason: emailDelivery.reason, createdAt: new Date().toISOString() }, ...db.emailDeliveries];
   await saveDatabase(db);
   res.status(201).json({ application, invoice, emailDelivery });
 });
@@ -607,6 +634,80 @@ app.post('/api/leads', rateLimit('leads', 10, 60 * 60 * 1000), async (req, res) 
   const db = await getDatabase();
   const lead = { ...data, id: makeId('lead'), email: data.email.trim().toLowerCase(), status: 'NEW_LEAD', notes: [`Inquiry received from ${data.source || 'Website'}`], createdAt: new Date().toISOString().slice(0, 10) };
   db.leads = [lead, ...db.leads] as any; await saveDatabase(db); res.status(201).json(lead);
+});
+
+app.put('/api/admin/leads/:id', authenticate, requireAnyRole('ADMIN', 'INSTRUCTOR'), async (req: AuthedRequest, res) => {
+  const db = await getDatabase(); const lead = db.leads.find(item => item.id === req.params.id);
+  if (!lead) return res.status(404).json({ error: 'Lead not found' });
+  const allowedStatuses = ['NEW_LEAD','CONTACTED','INTERESTED','APPLICATION_STARTED','APPLICATION_SUBMITTED','APPROVED','PAYMENT_PENDING','ENROLLED','ACTIVE_STUDENT','GRADUATED','ALUMNI'];
+  const before = { ...lead }; const updates: Record<string, unknown> = {};
+  if (req.body?.status !== undefined) {
+    if (!allowedStatuses.includes(String(req.body.status))) return res.status(400).json({ error: 'Invalid recruitment status' });
+    updates.status = String(req.body.status);
+  }
+  if (req.body?.followUpDate !== undefined) {
+    const followUpDate = String(req.body.followUpDate);
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(followUpDate)) return res.status(400).json({ error: 'A valid follow-up date is required' });
+    updates.followUpDate = followUpDate;
+  }
+  if (!Object.keys(updates).length) return res.status(400).json({ error: 'No supported lead changes supplied' });
+  Object.assign(lead, updates); const changes = auditChanges(before, lead, Object.keys(updates));
+  addAudit(db, req, 'LEAD_UPDATED', 'leads', lead.id, `Recruitment lead updated for ${lead.email}: ${Object.keys(changes).join(', ')}`, changes);
+  await saveDatabase(db); res.json(lead);
+});
+
+app.post('/api/admin/leads/:id/notes', authenticate, requireAnyRole('ADMIN', 'INSTRUCTOR'), async (req: AuthedRequest, res) => {
+  const db = await getDatabase(); const lead = db.leads.find(item => item.id === req.params.id); const note = String(req.body?.note || '').trim();
+  if (!lead) return res.status(404).json({ error: 'Lead not found' });
+  if (note.length < 2 || note.length > 1000) return res.status(400).json({ error: 'A note between 2 and 1,000 characters is required' });
+  lead.notes = [...(lead.notes || []), `${new Date().toISOString().slice(0, 10)} · ${req.session!.email}: ${note}`];
+  addAudit(db, req, 'LEAD_NOTE_ADDED', 'leads', lead.id, `Recruitment note added for ${lead.email}`);
+  await saveDatabase(db); res.json(lead);
+});
+
+app.post('/api/admin/course-modules', authenticate, requireRole('ADMIN'), async (req: AuthedRequest, res) => {
+  const db = await getDatabase(); const input = req.body || {};
+  const title = String(input.title || '').trim(); const duration = String(input.duration || '').trim(); const summary = String(input.summary || '').trim();
+  if (!title || title.length > 200 || !duration || duration.length > 200 || !summary || summary.length > 2000) return res.status(400).json({ error: 'Title, duration and summary are required and must be within the allowed lengths' });
+  const readList = (field: string) => Array.isArray(input[field]) ? input[field].map((value: unknown) => String(value).trim()).filter(Boolean) : null;
+  const learningOutcomes = readList('learningOutcomes'); const practicalLabs = readList('practicalLabs'); const exampleTickets = readList('exampleTickets'); const technologies = readList('technologies');
+  const lists = [learningOutcomes, practicalLabs, exampleTickets, technologies];
+  if (lists.some(list => list === null)) return res.status(400).json({ error: 'Curriculum list fields must be arrays' });
+  if (lists.some(list => list!.length > 50 || list!.some(value => value.length > 500))) return res.status(400).json({ error: 'A curriculum list contains too many or overly long entries' });
+  const moduleNumber = Math.max(0, ...db.courseModules.map(module => module.number)) + 1;
+  if (moduleNumber > 100) return res.status(409).json({ error: 'The curriculum cannot contain more than 100 numbered modules' });
+  const module = { number: moduleNumber, title, duration, summary, learningOutcomes: learningOutcomes!, practicalLabs: practicalLabs!, exampleTickets: exampleTickets!, technologies: technologies!, published: input.published !== false };
+  db.courseModules.push(module);
+  addAudit(db, req, 'CURRICULUM_MODULE_CREATED', 'courseModules', String(moduleNumber), `Module ${moduleNumber} created: ${title}`);
+  await saveDatabase(db); res.status(201).json(module);
+});
+
+app.put('/api/admin/course-modules/:number', authenticate, requireRole('ADMIN'), async (req: AuthedRequest, res) => {
+  const moduleNumber = Number(req.params.number); const db = await getDatabase();
+  if (!Number.isInteger(moduleNumber) || moduleNumber < 1 || moduleNumber > 100) return res.status(400).json({ error: 'Invalid module number' });
+  const existing = db.courseModules.find(module => module.number === moduleNumber);
+  if (!existing) return res.status(404).json({ error: 'Curriculum module not found' });
+  const input = req.body || {}; const textFields = ['title', 'duration', 'summary'] as const; const arrayFields = ['learningOutcomes', 'practicalLabs', 'exampleTickets', 'technologies'] as const;
+  const updates: Record<string, unknown> = {};
+  for (const field of textFields) {
+    if (input[field] === undefined) continue;
+    const value = String(input[field]).trim();
+    if (!value || value.length > (field === 'summary' ? 2000 : 200)) return res.status(400).json({ error: `${field} is required and is too long` });
+    updates[field] = value;
+  }
+  for (const field of arrayFields) {
+    if (input[field] === undefined) continue;
+    if (!Array.isArray(input[field])) return res.status(400).json({ error: `${field} must be a list` });
+    const values = input[field].map((value: unknown) => String(value).trim()).filter(Boolean);
+    if (values.length > 50 || values.some((value: string) => value.length > 500)) return res.status(400).json({ error: `${field} contains too many or overly long entries` });
+    updates[field] = values;
+  }
+  if (input.published !== undefined) updates.published = Boolean(input.published);
+  if (!Object.keys(updates).length) return res.status(400).json({ error: 'No supported curriculum changes supplied' });
+  const before = { ...existing }; Object.assign(existing, updates);
+  const changes = auditChanges(before, existing, Object.keys(updates));
+  addAudit(db, req, 'CURRICULUM_MODULE_UPDATED', 'courseModules', String(moduleNumber), `Module ${moduleNumber} updated: ${Object.keys(changes).join(', ')}`, changes);
+  await saveDatabase(db); res.json(existing);
 });
 
 app.put('/api/admin/applications/:id/record', authenticate, requireRole('ADMIN'), async (req: AuthedRequest, res) => {
@@ -724,42 +825,35 @@ for (const collection of ['cohorts','tickets','labs','invoices','assessments','c
 }
 
 app.post('/api/email/approval', authenticate, requireRole('ADMIN'), async (req, res) => {
-  const { applicantName, email, type, referenceNumber, cohortName } = req.body || {};
-  if (!validEmail(email) || !['APPROVED', 'REJECTED', 'WAITLISTED'].includes(type)) {
-    return res.status(400).json({ error: 'Valid recipient and application status are required' });
-  }
-  const subjects: Record<string, string> = {
-    APPROVED: 'Your TechLabs Academy application has been approved',
-    REJECTED: 'Update on your TechLabs Academy application',
-    WAITLISTED: 'Your TechLabs Academy application is on the waitlist',
-  };
-  const descriptions: Record<string, string> = {
-    APPROVED: 'Your application has been approved. Admissions will send your payment and onboarding instructions shortly.',
-    REJECTED: 'After reviewing your application, we are unable to offer you a place in this intake.',
-    WAITLISTED: 'Your application has been placed on the waitlist. We will contact you if a place becomes available.',
-  };
+  const { email, type, referenceNumber } = req.body || {};
+  if (!validEmail(email) || type !== 'APPROVED') return res.status(400).json({ error: 'A valid approved application is required' });
   const db = await getDatabase();
   const application = db.applications.find(item => item.email.toLowerCase() === String(email).toLowerCase() && item.referenceNumber === referenceNumber);
-  let accountInstructions = '';
-  if (type === 'APPROVED' && application) {
-    application.status = 'APPROVED';
-    const now = new Date().toISOString();
-    if (!db.studentCredentials.some(item => item.applicationId === application.id)) db.studentCredentials.push({ applicationId: application.id, email: application.email.toLowerCase(), createdAt: now, updatedAt: now });
-    const setupToken = createAuthToken(db, application.id, 'SETUP', 60 * 24);
-    const setupLink = portalLink('setup', setupToken);
-    accountInstructions = `<h3>Create your secure portal password</h3><p><a href="${escapeHtml(setupLink)}" style="display:inline-block;padding:12px 18px;background:#000;color:#fff;text-decoration:none;border-radius:8px">Create portal password</a></p><p>This private link verifies your email and expires in 24 hours. Your application reference is no longer used as a password.</p>`;
-  }
-  const paymentInstructions = type === 'APPROVED' ? `<h3>Secure your seat with the R1,000 deposit</h3><p><strong>Bank:</strong> ${escapeHtml(db.academySettings.bankName)}<br><strong>Account name:</strong> ${escapeHtml(db.academySettings.accountName)}<br><strong>Account number:</strong> ${escapeHtml(db.academySettings.accountNumber)}<br><strong>Branch code:</strong> ${escapeHtml(db.academySettings.branchCode)}<br><strong>Reference:</strong> ${escapeHtml(referenceNumber)}</p><p>After creating your password and paying, sign in to your portal and upload the bank-generated proof of payment. Your seat is secured only after admissions verifies the deposit.</p>` : '';
-  const delivery = await sendEmail({
-    to: email,
-    subject: subjects[type],
-    html: `<h2>Hello ${escapeHtml(applicantName || 'Applicant')},</h2><p>${escapeHtml(descriptions[type])}</p><p><strong>Reference:</strong> ${escapeHtml(referenceNumber)}</p><p><strong>Intake:</strong> ${escapeHtml(cohortName || 'Next available intake')}</p>${accountInstructions}${paymentInstructions}<p>Regards,<br>TechLabs Academy</p>`,
+  if (!application) return res.status(404).json({ error: 'Application not found' });
+  if (!application.isLaptopCompliant) return res.status(409).json({ error: 'Hardware must be confirmed compliant before approval' });
+  const invoice = db.invoices.find(item => item.studentEmail.toLowerCase() === application.email.toLowerCase());
+  const cohort = db.cohorts.find(item => item.id === application.cohortId);
+  if (!invoice || !cohort) return res.status(409).json({ error: 'The linked invoice or cohort is missing' });
+  const previousStatus = application.status; application.status = 'APPROVED';
+  const now = new Date().toISOString();
+  if (!db.studentCredentials.some(item => item.applicationId === application.id)) db.studentCredentials.push({ applicationId: application.id, email: application.email.toLowerCase(), createdAt: now, updatedAt: now });
+  const setupToken = createAuthToken(db, application.id, 'SETUP', 60 * 24); const setupLink = portalLink('setup', setupToken);
+  const rendered = renderStoredTemplate(db, 'tpl-app-approved', {
+    studentName: escapeHtml(`${application.firstName} ${application.lastName}`), cohortName: escapeHtml(cohort.name), cohortStartDate: escapeHtml(cohort.startDate), invoiceAmount: invoice.amountZAR.toLocaleString('en-ZA'), dueDate: escapeHtml(invoice.dueDate),
   });
-  db.emailDeliveries = [{ id: makeId('email'), providerId: delivery.id, recipient: email, subject: subjects[type], category: 'APPLICATION_STATUS', status: delivery.sent ? 'SENT' : 'FAILED', reason: delivery.reason, createdAt: new Date().toISOString() }, ...db.emailDeliveries];
-  if (application) addAudit(db, req, `APPLICATION_${type}`, 'application', application.id, `${type.toLowerCase()} decision recorded and email ${delivery.sent ? 'submitted' : 'failed'} for ${application.referenceNumber}`, { status: { before: type === 'APPROVED' ? 'UNDER_REVIEW' : application.status, after: type } });
+  const subject = rendered?.subject || 'Your TechLabs Academy application has been approved';
+  const accountInstructions = `<h3>Step 1: Create your portal password</h3><p><a href="${escapeHtml(setupLink)}" style="display:inline-block;padding:12px 18px;background:#000;color:#fff;text-decoration:none;border-radius:8px">Create portal password</a></p><p>This private link verifies your email, expires in 24 hours, and can be used once.</p>`;
+  const paymentInstructions = `<h3>Steps 2 and 3: Pay and upload your proof</h3><p><strong>Bank:</strong> ${escapeHtml(db.academySettings.bankName)}<br><strong>Account name:</strong> ${escapeHtml(db.academySettings.accountName)}<br><strong>Account number:</strong> ${escapeHtml(db.academySettings.accountNumber)}<br><strong>Branch code:</strong> ${escapeHtml(db.academySettings.branchCode)}<br><strong>EFT reference:</strong> ${escapeHtml(invoice.invoiceNumber)}</p><p>Pay the amount shown on the attached invoice by ${escapeHtml(invoice.dueDate)}. Then sign in to the portal and upload the bank-generated proof of payment as a PDF, JPG, or PNG. Your seat is secured only after admissions verifies the required payment; do not upload the same proof more than once while it is under review.</p>`;
+  const pdf = await generateInvoicePDF({ invoiceNumber: invoice.invoiceNumber, invoiceDate: invoice.invoiceDate || application.submissionDate, dueDate: invoice.dueDate, studentName: invoice.studentName, studentEmail: invoice.studentEmail, studentPhone: application.whatsapp, studentCity: application.city, amount: invoice.amountZAR, description: 'TechLabs Academy IT Support Bootcamp tuition', reference: invoice.invoiceNumber, companyName: db.academySettings.companyName || db.academySettings.academyName, academyName: db.academySettings.academyName, companyAddress: db.academySettings.campusAddress || db.academySettings.location, admissionsEmail: db.academySettings.admissionsEmail, courseTier: invoice.courseTier, paidAmount: invoice.paidZAR ?? 0, balanceAmount: invoice.balanceZAR, bankName: db.academySettings.bankName, accountName: db.academySettings.accountName, accountNumber: db.academySettings.accountNumber, branchCode: db.academySettings.branchCode, paymentTerms: [invoice.paymentOption === 'FULL' ? 'Full tuition is payable by the due date.' : `A seat deposit of R${invoice.depositZAR.toLocaleString('en-ZA')} is required.`, 'Use the invoice number as the EFT reference.', 'Payments are confirmed only after admissions verification.'], payments: [] });
+  const delivery = await sendEmail({
+    to: application.email, subject,
+    html: `${rendered?.html || `<h2>Hello ${escapeHtml(application.firstName)},</h2><p>Your application has been approved.</p>`}${accountInstructions}${paymentInstructions}<p>Regards,<br>TechLabs Academy</p>`,
+    attachments: [{ filename: `${invoice.invoiceNumber.replace(/[^A-Za-z0-9_-]/g, '-')}.pdf`, content: pdf }],
+  });
+  db.emailDeliveries.unshift({ id: makeId('email'), providerId: delivery.id, recipient: application.email, subject, category: 'APPLICATION_STATUS', status: delivery.sent ? 'SENT' : 'FAILED', reason: delivery.reason, createdAt: now });
+  addAudit(db, req, 'APPLICATION_APPROVED', 'application', application.id, `Application approved and invoice email ${delivery.sent ? 'submitted' : 'failed'} for ${application.referenceNumber}`, { status: { before: previousStatus, after: 'APPROVED' } });
   await saveDatabase(db);
-  if (!delivery.sent) return res.status(502).json({ error: delivery.reason || 'Email was not sent' });
-  res.json({ ok: true, message: `${type.toLowerCase()} email sent`, deliveryId: delivery.id });
+  res.json({ ok: delivery.sent, message: delivery.sent ? 'Approval and invoice email sent' : 'Application approved, but the email failed', application, invoice, emailDelivery: delivery });
 });
 
 app.patch('/api/student/tickets/:id', authenticate, requireRole('STUDENT'), async (req: AuthedRequest, res) => {
@@ -831,17 +925,20 @@ app.post('/api/invoices/:id/email', authenticate, requireRole('ADMIN'), async (r
   if (!delivery.sent) return res.status(502).json({ error: delivery.reason || 'Invoice email was not sent' });
   res.json({ ok: true, message: `Invoice sent to ${invoice.studentEmail}`, deliveryId: delivery.id });
 });
-app.get('/api/automation/templates', authenticate, requireRole('ADMIN'), (_req, res) => res.json(emailAutomationEngine.getAllTemplates()));
+app.get('/api/automation/templates', authenticate, requireRole('ADMIN'), async (_req, res) => res.json((await getDatabase()).emailTemplates));
 app.get('/api/automation/workflows', authenticate, requireRole('ADMIN'), (_req, res) => res.json(emailAutomationEngine.getAllWorkflows()));
-app.put('/api/automation/templates/:id', authenticate, requireRole('ADMIN'), (req, res) => {
-  const existing = emailAutomationEngine.getTemplate(req.params.id);
+app.put('/api/automation/templates/:id', authenticate, requireRole('ADMIN'), async (req: AuthedRequest, res) => {
+  const db = await getDatabase(); const existing = db.emailTemplates.find(item => item.id === req.params.id);
   if (!existing) return res.status(404).json({ error: 'Template not found' });
   const allowed = { name: req.body?.name, subject: req.body?.subject, htmlBody: req.body?.htmlBody, enabled: req.body?.enabled };
-  emailAutomationEngine.updateTemplate(req.params.id, Object.fromEntries(Object.entries(allowed).filter(([, value]) => value !== undefined)));
-  res.json(emailAutomationEngine.getTemplate(req.params.id));
+  const updates = Object.fromEntries(Object.entries(allowed).filter(([, value]) => value !== undefined));
+  if ((updates.name !== undefined && !requiredText(updates.name, 120)) || (updates.subject !== undefined && !requiredText(updates.subject, 200)) || (updates.htmlBody !== undefined && !requiredText(updates.htmlBody, 20_000))) return res.status(400).json({ error: 'Template name, subject, or body is invalid' });
+  const before = { ...existing }; Object.assign(existing, updates);
+  addAudit(db, req, 'EMAIL_TEMPLATE_UPDATED', 'emailTemplate', existing.id, `Email template updated: ${existing.name}`, auditChanges(before, existing, Object.keys(updates)));
+  await saveDatabase(db); res.json(existing);
 });
-app.post('/api/automation/render', authenticate, requireRole('ADMIN'), (req, res) => {
-  const rendered = emailAutomationEngine.renderTemplate(req.body?.templateId, req.body?.variables || {});
+app.post('/api/automation/render', authenticate, requireRole('ADMIN'), async (req, res) => {
+  const rendered = renderStoredTemplate(await getDatabase(), req.body?.templateId, req.body?.variables || {});
   rendered ? res.json(rendered) : res.status(404).json({ error: 'Template not found' });
 });
 app.post('/api/bulk/export', authenticate, requireRole('ADMIN'), async (req, res) => {
@@ -869,15 +966,14 @@ app.post('/api/bulk/send-emails', authenticate, requireRole('ADMIN'), async (req
   const ids = req.body?.recipientIds;
   const recipientType = req.body?.recipientType;
   if (!Array.isArray(ids) || ids.length === 0 || ids.length > 50 || !['applications', 'leads'].includes(recipientType)) return res.status(400).json({ error: 'Invalid recipients' });
-  const template = emailAutomationEngine.getTemplate(req.body?.templateId);
+  const db = await getDatabase(); const template = db.emailTemplates.find(item => item.id === req.body?.templateId);
   if (!template?.enabled) return res.status(400).json({ error: 'Enabled email template required' });
-  const db = await getDatabase();
   const source = recipientType === 'applications' ? db.applications : db.leads;
   const recipients = source.filter(item => ids.includes(item.id));
   const results = [];
   for (const recipient of recipients) {
     const name = 'firstName' in recipient ? `${recipient.firstName} ${recipient.lastName}` : recipient.name;
-    const rendered = emailAutomationEngine.renderTemplate(template.id, { studentName: name, referenceNumber: 'referenceNumber' in recipient ? recipient.referenceNumber : '', cohortName: 'cohortId' in recipient ? recipient.cohortId : 'TechLabs Academy' });
+    const rendered = renderStoredTemplate(db, template.id, { studentName: escapeHtml(name), referenceNumber: 'referenceNumber' in recipient ? escapeHtml(recipient.referenceNumber) : '', cohortName: 'cohortId' in recipient ? escapeHtml(recipient.cohortId) : 'TechLabs Academy' });
     const delivery = await sendEmail({ to: recipient.email, subject: rendered?.subject || template.subject, html: rendered?.html || template.htmlBody });
     db.emailDeliveries = [{ id: makeId('email'), providerId: delivery.id, recipient: recipient.email, subject: rendered?.subject || template.subject, category: 'APPLICATION_STATUS', status: delivery.sent ? 'SENT' : 'FAILED', reason: delivery.reason, createdAt: new Date().toISOString() }, ...db.emailDeliveries];
     results.push({ recipientId: recipient.id, email: recipient.email, ...delivery });

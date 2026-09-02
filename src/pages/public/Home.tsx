@@ -186,9 +186,12 @@ export const Home: React.FC = () => {
         </div>
 
         {(() => {
-          const starterPricing = getTierPrice('STARTER', settings?.flashSale);
-          const proPricing = getTierPrice('PROFESSIONAL', settings?.flashSale);
-          const careerPricing = getTierPrice('CAREER_ACCELERATOR', settings?.flashSale);
+          const starterPricing = getTierPrice('STARTER', settings);
+          const proPricing = getTierPrice('PROFESSIONAL', settings);
+          const careerPricing = getTierPrice('CAREER_ACCELERATOR', settings);
+          const starterContent = settings?.courseTierPricing?.STARTER;
+          const professionalContent = settings?.courseTierPricing?.PROFESSIONAL;
+          const acceleratorContent = settings?.courseTierPricing?.CAREER_ACCELERATOR;
 
           return (
             <div className="grid grid-cols-1 md:grid-cols-3 gap-8 items-stretch">
@@ -202,7 +205,7 @@ export const Home: React.FC = () => {
                 )}
                 <div className="space-y-4">
                   <span className="text-[10px] font-mono font-bold uppercase tracking-[0.2em] text-[#A0A0A0]">
-                    Starter Tier
+                    {starterContent?.displayName || 'Starter Tier'}
                   </span>
                   <div className="flex items-baseline gap-2">
                     {starterPricing.isDiscounted && (
@@ -216,28 +219,28 @@ export const Home: React.FC = () => {
                     <span className="text-xs text-[#707070]">once-off</span>
                   </div>
                   <p className="text-xs text-[#707070]">
-                    Weekend self-paced practical labs with comprehensive workbooks and VMware guidance.
+                    {starterContent?.description || 'Weekend self-paced practical labs with comprehensive workbooks and VMware guidance.'}
                   </p>
                   <ul className="space-y-2.5 text-xs text-[#707070] pt-2">
                     <li className="flex items-center gap-2">
                       <Check className="w-3.5 h-3.5 text-[#000000] shrink-0" />
-                      <span>Weekend practical labs</span>
+                      <span>{starterContent?.features?.[0] || 'Weekend practical labs'}</span>
                     </li>
                     <li className="flex items-center gap-2">
                       <Check className="w-3.5 h-3.5 text-[#000000] shrink-0" />
-                      <span>Student workbook & lab architecture</span>
+                      <span>{starterContent?.features?.[1] || 'Student workbook & lab architecture'}</span>
                     </li>
                     <li className="flex items-center gap-2">
                       <Check className="w-3.5 h-3.5 text-[#000000] shrink-0" />
-                      <span>VMware lab guidance & ISO links</span>
+                      <span>{starterContent?.features?.[2] || 'VMware lab guidance & ISO links'}</span>
                     </li>
                     <li className="flex items-center gap-2">
                       <Check className="w-3.5 h-3.5 text-[#000000] shrink-0" />
-                      <span>Practical exercises & helpdesk scripts</span>
+                      <span>{starterContent?.features?.[3] || 'Practical exercises & helpdesk scripts'}</span>
                     </li>
                     <li className="flex items-center gap-2">
                       <Check className="w-3.5 h-3.5 text-[#000000] shrink-0" />
-                      <span>Certificate of Completion</span>
+                      <span>{starterContent?.features?.[4] || 'Certificate of Completion'}</span>
                     </li>
                   </ul>
                 </div>
@@ -254,11 +257,11 @@ export const Home: React.FC = () => {
                 <div className="space-y-4">
                   <div className="flex items-center justify-between">
                     <span className="text-[10px] font-mono font-bold uppercase tracking-[0.2em] text-neutral-400">
-                      Professional Tier
+                      {professionalContent?.displayName || 'Professional Tier'}
                     </span>
                     <span className="bg-white text-black font-bold text-[9px] uppercase tracking-widest px-2.5 py-0.5 rounded-full flex items-center gap-1">
                       {proPricing.isDiscounted && <Zap className="w-3 h-3 fill-black text-black" />}
-                      <span>{proPricing.isDiscounted ? `Flash Sale ${proPricing.discountPercent}% OFF` : 'Recommended'}</span>
+                      <span>{proPricing.isDiscounted ? `Flash Sale ${proPricing.discountPercent}% OFF` : professionalContent?.badgeLabel || 'Recommended'}</span>
                     </span>
                   </div>
                   <div className="flex items-baseline gap-2">
@@ -273,32 +276,32 @@ export const Home: React.FC = () => {
                     <span className="text-xs text-neutral-400">or R1,000 deposit</span>
                   </div>
                   <p className="text-xs text-neutral-300">
-                    Full bootcamp with live evening & weekend practical mentor sessions and tickets.
+                    {professionalContent?.description || 'Full bootcamp with live evening & weekend practical mentor sessions and tickets.'}
                   </p>
                   <ul className="space-y-2.5 text-xs text-neutral-300 pt-2">
                     <li className="flex items-center gap-2">
                       <Check className="w-3.5 h-3.5 text-white shrink-0" />
-                      <span>Full 8–12 week bootcamp</span>
+                      <span>{professionalContent?.features?.[0] || 'Full 8-12 week bootcamp'}</span>
                     </li>
                     <li className="flex items-center gap-2">
                       <Check className="w-3.5 h-3.5 text-white shrink-0" />
-                      <span>Live evening + weekend practical sessions</span>
+                      <span>{professionalContent?.features?.[1] || 'Live evening and weekend practical sessions'}</span>
                     </li>
                     <li className="flex items-center gap-2">
                       <Check className="w-3.5 h-3.5 text-white shrink-0" />
-                      <span>VMware enterprise labs (Server, AD, DNS)</span>
+                      <span>{professionalContent?.features?.[2] || 'VMware enterprise labs (Server, AD, DNS)'}</span>
                     </li>
                     <li className="flex items-center gap-2">
                       <Check className="w-3.5 h-3.5 text-white shrink-0" />
-                      <span>Microsoft 365, Entra ID, Intune & Defender</span>
+                      <span>{professionalContent?.features?.[3] || 'Microsoft 365, Entra ID, Intune & Defender'}</span>
                     </li>
                     <li className="flex items-center gap-2">
                       <Check className="w-3.5 h-3.5 text-white shrink-0" />
-                      <span>PowerShell automation & Helpdesk tickets</span>
+                      <span>{professionalContent?.features?.[4] || 'PowerShell automation & Helpdesk tickets'}</span>
                     </li>
                     <li className="flex items-center gap-2">
                       <Check className="w-3.5 h-3.5 text-white shrink-0" />
-                      <span>Graded assessments & verified certificate</span>
+                      <span>{professionalContent?.features?.[5] || 'Graded assessments & verified certificate'}</span>
                     </li>
                   </ul>
                 </div>
@@ -320,7 +323,7 @@ export const Home: React.FC = () => {
                 )}
                 <div className="space-y-4">
                   <span className="text-[10px] font-mono font-bold uppercase tracking-[0.2em] text-[#A0A0A0]">
-                    Career Accelerator
+                    {acceleratorContent?.displayName || 'Career Accelerator'}
                   </span>
                   <div className="flex items-baseline gap-2">
                     {careerPricing.isDiscounted && (
@@ -334,28 +337,28 @@ export const Home: React.FC = () => {
                     <span className="text-xs text-[#707070]">or R1,000 deposit</span>
                   </div>
                   <p className="text-xs text-[#707070]">
-                    Includes everything in Professional plus dedicated 1-on-1 career coaching & mock interviews.
+                    {acceleratorContent?.description || 'Includes everything in Professional plus dedicated 1-on-1 career coaching & mock interviews.'}
                   </p>
                   <ul className="space-y-2.5 text-xs text-[#707070] pt-2">
                     <li className="flex items-center gap-2">
                       <Check className="w-3.5 h-3.5 text-[#000000] shrink-0" />
-                      <span>Everything in Professional Tier</span>
+                      <span>{acceleratorContent?.features?.[0] || 'Everything in Professional Tier'}</span>
                     </li>
                     <li className="flex items-center gap-2">
                       <Check className="w-3.5 h-3.5 text-[#000000] shrink-0" />
-                      <span>Technical CV & resume restructuring</span>
+                      <span>{acceleratorContent?.features?.[1] || 'Technical CV and portfolio review'}</span>
                     </li>
                     <li className="flex items-center gap-2">
                       <Check className="w-3.5 h-3.5 text-[#000000] shrink-0" />
-                      <span>LinkedIn profile optimization</span>
+                      <span>{acceleratorContent?.features?.[2] || 'LinkedIn profile optimization'}</span>
                     </li>
                     <li className="flex items-center gap-2">
                       <Check className="w-3.5 h-3.5 text-[#000000] shrink-0" />
-                      <span>1-on-1 mock interview with Lead Instructor</span>
+                      <span>{acceleratorContent?.features?.[3] || '1-on-1 technical mock interview'}</span>
                     </li>
                     <li className="flex items-center gap-2">
                       <Check className="w-3.5 h-3.5 text-[#000000] shrink-0" />
-                      <span>MSP job application guidance</span>
+                      <span>{acceleratorContent?.features?.[4] || 'Job application guidance'}</span>
                     </li>
                   </ul>
                 </div>
@@ -439,26 +442,10 @@ export const Home: React.FC = () => {
               </div>
 
               <ul className="space-y-3.5 text-xs text-[#707070]">
-                <li className="flex items-center gap-3">
-                  <XCircle className="w-4 h-4 text-[#A0A0A0] shrink-0" />
-                  <span>Watch videos of someone else clicking buttons</span>
-                </li>
-                <li className="flex items-center gap-3">
-                  <XCircle className="w-4 h-4 text-[#A0A0A0] shrink-0" />
-                  <span>Memorize theory for multiple-choice quizzes</span>
-                </li>
-                <li className="flex items-center gap-3">
-                  <XCircle className="w-4 h-4 text-[#A0A0A0] shrink-0" />
-                  <span>Follow static demonstrations where nothing ever breaks</span>
-                </li>
-                <li className="flex items-center gap-3">
-                  <XCircle className="w-4 h-4 text-[#A0A0A0] shrink-0" />
-                  <span>Zero exposure to real broken systems, corrupt DNS, or lockouts</span>
-                </li>
-                <li className="flex items-center gap-3">
-                  <XCircle className="w-4 h-4 text-[#A0A0A0] shrink-0" />
-                  <span>Panic during the technical interview when asked to isolate a domain trust</span>
-                </li>
+                <li className="flex items-center gap-3"><XCircle className="w-4 h-4 text-[#A0A0A0] shrink-0" /><span>Memorize definitions for exams instead of building systems</span></li>
+                <li className="flex items-center gap-3"><XCircle className="w-4 h-4 text-[#A0A0A0] shrink-0" /><span>Follow pre-recorded demonstrations without troubleshooting</span></li>
+                <li className="flex items-center gap-3"><XCircle className="w-4 h-4 text-[#A0A0A0] shrink-0" /><span>Complete generic exercises disconnected from production incidents</span></li>
+                <li className="flex items-center gap-3"><XCircle className="w-4 h-4 text-[#A0A0A0] shrink-0" /><span>Receive limited feedback on technical investigation notes</span></li>
               </ul>
             </div>
 

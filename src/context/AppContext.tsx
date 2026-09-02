@@ -24,14 +24,15 @@ import {
 
 export const getTierPrice = (
   tier: CourseTier,
-  flashSale?: FlashSaleConfig
+  settings?: Pick<AcademySettings, 'courseTierPricing' | 'flashSale'>
 ): { original: number; current: number; isDiscounted: boolean; discountPercent: number } => {
   const basePrices: Record<CourseTier, number> = {
     STARTER: 1999,
     PROFESSIONAL: 3499,
     CAREER_ACCELERATOR: 4999,
   };
-  const original = basePrices[tier] || 3499;
+  const original = settings?.courseTierPricing?.[tier]?.priceZAR || basePrices[tier];
+  const flashSale = settings?.flashSale;
   if (flashSale && flashSale.enabled && flashSale.discountPercent > 0) {
     const isTargeted = !flashSale.targetTiers || flashSale.targetTiers.length === 0 || flashSale.targetTiers.includes(tier);
     if (isTargeted) {
@@ -79,15 +80,6 @@ export interface ToastMessage {
   message: string;
 }
 
-export interface OnboardingStep {
-  id: number;
-  title: string;
-  description: string;
-  completed: boolean;
-  actionLabel?: string;
-  actionUrl?: string;
-}
-
 type StudentProfile = User & {
   firstName: string;
   lastName: string;
@@ -130,6 +122,9 @@ interface AppContextType {
   addLead: (lead: Omit<Lead, 'id' | 'createdAt' | 'notes'>) => void;
   updateLeadStatus: (id: string, status: LeadStatus) => void;
   addLeadNote: (id: string, note: string) => void;
+  updateLeadFollowUp: (id: string, followUpDate: string) => void;
+  createCourseModule: (module: Omit<CourseModule, 'number'>) => Promise<boolean>;
+  saveCourseModule: (moduleNumber: number, updates: Partial<CourseModule>) => Promise<boolean>;
   
   submitApplication: (appData: Omit<Application, 'id' | 'referenceNumber' | 'submissionDate' | 'status'>) => Promise<string>;
   updateApplicationStatus: (id: string, status: ApplicationStatus, notes?: string) => void;
@@ -163,11 +158,6 @@ interface AppContextType {
   updateCohort: (id: string, updates: Partial<Cohort>) => void;
   updateCohortStatus: (id: string, status: Cohort['status']) => void;
   
-  // Onboarding
-  onboardingSteps: OnboardingStep[];
-  toggleOnboardingStep: (stepId: number) => void;
-  onboardingProgressPercent: number;
-  
   // Settings & Toasts
   settings: AcademySettings;
   updateSettings: (newSettings: Partial<AcademySettings>) => void;
@@ -178,20 +168,6 @@ interface AppContextType {
 }
 
 const AppContext = createContext<AppContextType | undefined>(undefined);
-
-const INITIAL_ONBOARDING_STEPS: OnboardingStep[] = [
-  { id: 1, title: 'Application Approved', description: 'Your IT background and laptop specifications have been verified by our admissions panel.', completed: true },
-  { id: 2, title: 'Payment Confirmed', description: 'Deposit/Tuition recorded. Your seat in the cohort is secured.', completed: true },
-  { id: 3, title: 'Student Account Created', description: 'Your official TechLabs student identity and credentials have been provisioned.', completed: true },
-  { id: 4, title: 'Student Portal Activated', description: 'Full access to labs, simulated tickets, and learning materials unlocked.', completed: true },
-  { id: 5, title: 'Join WhatsApp & Teams Group', description: 'Connect with your instructor, mentor, and fellow cohort peers.', completed: true, actionLabel: 'Open WhatsApp Group', actionUrl: '#' },
-  { id: 6, title: 'Install VMware Workstation Pro', description: 'Download VMware Workstation Pro for Windows and run setup.', completed: true, actionLabel: 'Download Guide', actionUrl: '/student/resources' },
-  { id: 7, title: 'Verify Hardware Virtualization', description: 'Ensure VT-x / AMD-V is enabled in your laptop BIOS/UEFI.', completed: true },
-  { id: 8, title: 'Download Windows Server & Win11 ISOs', description: 'Download the official Microsoft evaluation ISOs for your lab build.', completed: false, actionLabel: 'ISO Mirrors', actionUrl: '/student/resources' },
-  { id: 9, title: 'Deploy Base DC01 Virtual Machine', description: 'Build your initial Windows Server 2022 template machine.', completed: false, actionLabel: 'Open Lab Guide', actionUrl: '/student/labs' },
-  { id: 10, title: 'Attend Live Virtual Orientation', description: 'Meet your TechLabs instructor for the cohort kickoff orientation call.', completed: false },
-  { id: 11, title: 'Unlock First Class Session', description: 'Module 1 & 2 hands-on lab environment ready for kickoff.', completed: false }
-];
 
 export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [hasHydrated, setHasHydrated] = useState(false);
@@ -413,14 +389,10 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     }
   });
 
-  const [onboardingSteps, setOnboardingSteps] = useState<OnboardingStep[]>(() => {
-    const saved = localStorage.getItem('techlabs_onboarding');
-    return saved ? JSON.parse(saved) : INITIAL_ONBOARDING_STEPS;
-  });
-
   const [settings, setSettings] = useState<AcademySettings>(() => {
     const defaults: AcademySettings = {
       whatsappNumber: (import.meta as any).env?.VITE_WHATSAPP_NUMBER || '+27821234567',
+      studentSupportWhatsappNumber: (import.meta as any).env?.VITE_STUDENT_SUPPORT_WHATSAPP_NUMBER || (import.meta as any).env?.VITE_WHATSAPP_NUMBER || '+27821234567',
       admissionsEmail: (import.meta as any).env?.VITE_ACADEMY_EMAIL || 'admissions@techlabs.co.za',
       campusAddress: 'Cape Town, South Africa',
       bankName: 'Provided on your official invoice',
@@ -434,6 +406,11 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         discountPercent: 20,
         endDate: new Date(Date.now() + 7 * 86400000).toISOString().split('T')[0],
         targetTiers: ['STARTER', 'PROFESSIONAL', 'CAREER_ACCELERATOR']
+      },
+      courseTierPricing: {
+        STARTER: { priceZAR: 1999, displayName: 'Starter Tier', description: 'Weekend practical self-paced lab track with comprehensive workbooks and VMware guidance.', features: ['Weekend practical labs', 'Student workbook & architecture diagrams', 'VMware lab guidance & ISO links', 'Practical exercises & helpdesk scripts', 'Certificate of Completion'], badgeLabel: 'Self-paced' },
+        PROFESSIONAL: { priceZAR: 3499, displayName: 'Professional Tier', description: 'Full bootcamp with live evening and weekend sessions, enterprise VMware labs, and tickets.', features: ['Full 8-12 week bootcamp', 'Live evening and weekend practical sessions', 'VMware enterprise labs (Server, AD, DNS)', 'Microsoft 365, Entra ID, Intune & Defender', 'PowerShell automation & helpdesk tickets', 'Graded assessments & verified certificate'], badgeLabel: 'Most Popular' },
+        CAREER_ACCELERATOR: { priceZAR: 4999, displayName: 'Career Accelerator', description: 'Everything in Professional plus dedicated 1-on-1 career coaching and mock interviews.', features: ['Everything in Professional Tier', 'Technical CV and portfolio review', 'LinkedIn profile optimization', '1-on-1 technical mock interview', 'Job application guidance', 'Priority placement assistance'], badgeLabel: 'Full Support' }
       }
     };
     return defaults;
@@ -561,10 +538,6 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     .filter((student): student is StudentProfile => Boolean(student && student.email))
     .filter((student, index, array) => array.findIndex(item => item && item.email && item.email.toLowerCase() === student.email.toLowerCase()) === index);
 
-  useEffect(() => {
-    localStorage.setItem('techlabs_onboarding', JSON.stringify(onboardingSteps));
-  }, [onboardingSteps]);
-
   // Toast Helpers
   const showToast = (type: 'success' | 'info' | 'error', title: string, message: string) => {
     const id = Date.now().toString() + Math.random().toString(36).substring(2, 5);
@@ -594,20 +567,54 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   };
 
   const updateLeadStatus = (id: string, status: LeadStatus) => {
+    const previousStatus = leads.find(lead => lead.id === id)?.status;
     setLeads(prev => prev.map(l => l.id === id ? { ...l, status } : l));
-    void persistRecord('leads', id, { status });
+    void apiRequest<Lead>(`/admin/leads/${encodeURIComponent(id)}`, { method: 'PUT', body: JSON.stringify({ status }) })
+      .then(saved => setLeads(prev => prev.map(lead => lead.id === saved.id ? saved : lead)))
+      .catch(() => { if (previousStatus) setLeads(prev => prev.map(lead => lead.id === id ? { ...lead, status: previousStatus } : lead)); showToast('error', 'Lead Not Updated', 'The status change could not be saved.'); });
     showToast('info', 'Lead Updated', `Lead status updated to ${status.replace('_', ' ')}`);
   };
 
   const addLeadNote = (id: string, note: string) => {
-    setLeads(prev => prev.map(l => l.id === id ? { ...l, notes: [...l.notes, note] } : l));
-    const lead = leads.find(item => item.id === id);
-    if (lead) void persistRecord('leads', id, { notes: [...lead.notes, note] });
-    showToast('success', 'Note Added', 'Advisor note saved to lead record.');
+    const cleanNote = note.trim();
+    if (!cleanNote) return;
+    void apiRequest<Lead>(`/admin/leads/${encodeURIComponent(id)}/notes`, { method: 'POST', body: JSON.stringify({ note: cleanNote }) })
+      .then(saved => { setLeads(prev => prev.map(lead => lead.id === saved.id ? saved : lead)); showToast('success', 'Note Added', 'Advisor note saved to lead record.'); })
+      .catch(() => showToast('error', 'Note Not Added', 'The recruitment note could not be saved.'));
+  };
+
+  const updateLeadFollowUp = (id: string, followUpDate: string) => {
+    void apiRequest<Lead>(`/admin/leads/${encodeURIComponent(id)}`, { method: 'PUT', body: JSON.stringify({ followUpDate }) })
+      .then(saved => { setLeads(prev => prev.map(lead => lead.id === saved.id ? saved : lead)); showToast('success', 'Follow-up Scheduled', `Next follow-up set for ${followUpDate}.`); })
+      .catch(() => showToast('error', 'Follow-up Not Saved', 'Use a valid follow-up date and try again.'));
+  };
+
+  const saveCourseModule = async (moduleNumber: number, updates: Partial<CourseModule>): Promise<boolean> => {
+    try {
+      const saved = await apiRequest<CourseModule>(`/admin/course-modules/${moduleNumber}`, { method: 'PUT', body: JSON.stringify(updates) });
+      setCourseModules(current => [...current.filter(module => module.number !== saved.number), saved].sort((left, right) => left.number - right.number));
+      showToast('success', 'Curriculum Updated', `Module ${saved.number} was saved successfully.`);
+      return true;
+    } catch (error) {
+      showToast('error', 'Curriculum Not Updated', error instanceof Error ? error.message : 'The module could not be saved.');
+      return false;
+    }
+  };
+
+  const createCourseModule = async (module: Omit<CourseModule, 'number'>): Promise<boolean> => {
+    try {
+      const saved = await apiRequest<CourseModule>('/admin/course-modules', { method: 'POST', body: JSON.stringify(module) });
+      setCourseModules(current => [...current, saved].sort((left, right) => left.number - right.number));
+      showToast('success', 'Module Added', `Module ${saved.number} was added to the curriculum.`);
+      return true;
+    } catch (error) {
+      showToast('error', 'Module Not Added', error instanceof Error ? error.message : 'The module could not be created.');
+      return false;
+    }
   };
 
   const submitApplication = async (appData: Omit<Application, 'id' | 'referenceNumber' | 'submissionDate' | 'status'>): Promise<string> => {
-    const amountZAR = getTierPrice(appData.selectedTier, settings.flashSale).current;
+    const amountZAR = getTierPrice(appData.selectedTier, settings).current;
     const response = await apiRequest<{ application: Application; invoice: Invoice; emailDelivery: { sent: boolean } }>('/applications', {
       method: 'POST', body: JSON.stringify({ ...appData, amountZAR })
     });
@@ -675,7 +682,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   const sendApprovalEmail = async (app: Application, type: 'APPROVED' | 'REJECTED' | 'WAITLISTED'): Promise<boolean> => {
     try {
-      const response = await apiRequest<{ ok: boolean; message: string }>('/email/approval', {
+      const response = await apiRequest<{ ok: boolean; message: string; application: Application; invoice: Invoice; emailDelivery: { sent: boolean; reason?: string } }>('/email/approval', {
         method: 'POST',
         body: JSON.stringify({
           applicantName: `${app.firstName} ${app.lastName}`,
@@ -686,12 +693,10 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         })
       });
 
-      if (response.ok) {
-        showToast('success', 'Email Sent', `${response.message} to ${app.email}`);
-        return true;
-      }
-
-      return false;
+      setApplications(current => current.map(application => application.id === response.application.id ? response.application : application));
+      setInvoices(current => current.map(invoice => invoice.id === response.invoice.id ? response.invoice : invoice));
+      showToast(response.ok ? 'success' : 'info', response.ok ? 'Application Approved' : 'Approved — Email Failed', response.ok ? `${response.message} to ${app.email}` : `${response.message}${response.emailDelivery.reason ? `: ${response.emailDelivery.reason}` : '.'}`);
+      return true;
     } catch (error) {
       console.warn('Email dispatch failed:', error);
       showToast('error', 'Email Failed', `Unable to send the ${type.toLowerCase()} email to ${app.email}.`);
@@ -965,14 +970,6 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     showToast('info', 'Cohort Status Updated', `Cohort status updated to ${status}`);
   };
 
-  const toggleOnboardingStep = (stepId: number) => {
-    setOnboardingSteps(prev => prev.map(s => s.id === stepId ? { ...s, completed: !s.completed } : s));
-  };
-
-  const onboardingProgressPercent = Math.round(
-    (onboardingSteps.filter(s => s.completed).length / onboardingSteps.length) * 100
-  );
-
   const updateSettings = (newSettings: Partial<AcademySettings>) => {
     setSettings(prev => ({ ...prev, ...newSettings }));
   };
@@ -1017,9 +1014,13 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         assessments,
         certificates,
         attendance,
+        courseModules,
         addLead,
         updateLeadStatus,
         addLeadNote,
+        updateLeadFollowUp,
+        createCourseModule,
+        saveCourseModule,
         submitApplication,
         updateApplicationStatus,
         recordApplicationDecision,
@@ -1045,9 +1046,6 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         createCohort,
         updateCohort,
         updateCohortStatus,
-        onboardingSteps,
-        toggleOnboardingStep,
-        onboardingProgressPercent,
         settings,
         updateSettings,
         saveSettings,

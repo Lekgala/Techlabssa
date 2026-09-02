@@ -22,9 +22,6 @@ import type {
   SupportTicket,
   Assessment,
   User,
-  VirtualSession,
-  SessionAttendance,
-  VirtualLearningSettings,
   CourseModule,
   EmailDeliveryRecord,
   AcademySettings,
@@ -39,6 +36,7 @@ import type {
   AdmissionTask,
   PaymentInstallment,
 } from '../../src/types';
+import { DEFAULT_EMAIL_TEMPLATES, type EmailTemplate } from '../services/email-automation';
 
 // Re-export types for use in server code
 export type {
@@ -52,9 +50,6 @@ export type {
   SupportTicket,
   Assessment,
   User,
-  VirtualSession,
-  SessionAttendance,
-  VirtualLearningSettings,
   CourseModule,
   EmailDeliveryRecord,
   AcademySettings,
@@ -77,9 +72,6 @@ export type TechlabsDatabase = {
   assessments: Assessment[];
   certificates: Certificate[];
   attendance: AttendanceRecord[];
-  virtualSessions: VirtualSession[];
-  sessionAttendance: SessionAttendance[];
-  virtualLearningSettings: VirtualLearningSettings[];
   courseModules: CourseModule[];
   emailDeliveries: EmailDeliveryRecord[];
   academySettings: AcademySettings;
@@ -93,6 +85,7 @@ export type TechlabsDatabase = {
   admissionNotes: AdmissionNote[];
   admissionTasks: AdmissionTask[];
   paymentInstallments: PaymentInstallment[];
+  emailTemplates: EmailTemplate[];
 };
 
 const defaultDatabase: TechlabsDatabase = {
@@ -224,9 +217,6 @@ const defaultDatabase: TechlabsDatabase = {
   assessments: INITIAL_ASSESSMENTS,
   certificates: [SAMPLE_CERTIFICATE],
   attendance: INITIAL_ATTENDANCE,
-  virtualSessions: [],
-  sessionAttendance: [],
-  virtualLearningSettings: [],
   courseModules: COURSE_MODULES,
   emailDeliveries: [],
   academySettings: {
@@ -235,6 +225,7 @@ const defaultDatabase: TechlabsDatabase = {
     location: 'Cape Town, South Africa',
     campusAddress: 'Cape Town, South Africa',
     whatsappNumber: process.env.PUBLIC_WHATSAPP_NUMBER || '+27000000000',
+    studentSupportWhatsappNumber: process.env.PUBLIC_STUDENT_SUPPORT_WHATSAPP_NUMBER || process.env.PUBLIC_WHATSAPP_NUMBER || '+27000000000',
     admissionsEmail: 'admissions@madilotane.co.za',
     bankName: 'Provided on your official invoice',
     accountName: 'Configured by administration',
@@ -249,6 +240,11 @@ const defaultDatabase: TechlabsDatabase = {
       endDate: '',
       targetTiers: ['STARTER', 'PROFESSIONAL', 'CAREER_ACCELERATOR'],
     },
+    courseTierPricing: {
+      STARTER: { priceZAR: 1999, displayName: 'Starter Tier', description: 'Weekend practical self-paced lab track with comprehensive workbooks and VMware guidance.', features: ['Weekend practical labs', 'Student workbook & architecture diagrams', 'VMware lab guidance & ISO links', 'Practical exercises & helpdesk scripts', 'Certificate of Completion'], badgeLabel: 'Self-paced' },
+      PROFESSIONAL: { priceZAR: 3499, displayName: 'Professional Tier', description: 'Full bootcamp with live evening and weekend sessions, enterprise VMware labs, and tickets.', features: ['Full 8-12 week bootcamp', 'Live evening and weekend practical sessions', 'VMware enterprise labs (Server, AD, DNS)', 'Microsoft 365, Entra ID, Intune & Defender', 'PowerShell automation & helpdesk tickets', 'Graded assessments & verified certificate'], badgeLabel: 'Most Popular' },
+      CAREER_ACCELERATOR: { priceZAR: 4999, displayName: 'Career Accelerator', description: 'Everything in Professional plus dedicated 1-on-1 career coaching and mock interviews.', features: ['Everything in Professional Tier', 'Technical CV and portfolio review', 'LinkedIn profile optimization', '1-on-1 technical mock interview', 'Job application guidance', 'Priority placement assistance'], badgeLabel: 'Full Support' },
+    },
   },
   payments: [],
   studentCredentials: [],
@@ -260,6 +256,7 @@ const defaultDatabase: TechlabsDatabase = {
   admissionNotes: [],
   admissionTasks: [],
   paymentInstallments: [],
+  emailTemplates: DEFAULT_EMAIL_TEMPLATES,
 };
 
 const db = new Database(DB_PATH);
@@ -280,6 +277,25 @@ function ensureSeeded(): void {
       if (!existing || existing.value === '[]' || existing.value === 'null' || existing.value.includes('Cape Town On-Campus')) {
         insert.run(key, JSON.stringify(value));
       }
+    }
+    const storedTemplates = db.prepare("SELECT value FROM collections WHERE key = 'emailTemplates'").get() as { value: string } | undefined;
+    if (storedTemplates) {
+      const templates = JSON.parse(storedTemplates.value) as EmailTemplate[];
+      const legacyMarkers: Record<string, string> = {
+        'tpl-app-submitted': 'Our admissions team will review your application',
+        'tpl-app-approved': "We're excited to inform you that your application has been",
+        'tpl-payment-verified': "We're ready to transform your IT career!",
+      };
+      let changed = false;
+      const updatedTemplates = templates.map(template => {
+        const replacement = defaultDatabase.emailTemplates.find(candidate => candidate.id === template.id);
+        if (replacement && legacyMarkers[template.id] && template.htmlBody.includes(legacyMarkers[template.id])) {
+          changed = true;
+          return replacement;
+        }
+        return template;
+      });
+      if (changed) insert.run('emailTemplates', JSON.stringify(updatedTemplates));
     }
   });
 
@@ -315,10 +331,7 @@ export async function getDatabase(): Promise<TechlabsDatabase> {
     assessments: recordMap.assessments ?? defaultDatabase.assessments,
     certificates: (recordMap.certificates ?? defaultDatabase.certificates).map((certificate: Certificate) => ({ ...certificate, instructorName: /dave|david kitching/i.test(certificate.instructorName) ? 'TechLabs Instructor' : certificate.instructorName })),
     attendance: recordMap.attendance ?? defaultDatabase.attendance,
-    virtualSessions: recordMap.virtualSessions ?? defaultDatabase.virtualSessions,
-    sessionAttendance: recordMap.sessionAttendance ?? defaultDatabase.sessionAttendance,
-    virtualLearningSettings: recordMap.virtualLearningSettings ?? defaultDatabase.virtualLearningSettings,
-    courseModules: recordMap.courseModules ?? defaultDatabase.courseModules,
+    courseModules: recordMap.courseModules?.length ? recordMap.courseModules : defaultDatabase.courseModules,
     emailDeliveries: recordMap.emailDeliveries ?? defaultDatabase.emailDeliveries,
     academySettings: recordMap.academySettings ?? defaultDatabase.academySettings,
     payments: recordMap.payments ?? defaultDatabase.payments,
@@ -331,6 +344,7 @@ export async function getDatabase(): Promise<TechlabsDatabase> {
     admissionNotes: recordMap.admissionNotes ?? [],
     admissionTasks: recordMap.admissionTasks ?? [],
     paymentInstallments: recordMap.paymentInstallments ?? [],
+    emailTemplates: recordMap.emailTemplates ?? defaultDatabase.emailTemplates,
   };
 }
 

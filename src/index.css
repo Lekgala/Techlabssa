@@ -11,6 +11,11 @@
   code, pre, kbd, samp {
     font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
   }
+
+  :focus-visible {
+    outline: 2px solid #000000 !important;
+    outline-offset: 2px;
+  }
 }
 
 /* Minimalist refined scrollbar */

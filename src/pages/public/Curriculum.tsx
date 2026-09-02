@@ -1,6 +1,7 @@
 import React, { useMemo, useState } from 'react';
 import { useApp } from '../../context/AppContext';
 import { buildCurriculumSchedule } from '../../lib/curriculumSchedule';
+import { COURSE_MODULES } from '../../data/mockData';
 import {
   Server, 
   Clock, 
@@ -34,7 +35,8 @@ const formatCohortDate = (value?: string) => {
 export const CourseDetail: React.FC = () => {
   const { navigate, courseModules, cohorts } = useApp();
   const nextCohort = useMemo(() => selectNextCohort(cohorts), [cohorts]);
-  const scheduledModules = useMemo(() => buildCurriculumSchedule(courseModules || [], nextCohort), [courseModules, nextCohort]);
+  const modulesToDisplay = (courseModules?.length ? courseModules : COURSE_MODULES).filter(module => module.published !== false);
+  const scheduledModules = useMemo(() => buildCurriculumSchedule(modulesToDisplay, nextCohort), [modulesToDisplay, nextCohort]);
 
   return (
     <div className="space-y-16 py-12 bg-[#FFFFFF] text-[#1A1A1A]">
@@ -50,7 +52,7 @@ export const CourseDetail: React.FC = () => {
           </h1>
 
           <p className="text-sm sm:text-base text-[#707070] max-w-3xl leading-relaxed">
-            A comprehensive, hands-on 15-module training program designed to transform beginners, IT graduates, and junior technicians into competent, job-ready IT administrators through real VMware virtualization and enterprise helpdesk simulations.
+            A comprehensive, hands-on training programme designed to help beginners, IT graduates, and junior technicians build practical IT administration skills through VMware virtualization and enterprise helpdesk simulations.
           </p>
 
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 pt-4 text-xs font-mono">
@@ -243,7 +245,8 @@ export const Curriculum: React.FC = () => {
   const defaultCohort = useMemo(() => selectNextCohort(cohorts), [cohorts]);
   const [selectedCohortId, setSelectedCohortId] = useState(defaultCohort?.id || '');
   const selectedCohort = cohorts.find(cohort => cohort.id === selectedCohortId) || defaultCohort;
-  const scheduledModules = useMemo(() => buildCurriculumSchedule(courseModules || [], selectedCohort), [courseModules, selectedCohort]);
+  const modulesToDisplay = (courseModules?.length ? courseModules : COURSE_MODULES).filter(module => module.published !== false);
+  const scheduledModules = useMemo(() => buildCurriculumSchedule(modulesToDisplay, selectedCohort), [modulesToDisplay, selectedCohort]);
 
   return (
     <div className="space-y-16 py-12 bg-[#FFFFFF] text-[#1A1A1A]">
@@ -260,7 +263,7 @@ export const Curriculum: React.FC = () => {
             Complete Syllabus & Lab Matrix
           </span>
           <h1 className="text-3xl sm:text-5xl font-light text-[#000000] tracking-tight">
-            Detailed 15-Module Curriculum
+          Detailed {modulesToDisplay.length}-Module Curriculum
           </h1>
           <p className="text-sm text-[#707070] max-w-3xl">
             Each module is anchored by three concrete pillars: theoretical foundations, hands-on VMware/Cloud labs, and realistic enterprise helpdesk tickets.
@@ -271,6 +274,7 @@ export const Curriculum: React.FC = () => {
 
       {/* 15 Modules Timeline */}
       <div className="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8 space-y-8">
+        {!scheduledModules.length && <div className="p-8 border border-[#E0E0E0] rounded-2xl text-center"><h2 className="font-bold">Curriculum temporarily unavailable</h2><p className="text-xs text-[#707070] mt-2">Please contact admissions for the current course outline.</p></div>}
         {scheduledModules.map((module) => (
           <div 
             key={module.number}

@@ -106,6 +106,12 @@ export const Navbar: React.FC = () => {
                 id="nav-courses-dropdown"
                 onClick={() => setCoursesDropdownOpen(!coursesDropdownOpen)}
                 onMouseEnter={() => setCoursesDropdownOpen(true)}
+                onKeyDown={(event) => {
+                  if (event.key === 'Escape') setCoursesDropdownOpen(false);
+                  if (event.key === 'ArrowDown') setCoursesDropdownOpen(true);
+                }}
+                aria-expanded={coursesDropdownOpen}
+                aria-controls="courses-menu"
                 className={`flex items-center gap-1 transition pb-1 ${isActive('/courses') ? 'text-[#000000] border-b border-[#000000]' : 'hover:text-[#000000]'}`}
               >
                 <span>Curriculum</span>
@@ -114,28 +120,34 @@ export const Navbar: React.FC = () => {
 
               {coursesDropdownOpen && (
                 <div 
+                  id="courses-menu"
+                  role="menu"
                   onMouseLeave={() => setCoursesDropdownOpen(false)}
                   className="absolute top-full left-0 w-72 bg-[#FFFFFF] border border-[#F0F0F0] rounded-2xl shadow-xl p-3 z-50 animate-in fade-in"
                 >
-                  <div 
+                  <button
+                    type="button"
+                    role="menuitem"
                     onClick={() => handleNav('/courses/it-support')}
-                    className="p-3 rounded-xl hover:bg-[#FAFAFA] cursor-pointer transition"
+                    className="w-full p-3 rounded-xl hover:bg-[#FAFAFA] cursor-pointer transition text-left"
                   >
                     <span className="font-bold text-xs text-[#000000] tracking-normal block">IT Support & Enterprise Admin</span>
                     <p className="text-[11px] text-[#707070] tracking-normal mt-1 font-normal">
                       15-module practical engineering bootcamp covering Active Directory, M365, Intune, Defender & Helpdesk.
                     </p>
-                  </div>
+                  </button>
 
-                  <div 
+                  <button
+                    type="button"
+                    role="menuitem"
                     onClick={() => handleNav('/courses/it-support/curriculum')}
-                    className="p-3 rounded-xl hover:bg-[#FAFAFA] cursor-pointer transition border-t border-[#F0F0F0]"
+                    className="w-full p-3 rounded-xl hover:bg-[#FAFAFA] cursor-pointer transition border-t border-[#F0F0F0] text-left"
                   >
                     <span className="font-bold text-xs text-[#000000] tracking-normal block">15-Module Syllabus</span>
                     <p className="text-[11px] text-[#707070] tracking-normal mt-1 font-normal">
                       Detailed week-by-week labs and enterprise troubleshooting scenarios.
                     </p>
-                  </div>
+                  </button>
                 </div>
               )}
             </div>

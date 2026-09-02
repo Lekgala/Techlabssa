@@ -1,13 +1,21 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { useApp } from '../../context/AppContext';
-import { MessageSquare, X, Send, Sparkles } from 'lucide-react';
+import { MessageSquare, X, Send } from 'lucide-react';
 
 export const WhatsAppButton: React.FC = () => {
-  const { settings } = useApp();
+  const { settings, currentUser, currentStudent, applications, cohorts } = useApp();
   const [isOpen, setIsOpen] = useState(false);
-  const [userMsg, setUserMsg] = useState('Hi TechLabs! I want to ask about the upcoming IT Support bootcamp in Cape Town.');
+  const studentApplication = currentUser?.role === 'STUDENT' ? applications.find(application => application.email.toLowerCase() === currentUser.email.toLowerCase()) : undefined;
+  const studentCohort = studentApplication ? cohorts.find(cohort => cohort.id === studentApplication.cohortId) : undefined;
+  const isStudentSupport = Boolean(studentApplication && ['ENROLLED', 'COMPLETED'].includes(studentApplication.status));
+  const defaultMessage = isStudentSupport
+    ? `Hi TechLabs Student Support, I need assistance. Student: ${currentStudent?.name || currentUser?.name || currentUser?.email || ''}. Reference: ${studentApplication?.referenceNumber || ''}. Cohort: ${studentCohort?.name || 'Not assigned'}.`
+    : 'Hi TechLabs Admissions, I would like assistance with the IT Support bootcamp.';
+  const [userMsg, setUserMsg] = useState(defaultMessage);
 
-  const cleanNumber = settings.whatsappNumber.replace(/[^0-9]/g, '');
+  useEffect(() => { setUserMsg(defaultMessage); }, [defaultMessage]);
+
+  const cleanNumber = (isStudentSupport ? settings.studentSupportWhatsappNumber || settings.whatsappNumber : settings.whatsappNumber).replace(/[^0-9]/g, '');
 
   const handleSend = () => {
     const encoded = encodeURIComponent(userMsg);
@@ -27,7 +35,7 @@ export const WhatsAppButton: React.FC = () => {
                 TL
               </div>
               <div>
-                <h4 className="font-bold text-xs uppercase tracking-wider">TechLabs Admissions</h4>
+                <h4 className="font-bold text-xs uppercase tracking-wider">{isStudentSupport ? 'TechLabs Student Support' : 'TechLabs Admissions'}</h4>
                 <div className="flex items-center gap-1.5 text-[#A0A0A0] text-[10px] mt-0.5">
                   <span className="w-1.5 h-1.5 rounded-full bg-[#000000]"></span>
                   <span>Cape Town HQ • Online</span>
@@ -45,9 +53,9 @@ export const WhatsAppButton: React.FC = () => {
           {/* Body */}
           <div className="p-4 bg-[#FFFFFF] space-y-3 text-xs">
             <div className="bg-[#FAFAFA] p-3.5 rounded-xl border border-[#F0F0F0] text-[#707070]">
-              <p className="font-bold text-[#000000] mb-1 text-xs">Admissions Desk</p>
+              <p className="font-bold text-[#000000] mb-1 text-xs">{isStudentSupport ? 'Student Support Desk' : 'Admissions Desk'}</p>
               <p className="leading-relaxed">
-                Have questions about VMware labs, schedules, or tuition? Send a message to chat directly with an advisor.
+                {isStudentSupport ? 'Need help with your schedule, course access, payments, or learning activities? Send a message to the student support team.' : 'Have questions about applications, schedules, or tuition? Send a message to chat directly with an admissions advisor.'}
               </p>
               <span className="text-[10px] text-[#A0A0A0] mt-1.5 block font-mono">Replies in ~15 mins</span>
             </div>
@@ -82,7 +90,7 @@ export const WhatsAppButton: React.FC = () => {
         title="Chat on WhatsApp"
       >
         <MessageSquare className="w-3.5 h-3.5" />
-        <span>Admissions Chat</span>
+        <span>{isStudentSupport ? 'Student Support Chat' : 'Admissions Chat'}</span>
       </button>
     </div>
   );

@@ -7,7 +7,6 @@ import { PrintableInvoice } from '../../components/common/PrintableInvoice';
 import { BulkOperationsUI } from '../../components/admin/BulkOperationsUI';
 import { EmailAutomationUI } from '../../components/admin/EmailAutomationUI';
 import { InvoiceGeneratorUI } from '../../components/admin/InvoiceGeneratorUI';
-import { VirtualLearningUI } from '../../components/admin/VirtualLearningUI';
 import { 
   Users, 
   FileText, 
@@ -32,7 +31,7 @@ import {
   Filter,
   Zap as Zapper,
   Mail,
-  MonitorPlay,
+  Layers,
   ScrollText
   ,RotateCw
   ,ZoomIn
@@ -46,6 +45,11 @@ const PIPELINE_STAGES: Array<{ id: Exclude<PipelineStage, 'OTHER'>; label: strin
 ];
 type ActionCentreGroup = { count: number; items: Array<{ id: string; label: string; detail: string }> };
 type ActionCentreData = { generatedAt: string; hardware: ActionCentreGroup; pops: ActionCentreGroup; overdue: ActionCentreGroup; cohorts: ActionCentreGroup; emails: ActionCentreGroup; followUps: ActionCentreGroup };
+const TIER_CARD_DEFAULTS: Record<CourseTier, { priceZAR: number; displayName: string; description: string; features: string[]; badgeLabel: string }> = {
+  STARTER: { priceZAR: 1999, displayName: 'Starter Tier', description: 'Weekend practical self-paced lab track with comprehensive workbooks and VMware guidance.', features: ['Weekend practical labs', 'Student workbook & architecture diagrams', 'VMware lab guidance & ISO links', 'Practical exercises & helpdesk scripts', 'Certificate of Completion'], badgeLabel: 'Self-paced' },
+  PROFESSIONAL: { priceZAR: 3499, displayName: 'Professional Tier', description: 'Full bootcamp with live evening and weekend sessions, enterprise VMware labs, and tickets.', features: ['Full 8-12 week bootcamp', 'Live evening and weekend practical sessions', 'VMware enterprise labs (Server, AD, DNS)', 'Microsoft 365, Entra ID, Intune & Defender', 'PowerShell automation & helpdesk tickets', 'Graded assessments & verified certificate'], badgeLabel: 'Most Popular' },
+  CAREER_ACCELERATOR: { priceZAR: 4999, displayName: 'Career Accelerator', description: 'Everything in Professional plus dedicated 1-on-1 career coaching and mock interviews.', features: ['Everything in Professional Tier', 'Technical CV and portfolio review', 'LinkedIn profile optimization', '1-on-1 technical mock interview', 'Job application guidance', 'Priority placement assistance'], badgeLabel: 'Full Support' },
+};
 
 export const AdminDashboard: React.FC = () => {
   const {
@@ -65,8 +69,13 @@ export const AdminDashboard: React.FC = () => {
     createTicket,
     leads,
     updateLeadStatus,
+    addLeadNote,
+    updateLeadFollowUp,
     invoices,
     payments,
+    courseModules,
+    createCourseModule,
+    saveCourseModule,
     setInvoices,
     verifyInvoicePayment,
     settleInvoiceBalance,
@@ -82,7 +91,7 @@ export const AdminDashboard: React.FC = () => {
     navigate
   } = useApp();
 
-  const [activeTab, setActiveTab] = useState<'OVERVIEW' | 'APPLICATIONS' | 'COHORTS' | 'TICKETS' | 'LEADS' | 'INVOICES' | 'CERTIFICATES' | 'SETTINGS' | 'STAFF' | 'AUDIT_LOG' | 'BULK_OPS' | 'EMAIL_AUTOMATION' | 'VIRTUAL_LEARNING'>('OVERVIEW');
+  const [activeTab, setActiveTab] = useState<'OVERVIEW' | 'APPLICATIONS' | 'COHORTS' | 'TICKETS' | 'LEADS' | 'INVOICES' | 'CERTIFICATES' | 'CURRICULUM' | 'SETTINGS' | 'STAFF' | 'AUDIT_LOG' | 'BULK_OPS' | 'EMAIL_AUTOMATION'>('OVERVIEW');
   const [selectedAppId, setSelectedAppId] = useState<string | null>(null);
   const [editingCohortId, setEditingCohortId] = useState<string | null>(null);
   const [selectedInvoiceForPdf, setSelectedInvoiceForPdf] = useState<Invoice | null>(null);
@@ -144,6 +153,14 @@ export const AdminDashboard: React.FC = () => {
   const [editingStudentRecord, setEditingStudentRecord] = useState(false);
   const [recordForm, setRecordForm] = useState<Partial<typeof applications[number]>>({});
   const [recordSaving, setRecordSaving] = useState(false);
+  const [leadSearch, setLeadSearch] = useState('');
+  const [leadStatusFilter, setLeadStatusFilter] = useState<LeadStatus | 'ALL' | 'DUE'>('ALL');
+  const [selectedLeadId, setSelectedLeadId] = useState<string | null>(null);
+  const [leadNote, setLeadNote] = useState('');
+  const [editingModuleNumber, setEditingModuleNumber] = useState<number | null>(null);
+  const [creatingModule, setCreatingModule] = useState(false);
+  const [curriculumSaving, setCurriculumSaving] = useState(false);
+  const [moduleForm, setModuleForm] = useState({ title: '', duration: '', summary: '', learningOutcomes: '', practicalLabs: '', exampleTickets: '', technologies: '', published: true });
 
   useEffect(() => {
     if (activeTab !== 'AUDIT_LOG') return;
@@ -169,6 +186,11 @@ export const AdminDashboard: React.FC = () => {
   useEffect(() => {
     if (!['STAFF', 'APPLICATIONS'].includes(activeTab)) return;
     void apiRequest<Array<Omit<StaffAccount, 'passwordHash'>>>('/admin/staff').then(setStaffAccounts).catch(error => showToast('error', 'Staff Unavailable', error instanceof Error ? error.message : 'Could not load staff accounts.'));
+  }, [activeTab, currentRole]);
+
+  useEffect(() => {
+    if (activeTab !== 'EMAIL_AUTOMATION' || currentRole !== 'ADMIN') return;
+    void apiRequest<any[]>('/automation/templates').then(setEmailTemplates).catch(error => showToast('error', 'Templates Unavailable', error instanceof Error ? error.message : 'Could not load email templates.'));
   }, [activeTab, currentRole]);
 
   const createStaffAccount = async (event: React.FormEvent) => {
@@ -338,9 +360,9 @@ export const AdminDashboard: React.FC = () => {
     setAdminLoginError('');
   };
 
-  const handleApproveApplication = async (app: typeof applications[number], notes?: string) => {
-    const sent = await sendApprovalEmail(app, 'APPROVED');
-    if (sent) updateApplicationStatus(app.id, 'APPROVED', notes || 'Approved by admissions team. Secure account setup and payment instructions issued.');
+  const handleApproveApplication = async (app: typeof applications[number]) => {
+    const approved = await sendApprovalEmail(app, 'APPROVED');
+    if (approved) void loadStudentTimeline(app.id);
   };
 
   const submitApplicationDecision = async (applicationId: string) => {
@@ -442,6 +464,41 @@ export const AdminDashboard: React.FC = () => {
     link.download = 'techlabs_leads.csv';
     link.click();
     URL.revokeObjectURL(url);
+  };
+
+  const today = new Date().toISOString().slice(0, 10);
+  const activeRecruitmentStatuses: LeadStatus[] = ['NEW_LEAD', 'CONTACTED', 'INTERESTED', 'APPLICATION_STARTED', 'APPLICATION_SUBMITTED', 'APPROVED', 'PAYMENT_PENDING'];
+  const filteredLeads = leads.filter(lead => {
+    const query = leadSearch.trim().toLowerCase();
+    const matchesSearch = !query || [lead.name, lead.email, lead.whatsapp, lead.courseInterest, lead.source].some(value => String(value).toLowerCase().includes(query));
+    const matchesStatus = leadStatusFilter === 'ALL' || (leadStatusFilter === 'DUE' ? activeRecruitmentStatuses.includes(lead.status) && lead.followUpDate <= today : lead.status === leadStatusFilter);
+    return matchesSearch && matchesStatus;
+  }).sort((a, b) => a.followUpDate.localeCompare(b.followUpDate) || b.createdAt.localeCompare(a.createdAt));
+  const selectedLead = leads.find(lead => lead.id === selectedLeadId);
+  const leadApplication = selectedLead ? applications.find(application => application.email.toLowerCase() === selectedLead.email.toLowerCase()) : undefined;
+  const dueLeadCount = leads.filter(lead => activeRecruitmentStatuses.includes(lead.status) && lead.followUpDate <= today).length;
+  const openLeadWorkspace = (leadId: string) => {
+    setSelectedLeadId(leadId);
+    setLeadNote('');
+    window.setTimeout(() => document.getElementById('lead-workspace')?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 0);
+  };
+  const startModuleEdit = (module: typeof courseModules[number]) => {
+    setCreatingModule(false);
+    setEditingModuleNumber(module.number);
+    setModuleForm({ title: module.title, duration: module.duration, summary: module.summary, learningOutcomes: module.learningOutcomes.join('\n'), practicalLabs: module.practicalLabs.join('\n'), exampleTickets: module.exampleTickets.join('\n'), technologies: module.technologies.join('\n'), published: module.published !== false });
+    window.setTimeout(() => document.getElementById('curriculum-editor')?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 0);
+  };
+  const startModuleCreate = () => {
+    setEditingModuleNumber(null); setCreatingModule(true);
+    setModuleForm({ title: '', duration: '', summary: '', learningOutcomes: '', practicalLabs: '', exampleTickets: '', technologies: '', published: true });
+    window.setTimeout(() => document.getElementById('curriculum-editor')?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 0);
+  };
+  const submitModuleEdit = async () => {
+    if (!editingModuleNumber && !creatingModule) return; setCurriculumSaving(true);
+    const toList = (value: string) => value.split('\n').map(item => item.trim()).filter(Boolean);
+    const payload = { title: moduleForm.title, duration: moduleForm.duration, summary: moduleForm.summary, learningOutcomes: toList(moduleForm.learningOutcomes), practicalLabs: toList(moduleForm.practicalLabs), exampleTickets: toList(moduleForm.exampleTickets), technologies: toList(moduleForm.technologies), published: moduleForm.published };
+    const saved = creatingModule ? await createCourseModule(payload) : await saveCourseModule(editingModuleNumber!, payload);
+    setCurriculumSaving(false); if (saved) { setEditingModuleNumber(null); setCreatingModule(false); }
   };
 
   // Metrics
@@ -653,14 +710,13 @@ export const AdminDashboard: React.FC = () => {
           { id: 'OVERVIEW', label: 'Operations Overview', icon: TrendingUp },
           { id: 'APPLICATIONS', label: `Student Applications (${applications.length})`, icon: Users },
           { id: 'BULK_OPS', label: 'Bulk Operations', icon: Zap },
-          { id: 'EMAIL_AUTOMATION', label: 'Email Automation', icon: Mail },
-          { id: 'VIRTUAL_LEARNING', label: 'Virtual Learning', icon: MonitorPlay },
+          { id: 'EMAIL_AUTOMATION', label: 'Email Templates', icon: Mail },
           { id: 'INVOICES', label: `Invoices (${invoices.length})`, icon: FileText },
           { id: 'COHORTS', label: `Cohorts (${cohorts.length})`, icon: Calendar },
           { id: 'LEADS', label: `Leads CRM (${leads.length})`, icon: MessageSquare },
           { id: 'CERTIFICATES', label: `Certificates (${certificates.length})`, icon: Award },
           { id: 'AUDIT_LOG', label: 'Audit Log', icon: ScrollText },
-          ...(currentRole === 'ADMIN' ? [{ id: 'STAFF', label: 'Staff Accounts', icon: Users }, { id: 'SETTINGS', label: 'Settings', icon: Settings }] : [])
+          ...(currentRole === 'ADMIN' ? [{ id: 'CURRICULUM', label: 'Curriculum', icon: Layers }, { id: 'STAFF', label: 'Staff Accounts', icon: Users }, { id: 'SETTINGS', label: 'Settings', icon: Settings }] : [])
         ].map((tab) => {
           const Icon = tab.icon;
           const isSelected = activeTab === tab.id;
@@ -974,7 +1030,7 @@ export const AdminDashboard: React.FC = () => {
 
                 <div className="flex items-center gap-2">
                   <button
-                    onClick={() => void handleApproveApplication(selectedApp, 'Approved by admissions team. Payment and onboarding instructions issued.')}
+                    onClick={() => void handleApproveApplication(selectedApp)}
                     disabled={!selectedApp.isLaptopCompliant || ['APPROVED', 'PAYMENT_REQUIRED', 'ENROLLED'].includes(selectedApp.status)}
                     className="px-4 py-2 bg-[#000000] hover:bg-neutral-800 disabled:bg-[#E0E0E0] disabled:text-[#707070] text-white font-bold rounded-xl text-xs uppercase tracking-wider transition shadow"
                   >
@@ -1230,6 +1286,20 @@ export const AdminDashboard: React.FC = () => {
             </button>
           </div>
 
+          <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+            {[
+              ['All leads', leads.length, 'ALL'],
+              ['Follow-up due', dueLeadCount, 'DUE'],
+              ['New', leads.filter(lead => lead.status === 'NEW_LEAD').length, 'NEW_LEAD'],
+              ['Interested', leads.filter(lead => lead.status === 'INTERESTED').length, 'INTERESTED']
+            ].map(([label, count, filter]) => <button key={String(filter)} type="button" onClick={() => setLeadStatusFilter(filter as LeadStatus | 'ALL' | 'DUE')} className={`p-4 text-left rounded-xl border ${leadStatusFilter === filter ? 'bg-black text-white border-black' : 'bg-white border-[#E0E0E0]'}`}><span className="block text-2xl font-light">{count}</span><span className="text-[10px] font-bold uppercase tracking-wider">{label}</span></button>)}
+          </div>
+
+          <div className="flex flex-col md:flex-row gap-3 bg-white border border-[#E0E0E0] rounded-xl p-4">
+            <div className="relative flex-1"><Search className="w-4 h-4 absolute left-3 top-3 text-[#A0A0A0]" /><input value={leadSearch} onChange={event => setLeadSearch(event.target.value)} placeholder="Search name, phone, email, source or course…" className="w-full pl-9 pr-3 py-2.5 border border-[#E0E0E0] rounded-lg text-xs" /></div>
+            <select aria-label="Lead status filter" value={leadStatusFilter} onChange={event => setLeadStatusFilter(event.target.value as LeadStatus | 'ALL' | 'DUE')} className="md:w-64 p-2.5 border border-[#E0E0E0] rounded-lg bg-white text-xs font-bold"><option value="ALL">All statuses</option><option value="DUE">Follow-up due</option><option value="NEW_LEAD">New leads</option><option value="CONTACTED">Contacted</option><option value="INTERESTED">Interested</option><option value="APPLICATION_STARTED">Application started</option><option value="APPLICATION_SUBMITTED">Application submitted</option><option value="APPROVED">Approved</option><option value="PAYMENT_PENDING">Payment pending</option><option value="ENROLLED">Enrolled</option></select>
+          </div>
+
           {/* New Ticket Modal */}
           {newTicketModal && (
             <div className="bg-[#FAFAFA] text-[#1A1A1A] p-6 sm:p-8 rounded-2xl border-2 border-[#000000] shadow-xl space-y-4">
@@ -1350,15 +1420,17 @@ export const AdminDashboard: React.FC = () => {
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-[#E0E0E0]">
-                  {leads.map((lead) => (
-                    <tr key={lead.id} className="hover:bg-[#FAFAFA]">
+                  {filteredLeads.map((lead) => {
+                    const followUpDue = activeRecruitmentStatuses.includes(lead.status) && lead.followUpDate <= today;
+                    return (
+                    <tr key={lead.id} className={`hover:bg-[#FAFAFA] ${selectedLeadId === lead.id ? 'bg-[#F0F0F0] ring-1 ring-inset ring-black' : followUpDue ? 'bg-[#FFF8EE]' : ''}`}>
                       <td className="p-4 font-bold text-[#000000]">{lead.name}</td>
                       <td className="p-4 text-[11px]">
                         <span className="text-[#1A1A1A] block">{lead.whatsapp}</span>
                         <span className="text-[#707070] block">{lead.email}</span>
                       </td>
                       <td className="p-4 font-mono text-[11px]">{lead.courseInterest}</td>
-                      <td className="p-4 font-mono text-[11px] text-[#707070]">{lead.followUpDate}</td>
+                      <td className="p-4 font-mono text-[11px]"><span className={followUpDue ? 'text-[#9B1C1C] font-bold' : 'text-[#707070]'}>{lead.followUpDate}</span>{followUpDue && <span className="block text-[9px] uppercase font-bold text-[#9B1C1C]">Due</span>}</td>
                       <td className="p-4">
                         <select
                           value={lead.status}
@@ -1379,7 +1451,7 @@ export const AdminDashboard: React.FC = () => {
                         </select>
                       </td>
                       <td className="p-4 text-right">
-                        <a
+                        <div className="flex justify-end gap-2"><button type="button" onClick={() => openLeadWorkspace(lead.id)} className="px-3 py-1 border border-[#E0E0E0] bg-white rounded-lg text-[10px] uppercase font-bold">{selectedLeadId === lead.id ? 'Opened' : 'Open'}</button><a
                           href={`https://wa.me/${lead.whatsapp.replace(/[^0-9]/g, '')}?text=Hi%20${encodeURIComponent(lead.name)},%20this%20is%20the%20TechLabs%20Academy%20team.%20We%20received%20your%20IT%20Support%20inquiry.`}
                           target="_blank"
                           rel="noopener noreferrer"
@@ -1387,94 +1459,27 @@ export const AdminDashboard: React.FC = () => {
                         >
                           <MessageSquare className="w-3 h-3" />
                           <span>WhatsApp</span>
-                        </a>
+                        </a></div>
                       </td>
                     </tr>
-                  ))}
+                  )})}
+                  {filteredLeads.length === 0 && <tr><td colSpan={6} className="p-10 text-center text-[#707070]">No recruitment leads match these filters.</td></tr>}
                 </tbody>
               </table>
             </div>
           </div>
-        </div>
-      )}
 
-      {/* TAB 6: INVOICES & EFT */}
-      {activeTab === 'INVOICES' && (
-        <div className="space-y-6 animate-in fade-in">
-          <div className="flex items-center justify-between">
-            <div>
-              <h3 className="text-2xl font-light text-[#000000] tracking-tight">Student Invoices & Bank EFT Verifications</h3>
-              <p className="text-xs text-[#707070]">Confirm proof of payment uploads, issue receipts, and record gateway transactions.</p>
-            </div>
-          </div>
-
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-            {invoices.map((inv) => (
-              <div key={inv.id} className="bg-[#FFFFFF] p-6 rounded-xl border border-[#E0E0E0] shadow-sm space-y-4">
-                <div className="flex items-center justify-between border-b border-[#E0E0E0] pb-3">
-                  <div>
-                    <span className="text-[10px] font-mono text-[#A0A0A0] uppercase font-bold">Invoice #{inv.invoiceNumber}</span>
-                    <h4 className="font-bold text-base text-[#000000]">{inv.studentName}</h4>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <button
-                      type="button"
-                      disabled={emailingInvoiceId === inv.id}
-                      onClick={() => void handleEmailInvoice(inv)}
-                      className="px-3 py-1.5 bg-[#000000] disabled:bg-[#A0A0A0] text-white rounded-lg font-bold uppercase text-[10px]"
-                    >
-                      {emailingInvoiceId === inv.id ? 'Sending…' : 'Email Invoice'}
-                    </button>
-                    <span className={`px-2.5 py-1 rounded text-[10px] font-mono font-bold uppercase border ${
-                      inv.status === 'VERIFIED' ? 'bg-[#000000] text-white border-[#000000]' : 'bg-[#FAFAFA] text-[#707070] border-[#E0E0E0]'
-                    }`}>
-                      {inv.status}
-                    </span>
-                  </div>
-                </div>
-
-                <div className="grid grid-cols-2 gap-2 text-xs font-mono">
-                  <div>
-                    <span className="text-[#707070] block">Total Tuition:</span>
-                    <strong className="text-[#000000]">R{inv.amountZAR.toLocaleString()}</strong>
-                  </div>
-                  <div>
-                    <span className="text-[#707070] block">Seat Deposit:</span>
-                    <strong className="text-[#000000]">R{inv.depositZAR.toLocaleString()}</strong>
-                  </div>
-                  <div>
-                    <span className="text-[#707070] block">Course Tier:</span>
-                    <span className="text-[#000000]">{inv.courseTier}</span>
-                  </div>
-                  <div>
-                    <span className="text-[#707070] block">Due Date:</span>
-                    <span className="text-[#000000]">{inv.dueDate}</span>
-                  </div>
-                </div>
-
-                <div className="pt-2 border-t border-[#E0E0E0] flex items-center justify-between">
-                  <div className="text-[11px] font-mono">
-                    {inv.proofOfPaymentUrl ? (
-                      <button type="button" onClick={() => { const payment = payments.find(item => item.invoiceId === inv.id && item.status === 'SUBMITTED'); if (payment) void openPopReview(payment); }} className="inline-flex items-center gap-1.5 text-[#000000] underline font-bold">Review submitted POP</button>
-                    ) : (
-                      <span className="text-[#707070]">POP: Pending Upload</span>
-                    )}
-                    {inv.paidAt && <span className="block text-[10px] text-[#707070]">Paid: {inv.paidAt} via {inv.paymentMethod || 'EFT'}</span>}
-                  </div>
-                  {payments.some(item => item.invoiceId === inv.id && item.status === 'SUBMITTED') ? (
-                    <div className="flex gap-2">
-                      <button onClick={() => { const payment = payments.find(item => item.invoiceId === inv.id && item.status === 'SUBMITTED'); if (payment) void openPopReview(payment); }} className="px-4 py-2 bg-[#000000] hover:bg-neutral-800 text-white font-bold rounded-xl text-xs uppercase tracking-wider transition shadow">Review POP</button>
-                      <button onClick={() => { const payment = payments.find(item => item.invoiceId === inv.id && item.status === 'SUBMITTED'); const reason = window.prompt('Reason for rejecting this POP:'); if (payment && reason) void rejectSubmittedPayment(payment.id, reason); }} className="px-3 py-2 border border-[#CC0000] text-[#CC0000] font-bold rounded-xl text-xs uppercase">Reject</button>
-                    </div>
-                  ) : inv.status !== 'VERIFIED' && inv.status !== 'PARTIALLY_PAID' ? (
-                    <span className="text-xs text-[#707070]">Awaiting student POP</span>
-                  ) : (
-                    <span className="text-xs font-bold text-[#000000] uppercase tracking-wider font-mono">{inv.status === 'PARTIALLY_PAID' ? 'Deposit Verified' : 'Payment Verified'}</span>
-                  )}
-                </div>
+          {selectedLead && <section id="lead-workspace" className="bg-[#FAFAFA] border-2 border-black rounded-2xl p-6 space-y-5 scroll-mt-4">
+            <div className="flex items-start justify-between gap-3"><div><span className="text-[10px] font-mono uppercase text-[#707070]">Recruitment lead · {selectedLead.source}</span><h4 className="text-xl font-bold">{selectedLead.name}</h4><p className="text-xs text-[#707070]">Created {selectedLead.createdAt} · {selectedLead.courseInterest}</p></div><button type="button" onClick={() => setSelectedLeadId(null)} className="text-[10px] font-bold uppercase">Close</button></div>
+            <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+              <div className="lg:col-span-2 bg-white border border-[#E0E0E0] rounded-xl p-4 space-y-4">
+                <div className="grid sm:grid-cols-2 gap-3 text-xs"><div><span className="block text-[10px] uppercase font-bold text-[#707070]">Email</span><a className="underline" href={`mailto:${selectedLead.email}`}>{selectedLead.email}</a></div><div><span className="block text-[10px] uppercase font-bold text-[#707070]">WhatsApp</span><a className="underline" target="_blank" rel="noopener noreferrer" href={`https://wa.me/${selectedLead.whatsapp.replace(/[^0-9]/g, '')}`}>{selectedLead.whatsapp}</a></div></div>
+                <div className="grid sm:grid-cols-2 gap-3"><label className="space-y-1"><span className="text-[10px] uppercase font-bold">Recruitment stage</span><select value={selectedLead.status} onChange={event => updateLeadStatus(selectedLead.id, event.target.value as LeadStatus)} className="w-full p-2.5 border border-[#E0E0E0] rounded-lg bg-white text-xs"><option value="NEW_LEAD">New lead</option><option value="CONTACTED">Contacted</option><option value="INTERESTED">Interested</option><option value="APPLICATION_STARTED">Application started</option><option value="APPLICATION_SUBMITTED">Application submitted</option><option value="APPROVED">Approved</option><option value="PAYMENT_PENDING">Payment pending</option><option value="ENROLLED">Enrolled</option><option value="ACTIVE_STUDENT">Active student</option><option value="GRADUATED">Graduated</option><option value="ALUMNI">Alumni</option></select></label><label className="space-y-1"><span className="text-[10px] uppercase font-bold">Next follow-up</span><input type="date" value={selectedLead.followUpDate} onChange={event => updateLeadFollowUp(selectedLead.id, event.target.value)} className="w-full p-2.5 border border-[#E0E0E0] rounded-lg text-xs" /></label></div>
+                <div className="flex flex-wrap gap-2"><a target="_blank" rel="noopener noreferrer" href={`https://wa.me/${selectedLead.whatsapp.replace(/[^0-9]/g, '')}?text=Hi%20${encodeURIComponent(selectedLead.name)},%20this%20is%20the%20TechLabs%20Academy%20admissions%20team.%20I%20am%20following%20up%20on%20your%20course%20inquiry.`} className="px-4 py-2 bg-black text-white rounded-lg text-[10px] font-bold uppercase">Message on WhatsApp</a><a href={`mailto:${selectedLead.email}?subject=${encodeURIComponent('Your TechLabs Academy inquiry')}`} className="px-4 py-2 bg-white border border-[#E0E0E0] rounded-lg text-[10px] font-bold uppercase">Send Email</a>{leadApplication && <button type="button" onClick={() => { setSelectedAppId(leadApplication.id); setPipelineSearch(leadApplication.referenceNumber); setActiveTab('APPLICATIONS'); }} className="px-4 py-2 bg-white border border-[#E0E0E0] rounded-lg text-[10px] font-bold uppercase">Open Application</button>}</div>
               </div>
-            ))}
-          </div>
+              <div className="bg-white border border-[#E0E0E0] rounded-xl p-4 space-y-3"><h5 className="font-bold text-sm">Recruitment notes</h5><div className="max-h-44 overflow-y-auto space-y-2">{selectedLead.notes?.length ? [...selectedLead.notes].reverse().map((note, index) => <p key={index} className="p-2 bg-[#FAFAFA] rounded-lg text-[11px]">{note}</p>) : <p className="text-xs text-[#707070]">No notes yet.</p>}</div><textarea value={leadNote} onChange={event => setLeadNote(event.target.value)} rows={3} maxLength={1000} placeholder="Record the call outcome or next step…" className="w-full p-2.5 border border-[#E0E0E0] rounded-lg text-xs" /><button type="button" disabled={leadNote.trim().length < 2} onClick={() => { addLeadNote(selectedLead.id, leadNote); setLeadNote(''); }} className="w-full py-2 bg-black disabled:bg-[#D0D0D0] text-white rounded-lg text-[10px] font-bold uppercase">Add Internal Note</button></div>
+            </div>
+          </section>}
         </div>
       )}
 
@@ -1588,7 +1593,28 @@ export const AdminDashboard: React.FC = () => {
         </div>
       )}
 
-      {/* TAB 8: SETTINGS & BANK DETAILS */}
+      {activeTab === 'CURRICULUM' && currentRole === 'ADMIN' && (
+        <div className="space-y-6 animate-in fade-in">
+          <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-4"><div><h3 className="text-2xl font-light tracking-tight">Curriculum Management</h3><p className="text-xs text-[#707070]">Add or edit the module content shown on the website, in student portals, and in course-schedule PDFs. Dates are generated from each cohort.</p></div><button type="button" onClick={startModuleCreate} className="px-5 py-3 bg-black text-white rounded-xl text-[10px] font-bold uppercase tracking-wider flex items-center justify-center gap-2"><Plus className="w-4 h-4" /> Add Module</button></div>
+          <div className="grid grid-cols-1 lg:grid-cols-[320px_1fr] gap-6 items-start">
+            <div className="bg-white border border-[#E0E0E0] rounded-xl divide-y divide-[#E0E0E0] overflow-hidden">
+              {[...(courseModules || [])].sort((left, right) => left.number - right.number).map(module => <button key={module.number} type="button" onClick={() => startModuleEdit(module)} className={`w-full p-4 text-left hover:bg-[#FAFAFA] ${editingModuleNumber === module.number ? 'bg-[#F0F0F0] border-l-4 border-black' : ''}`}><span className="text-[10px] font-mono font-bold uppercase text-[#707070]">Module {module.number} · {module.published === false ? 'Hidden' : 'Published'}</span><strong className="block text-xs mt-1">{module.title}</strong><span className="block text-[10px] text-[#707070] mt-1">{module.duration}</span></button>)}
+            </div>
+            {(editingModuleNumber || creatingModule) ? <section id="curriculum-editor" className="bg-white border-2 border-black rounded-2xl p-6 space-y-4 scroll-mt-4">
+              <div className="flex items-center justify-between gap-3"><div><span className="text-[10px] font-mono uppercase text-[#707070]">{creatingModule ? `New module · Number ${Math.max(0, ...(courseModules || []).map(module => module.number)) + 1}` : `Module ${editingModuleNumber}`}</span><h4 className="font-bold text-lg">{creatingModule ? 'Add curriculum module' : 'Edit curriculum content'}</h4></div><button type="button" onClick={() => { setEditingModuleNumber(null); setCreatingModule(false); }} className="text-[10px] font-bold uppercase">Close</button></div>
+              <div className="grid grid-cols-1 sm:grid-cols-[1fr_180px] gap-3"><label className="space-y-1"><span className="text-[10px] font-bold uppercase">Title</span><input value={moduleForm.title} maxLength={200} onChange={event => setModuleForm(current => ({ ...current, title: event.target.value }))} className="w-full p-3 border border-[#E0E0E0] rounded-xl text-xs" /></label><label className="space-y-1"><span className="text-[10px] font-bold uppercase">Duration</span><input value={moduleForm.duration} maxLength={200} onChange={event => setModuleForm(current => ({ ...current, duration: event.target.value }))} placeholder="e.g. Week 1" className="w-full p-3 border border-[#E0E0E0] rounded-xl text-xs" /></label></div>
+              <label className="space-y-1 block"><span className="text-[10px] font-bold uppercase">Summary</span><textarea value={moduleForm.summary} maxLength={2000} rows={4} onChange={event => setModuleForm(current => ({ ...current, summary: event.target.value }))} className="w-full p-3 border border-[#E0E0E0] rounded-xl text-xs" /></label>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">{([
+                ['learningOutcomes', 'Learning outcomes'], ['practicalLabs', 'Practical labs'], ['exampleTickets', 'Example support tickets'], ['technologies', 'Technologies']
+              ] as Array<[keyof typeof moduleForm, string]>).map(([field, label]) => <label key={field} className="space-y-1"><span className="text-[10px] font-bold uppercase">{label}</span><textarea value={String(moduleForm[field])} rows={6} onChange={event => setModuleForm(current => ({ ...current, [field]: event.target.value }))} placeholder="One item per line" className="w-full p-3 border border-[#E0E0E0] rounded-xl text-xs" /><span className="text-[9px] text-[#707070]">Enter one item per line.</span></label>)}</div>
+              <label className="flex items-center gap-2 p-3 bg-[#FAFAFA] border border-[#E0E0E0] rounded-xl text-xs"><input type="checkbox" checked={moduleForm.published} onChange={event => setModuleForm(current => ({ ...current, published: event.target.checked }))} className="accent-black" /><span><strong>Published</strong> — visible on the public curriculum, student portal, and schedule PDF.</span></label>
+              <div className="flex justify-end"><button type="button" disabled={curriculumSaving || !moduleForm.title.trim() || !moduleForm.duration.trim() || !moduleForm.summary.trim()} onClick={() => void submitModuleEdit()} className="px-5 py-3 bg-black disabled:bg-[#D0D0D0] text-white rounded-xl text-[10px] font-bold uppercase tracking-wider">{curriculumSaving ? 'Saving…' : creatingModule ? 'Add Module' : 'Save Audited Changes'}</button></div>
+            </section> : <div className="p-10 bg-[#FAFAFA] border border-[#E0E0E0] rounded-2xl text-center"><Layers className="w-8 h-8 mx-auto mb-3" /><h4 className="font-bold">Select a module to edit</h4><p className="text-xs text-[#707070] mt-2">Module numbers remain fixed so assessments and student progress stay correctly linked.</p></div>}
+          </div>
+        </div>
+      )}
+
+      {/* SETTINGS & BANK DETAILS */}
       {activeTab === 'SETTINGS' && (
         <div className="space-y-6 animate-in fade-in max-w-4xl">
           <div className="space-y-1">
@@ -1616,6 +1642,12 @@ export const AdminDashboard: React.FC = () => {
                   className="w-full p-3 bg-[#FAFAFA] border border-[#E0E0E0] rounded-xl text-[#000000] focus:border-[#000000] focus:outline-none"
                 />
               </div>
+            </div>
+
+            <div className="space-y-1">
+              <label className="font-bold text-[#000000] uppercase text-[10px] tracking-wider">Enrolled Student Support WhatsApp</label>
+              <input type="text" value={settings.studentSupportWhatsappNumber || settings.whatsappNumber} onChange={(e) => updateSettings({ studentSupportWhatsappNumber: e.target.value })} className="w-full p-3 bg-[#FAFAFA] border border-[#E0E0E0] rounded-xl font-mono text-[#000000] focus:border-[#000000] focus:outline-none" />
+              <p className="text-[10px] text-[#707070]">Shown to enrolled and completed students. Applicants continue using the admissions hotline.</p>
             </div>
 
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
@@ -1684,6 +1716,24 @@ export const AdminDashboard: React.FC = () => {
                     className="w-full p-3 bg-[#FAFAFA] border border-[#E0E0E0] rounded-xl text-[#000000] focus:border-[#000000] focus:outline-none"
                   />
                 </div>
+              </div>
+            </div>
+
+            <div className="pt-4 border-t border-[#E0E0E0] space-y-4">
+              <div>
+                <h4 className="font-bold text-sm text-[#000000]">Course Tier Pricing</h4>
+                <p className="mt-1 text-[11px] text-[#707070]">These prices apply to new applications. Existing invoices retain their issued amounts.</p>
+              </div>
+              <div className="grid grid-cols-1 gap-4">
+                {([
+                  ['STARTER', 'Starter Tier'],
+                  ['PROFESSIONAL', 'Professional Tier'],
+                  ['CAREER_ACCELERATOR', 'Career Accelerator'],
+                ] as Array<[CourseTier, string]>).map(([tier, label]) => {
+                  const value = { ...TIER_CARD_DEFAULTS[tier], ...settings.courseTierPricing?.[tier] };
+                  const updateTier = (changes: Partial<typeof value>) => updateSettings({ courseTierPricing: { ...TIER_CARD_DEFAULTS, ...settings.courseTierPricing, [tier]: { ...value, ...changes } } });
+                  return <section key={tier} className="p-4 bg-[#FAFAFA] border border-[#E0E0E0] rounded-xl space-y-3"><h5 className="text-[10px] font-bold uppercase tracking-wider text-[#000000]">{label}</h5><div className="grid grid-cols-1 sm:grid-cols-[160px_1fr_180px] gap-3"><label className="space-y-1"><span className="block text-[9px] font-bold uppercase text-[#707070]">Price (ZAR)</span><span className="flex rounded-lg border border-[#E0E0E0] bg-white overflow-hidden"><span className="px-3 py-2.5 border-r border-[#E0E0E0] text-[#707070] font-mono">R</span><input type="number" min="1" max="100000" step="0.01" value={value.priceZAR} onChange={event => updateTier({ priceZAR: Number(event.target.value) })} className="min-w-0 flex-1 px-3 py-2.5 bg-white font-mono text-sm font-bold text-[#000000] focus:outline-none" /></span></label><label className="space-y-1"><span className="block text-[9px] font-bold uppercase text-[#707070]">Display name</span><input maxLength={80} value={value.displayName} onChange={event => updateTier({ displayName: event.target.value })} className="w-full px-3 py-2.5 bg-white border border-[#E0E0E0] rounded-lg text-sm" /></label><label className="space-y-1"><span className="block text-[9px] font-bold uppercase text-[#707070]">Badge</span><input maxLength={40} value={value.badgeLabel} onChange={event => updateTier({ badgeLabel: event.target.value })} className="w-full px-3 py-2.5 bg-white border border-[#E0E0E0] rounded-lg text-sm" /></label></div><label className="block space-y-1"><span className="block text-[9px] font-bold uppercase text-[#707070]">Card description</span><textarea maxLength={400} rows={2} value={value.description} onChange={event => updateTier({ description: event.target.value })} className="w-full px-3 py-2.5 bg-white border border-[#E0E0E0] rounded-lg text-sm" /></label><label className="block space-y-1"><span className="block text-[9px] font-bold uppercase text-[#707070]">Card benefits, one per line</span><textarea maxLength={1600} rows={4} value={value.features.join('\n')} onChange={event => updateTier({ features: event.target.value.split('\n').map(item => item.trim()).filter(Boolean) })} className="w-full px-3 py-2.5 bg-white border border-[#E0E0E0] rounded-lg text-sm" /></label></section>;
+                })}
               </div>
             </div>
 
@@ -1817,18 +1867,18 @@ export const AdminDashboard: React.FC = () => {
                   <div className="grid grid-cols-3 gap-3 bg-white p-3 rounded-lg border border-[#E0E0E0] text-center font-mono text-xs">
                     <div>
                       <span className="text-[9px] uppercase text-[#707070] block font-sans font-bold">Starter Tier</span>
-                      <span className="line-through text-[10px] text-[#A0A0A0] block">R1,999</span>
-                      <strong className="text-[#000000]">R{Math.round(1999 * (1 - settings.flashSale.discountPercent / 100)).toLocaleString()}</strong>
+                      <span className="line-through text-[10px] text-[#A0A0A0] block">R{(settings.courseTierPricing?.STARTER.priceZAR ?? 1999).toLocaleString()}</span>
+                      <strong className="text-[#000000]">R{Math.round((settings.courseTierPricing?.STARTER.priceZAR ?? 1999) * (1 - settings.flashSale.discountPercent / 100)).toLocaleString()}</strong>
                     </div>
                     <div>
                       <span className="text-[9px] uppercase text-[#707070] block font-sans font-bold">Professional Tier</span>
-                      <span className="line-through text-[10px] text-[#A0A0A0] block">R3,499</span>
-                      <strong className="text-[#000000]">R{Math.round(3499 * (1 - settings.flashSale.discountPercent / 100)).toLocaleString()}</strong>
+                      <span className="line-through text-[10px] text-[#A0A0A0] block">R{(settings.courseTierPricing?.PROFESSIONAL.priceZAR ?? 3499).toLocaleString()}</span>
+                      <strong className="text-[#000000]">R{Math.round((settings.courseTierPricing?.PROFESSIONAL.priceZAR ?? 3499) * (1 - settings.flashSale.discountPercent / 100)).toLocaleString()}</strong>
                     </div>
                     <div>
                       <span className="text-[9px] uppercase text-[#707070] block font-sans font-bold">Career Accelerator</span>
-                      <span className="line-through text-[10px] text-[#A0A0A0] block">R4,999</span>
-                      <strong className="text-[#000000]">R{Math.round(4999 * (1 - settings.flashSale.discountPercent / 100)).toLocaleString()}</strong>
+                      <span className="line-through text-[10px] text-[#A0A0A0] block">R{(settings.courseTierPricing?.CAREER_ACCELERATOR.priceZAR ?? 4999).toLocaleString()}</span>
+                      <strong className="text-[#000000]">R{Math.round((settings.courseTierPricing?.CAREER_ACCELERATOR.priceZAR ?? 4999) * (1 - settings.flashSale.discountPercent / 100)).toLocaleString()}</strong>
                     </div>
                   </div>
                 </div>
@@ -1894,12 +1944,12 @@ export const AdminDashboard: React.FC = () => {
         </div>
       )}
 
-      {/* TAB: EMAIL AUTOMATION */}
+      {/* TAB: EMAIL TEMPLATES */}
       {activeTab === 'EMAIL_AUTOMATION' && (
         <div className="space-y-6 animate-in fade-in max-w-4xl">
           <div className="space-y-1">
-            <h3 className="text-2xl font-light text-[#000000] tracking-tight">Email Automation Templates</h3>
-            <p className="text-xs text-[#707070]">Configure automated email templates for key application events.</p>
+            <h3 className="text-2xl font-light text-[#000000] tracking-tight">Email Templates</h3>
+            <p className="text-xs text-[#707070]">Preview and edit the message templates used by staff communication tools.</p>
           </div>
 
           <EmailAutomationUI
@@ -1928,17 +1978,6 @@ export const AdminDashboard: React.FC = () => {
       )}
 
       {/* TAB: VIRTUAL LEARNING */}
-      {activeTab === 'VIRTUAL_LEARNING' && (
-        <div className="space-y-6 animate-in fade-in max-w-6xl">
-          <div className="space-y-1">
-            <h3 className="text-2xl font-light text-[#000000] tracking-tight">Virtual Learning Mode</h3>
-            <p className="text-xs text-[#707070]">Configure live virtual sessions, Teams/Zoom links, and attendance tracking for your cohorts.</p>
-          </div>
-
-          <VirtualLearningUI cohorts={cohorts} />
-        </div>
-      )}
-
       {/* TAB: INVOICES (moved before COHORTS) */}
       {activeTab === 'INVOICES' && (
         <div className="space-y-6 animate-in fade-in max-w-4xl">

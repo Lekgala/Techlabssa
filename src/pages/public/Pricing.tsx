@@ -19,9 +19,12 @@ export const Pricing: React.FC = () => {
   const { navigate, settings } = useApp();
   const [selectedPlan, setSelectedPlan] = useState<'STARTER' | 'PROFESSIONAL' | 'CAREER_ACCELERATOR'>('PROFESSIONAL');
 
-  const starterPricing = getTierPrice('STARTER', settings.flashSale);
-  const proPricing = getTierPrice('PROFESSIONAL', settings.flashSale);
-  const careerPricing = getTierPrice('CAREER_ACCELERATOR', settings.flashSale);
+  const starterPricing = getTierPrice('STARTER', settings);
+  const proPricing = getTierPrice('PROFESSIONAL', settings);
+  const careerPricing = getTierPrice('CAREER_ACCELERATOR', settings);
+  const starterContent = settings.courseTierPricing?.STARTER;
+  const professionalContent = settings.courseTierPricing?.PROFESSIONAL;
+  const acceleratorContent = settings.courseTierPricing?.CAREER_ACCELERATOR;
 
   return (
     <div className="space-y-16 py-12 bg-[#FFFFFF] text-[#1A1A1A]">
@@ -51,7 +54,7 @@ export const Pricing: React.FC = () => {
             )}
             <div className="space-y-4">
               <span className="text-[10px] font-mono font-bold uppercase tracking-[0.2em] text-[#707070]">
-                Starter Tier
+                {starterContent?.displayName || 'Starter Tier'}
               </span>
               <div className="flex items-baseline gap-2">
                 {starterPricing.isDiscounted && (
@@ -65,30 +68,9 @@ export const Pricing: React.FC = () => {
                 <span className="text-[10px] text-[#A0A0A0] uppercase font-mono">once-off</span>
               </div>
               <p className="text-xs text-[#707070]">
-                Weekend practical self-paced lab track with comprehensive workbooks and VMware guidance.
+                {starterContent?.description || 'Weekend practical self-paced lab track with comprehensive workbooks and VMware guidance.'}
               </p>
-              <ul className="space-y-2.5 text-xs text-[#707070] pt-2">
-                <li className="flex items-center gap-2">
-                  <Check className="w-3.5 h-3.5 text-[#000000] shrink-0" />
-                  <span>Weekend practical labs</span>
-                </li>
-                <li className="flex items-center gap-2">
-                  <Check className="w-3.5 h-3.5 text-[#000000] shrink-0" />
-                  <span>Student workbook & architecture diagrams</span>
-                </li>
-                <li className="flex items-center gap-2">
-                  <Check className="w-3.5 h-3.5 text-[#000000] shrink-0" />
-                  <span>VMware lab guidance & ISO links</span>
-                </li>
-                <li className="flex items-center gap-2">
-                  <Check className="w-3.5 h-3.5 text-[#000000] shrink-0" />
-                  <span>Practical exercises & helpdesk scripts</span>
-                </li>
-                <li className="flex items-center gap-2">
-                  <Check className="w-3.5 h-3.5 text-[#000000] shrink-0" />
-                  <span>Certificate of Completion</span>
-                </li>
-              </ul>
+              <ul className="space-y-2.5 text-xs text-[#707070] pt-2">{(starterContent?.features || ['Weekend practical labs', 'Student workbook & architecture diagrams', 'VMware lab guidance & ISO links', 'Practical exercises & helpdesk scripts', 'Certificate of Completion']).map(feature => <li key={feature} className="flex items-center gap-2"><Check className="w-3.5 h-3.5 text-[#000000] shrink-0" /><span>{feature}</span></li>)}</ul>
             </div>
             <button
               onClick={() => navigate('/apply')}
@@ -102,11 +84,11 @@ export const Pricing: React.FC = () => {
           <div className="bg-[#000000] text-white p-8 rounded-2xl border border-[#222222] shadow-xl flex flex-col justify-between space-y-6 relative">
             <div className="absolute -top-3 left-1/2 -translate-x-1/2 bg-[#FFFFFF] text-[#000000] font-bold text-[9px] uppercase tracking-[0.2em] px-3 py-0.5 rounded-full border border-[#E0E0E0] shadow flex items-center gap-1">
               {proPricing.isDiscounted && <Zap className="w-3 h-3 fill-[#000000] text-[#000000]" />}
-              <span>{proPricing.isDiscounted ? `Flash Sale: ${proPricing.discountPercent}% OFF` : 'Most Popular'}</span>
+              <span>{proPricing.isDiscounted ? `Flash Sale: ${proPricing.discountPercent}% OFF` : professionalContent?.badgeLabel || 'Most Popular'}</span>
             </div>
             <div className="space-y-4">
               <span className="text-[10px] font-mono font-bold uppercase tracking-[0.2em] text-neutral-400">
-                Professional Tier
+                {professionalContent?.displayName || 'Professional Tier'}
               </span>
               <div className="flex items-baseline gap-2">
                 {proPricing.isDiscounted && (
@@ -120,34 +102,9 @@ export const Pricing: React.FC = () => {
                 <span className="text-[10px] text-neutral-400 uppercase font-mono">or R1,000 deposit</span>
               </div>
               <p className="text-xs text-neutral-300">
-                Full bootcamp with live evening + weekend sessions, enterprise VMware labs & tickets.
+                {professionalContent?.description || 'Full bootcamp with live evening + weekend sessions, enterprise VMware labs & tickets.'}
               </p>
-              <ul className="space-y-2.5 text-xs text-neutral-300 pt-2">
-                <li className="flex items-center gap-2">
-                  <Check className="w-3.5 h-3.5 text-white shrink-0" />
-                  <span>Full 8–12 week bootcamp</span>
-                </li>
-                <li className="flex items-center gap-2">
-                  <Check className="w-3.5 h-3.5 text-white shrink-0" />
-                  <span>Live evening + weekend practical sessions</span>
-                </li>
-                <li className="flex items-center gap-2">
-                  <Check className="w-3.5 h-3.5 text-white shrink-0" />
-                  <span>VMware enterprise labs (Server 2022, AD, DNS, GPO)</span>
-                </li>
-                <li className="flex items-center gap-2">
-                  <Check className="w-3.5 h-3.5 text-white shrink-0" />
-                  <span>Microsoft 365, Entra ID, Intune & Defender</span>
-                </li>
-                <li className="flex items-center gap-2">
-                  <Check className="w-3.5 h-3.5 text-white shrink-0" />
-                  <span>PowerShell automation & Helpdesk ticket simulations</span>
-                </li>
-                <li className="flex items-center gap-2">
-                  <Check className="w-3.5 h-3.5 text-white shrink-0" />
-                  <span>Graded practical assessments & verified certificate</span>
-                </li>
-              </ul>
+              <ul className="space-y-2.5 text-xs text-neutral-300 pt-2">{(professionalContent?.features || ['Full 8-12 week bootcamp', 'Live evening and weekend practical sessions', 'VMware enterprise labs (Server 2022, AD, DNS, GPO)', 'Microsoft 365, Entra ID, Intune & Defender', 'PowerShell automation & helpdesk ticket simulations', 'Graded practical assessments & verified certificate']).map(feature => <li key={feature} className="flex items-center gap-2"><Check className="w-3.5 h-3.5 text-white shrink-0" /><span>{feature}</span></li>)}</ul>
             </div>
             <button
               onClick={() => navigate('/apply')}
@@ -167,7 +124,7 @@ export const Pricing: React.FC = () => {
             )}
             <div className="space-y-4">
               <span className="text-[10px] font-mono font-bold uppercase tracking-[0.2em] text-[#707070]">
-                Career Accelerator
+                {acceleratorContent?.displayName || 'Career Accelerator'}
               </span>
               <div className="flex items-baseline gap-2">
                 {careerPricing.isDiscounted && (
@@ -181,30 +138,9 @@ export const Pricing: React.FC = () => {
                 <span className="text-[10px] text-[#A0A0A0] uppercase font-mono">or R1,000 deposit</span>
               </div>
               <p className="text-xs text-[#707070]">
-                Everything in Professional plus 1-on-1 technical CV review, LinkedIn overhaul & mock interviews.
+                {acceleratorContent?.description || 'Everything in Professional plus 1-on-1 technical CV review, LinkedIn overhaul & mock interviews.'}
               </p>
-              <ul className="space-y-2.5 text-xs text-[#707070] pt-2">
-                <li className="flex items-center gap-2">
-                  <Check className="w-3.5 h-3.5 text-[#000000] shrink-0" />
-                  <span>Everything in Professional Tier</span>
-                </li>
-                <li className="flex items-center gap-2">
-                  <Check className="w-3.5 h-3.5 text-[#000000] shrink-0" />
-                  <span>Technical CV restructuring & portfolio review</span>
-                </li>
-                <li className="flex items-center gap-2">
-                  <Check className="w-3.5 h-3.5 text-[#000000] shrink-0" />
-                  <span>LinkedIn profile optimization for recruiters</span>
-                </li>
-                <li className="flex items-center gap-2">
-                  <Check className="w-3.5 h-3.5 text-[#000000] shrink-0" />
-                  <span>1-on-1 technical mock interview with Lead Instructor</span>
-                </li>
-                <li className="flex items-center gap-2">
-                  <Check className="w-3.5 h-3.5 text-[#000000] shrink-0" />
-                  <span>MSP job application tracking & reference</span>
-                </li>
-              </ul>
+              <ul className="space-y-2.5 text-xs text-[#707070] pt-2">{(acceleratorContent?.features || ['Everything in Professional Tier', 'Technical CV and portfolio review', 'LinkedIn profile optimization', '1-on-1 technical mock interview', 'Job application guidance', 'Priority placement assistance']).map(feature => <li key={feature} className="flex items-center gap-2"><Check className="w-3.5 h-3.5 text-[#000000] shrink-0" /><span>{feature}</span></li>)}</ul>
             </div>
             <button
               onClick={() => navigate('/apply')}
@@ -218,7 +154,7 @@ export const Pricing: React.FC = () => {
         <div className="mt-8 text-center text-xs text-[#A0A0A0]">
           <p>Prices are subject to change based on intake, delivery format and included services.</p>
           <p className="mt-1">
-            *TechLabs Academy SA is an independent IT training provider. Certificates issued are verified Certificates of Completion.
+            *TechLabs Academy SA provides independent, non-accredited practical skills training. Certificates are internal, verifiable Certificates of Completion—not SAQA/NQF qualifications, SETA/QCTO-accredited awards, university qualifications, or Microsoft/vendor certifications. Employment is not guaranteed.
           </p>
         </div>
       </section>
@@ -253,6 +189,7 @@ export const Pricing: React.FC = () => {
 
 export const Intakes: React.FC = () => {
   const { navigate, cohorts } = useApp();
+  const availableCohorts = cohorts.filter(cohort => cohort.status === 'Open' || cohort.status === 'Filling Fast');
 
   return (
     <div className="space-y-16 py-12 bg-[#FFFFFF] text-[#1A1A1A]">
@@ -269,7 +206,7 @@ export const Intakes: React.FC = () => {
       </section>
 
       <div className="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8 space-y-6">
-        {cohorts.map((cohort) => {
+        {availableCohorts.map((cohort) => {
           const seatsLeft = Math.max(0, cohort.capacity - cohort.enrolledCount);
           const isFillingFast = cohort.status === 'Filling Fast';
 
@@ -343,6 +280,12 @@ export const Intakes: React.FC = () => {
             </div>
           );
         })}
+        {!availableCohorts.length && (
+          <div className="bg-[#FAFAFA] rounded-2xl border border-[#E0E0E0] p-8 text-center">
+            <h2 className="text-xl font-bold text-[#000000]">No intakes are currently open</h2>
+            <p className="mt-2 text-sm text-[#707070]">Contact admissions to register your interest in the next cohort.</p>
+          </div>
+        )}
       </div>
     </div>
   );

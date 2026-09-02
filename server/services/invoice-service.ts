@@ -168,6 +168,20 @@ const pdfText = (value: unknown) => String(value ?? '')
   .replace(/[^\x20-\x7E]/g, '-')
   .replace(/([\\()])/g, '\\$1');
 
+const wrapPdfText = (value: unknown, maxCharacters: number): string[] => {
+  const words = String(value ?? '').trim().split(/\s+/).filter(Boolean);
+  if (!words.length) return [''];
+  const lines: string[] = [];
+  let current = '';
+  for (const word of words) {
+    if (!current) { current = word; continue; }
+    if (`${current} ${word}`.length <= maxCharacters) current += ` ${word}`;
+    else { lines.push(current); current = word; }
+  }
+  if (current) lines.push(current);
+  return lines;
+};
+
 const money = (amount: number) => `R ${amount.toLocaleString('en-ZA', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 
 export const generateInvoicePDF = async (options: DetailedInvoicePDFOptions): Promise<Buffer> => {
@@ -293,12 +307,19 @@ export const generateBrandedDocumentPDF = (options: BrandedDocumentPDFOptions): 
     y -= 32;
     for (const line of section.lines) {
       const text = line.label ? `${line.label}: ${line.value}` : line.value;
-      commands.push(`BT /${line.bold ? 'F2' : 'F1'} ${line.bold ? 11 : 10} Tf 0 g 50 ${y} Td (${pdfText(text)}) Tj ET`);
-      y -= line.bold ? 22 : 18;
+      const wrappedLines = wrapPdfText(text, line.bold ? 76 : 88);
+      wrappedLines.forEach((wrapped, index) => {
+        commands.push(`BT /${line.bold ? 'F2' : 'F1'} ${line.bold ? 11 : 10} Tf 0 g ${index === 0 ? 50 : 62} ${y} Td (${pdfText(wrapped)}) Tj ET`);
+        y -= line.bold ? 16 : 14;
+      });
+      y -= 4;
     }
     y -= 8;
   }
-  if (options.closingNote) commands.push(`BT /F1 8 Tf 0.4 g 50 ${Math.max(y, 65)} Td (${pdfText(options.closingNote)}) Tj ET`);
+  if (options.closingNote) {
+    y = Math.max(y, 65);
+    for (const wrapped of wrapPdfText(options.closingNote, 110)) { commands.push(`BT /F1 8 Tf 0.4 g 50 ${y} Td (${pdfText(wrapped)}) Tj ET`); y -= 11; }
+  }
   commands.push('0.7 w 50 38 m 545 38 l S', `BT /F1 8 Tf 0.4 g 50 24 Td (${pdfText(`${options.academyName} | ${options.documentNumber} | Computer-generated document`)}) Tj ET`);
   const stream = commands.join('\n');
   const objects = [

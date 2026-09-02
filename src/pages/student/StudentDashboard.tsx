@@ -1,35 +1,30 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { useApp } from '../../context/AppContext';
-import { REAL_SUPPORT_TICKETS, COHORTS, SAMPLE_CERTIFICATE, COURSE_MODULES } from '../../data/mockData';
+import { COURSE_MODULES } from '../../data/mockData';
 import { TicketCard } from '../../components/common/TicketCard';
 import { CertificateView } from '../../components/common/CertificateView';
 import { PrintableInvoice } from '../../components/common/PrintableInvoice';
 import { apiOpenPrivate, apiRequest } from '../../lib/api';
 import type { PaymentInstallment } from '../../types';
-import { buildCurriculumSchedule } from '../../lib/curriculumSchedule';
+import { buildCohortCalendar, buildCurriculumSchedule } from '../../lib/curriculumSchedule';
 import { 
-  Server, 
   Layers, 
   CheckCircle, 
   Clock, 
-  Download, 
   Terminal, 
   MessageSquare, 
   Award, 
   AlertTriangle, 
-  ExternalLink,
-  Laptop,
   Sparkles,
   ChevronRight,
-  ShieldCheck,
-  Zap,
-  Flame,
+  ChevronLeft,
   FileCheck,
-  Video,
   FolderOpen,
   FileText,
   Receipt,
-  CalendarDays
+  CalendarDays,
+  Building2,
+  Copy
 } from 'lucide-react';
 
 const DocumentCard: React.FC<{
@@ -64,25 +59,28 @@ export const StudentDashboard: React.FC = () => {
     applications,
     invoices,
     payments,
-    labs,
     assessments,
+    paymentSettings,
+    uploadProofOfPayment,
     navigate 
   } = useApp();
 
-  const [activeTab, setActiveTab] = useState<'OVERVIEW' | 'DOCUMENTS' | 'MODULES' | 'LABS' | 'TICKETS' | 'DOWNLOADS' | 'CERTIFICATE'>('OVERVIEW');
+  const [activeTab, setActiveTab] = useState<'OVERVIEW' | 'CALENDAR' | 'MODULES' | 'PAYMENTS' | 'DOCUMENTS' | 'TICKETS' | 'CERTIFICATE'>('OVERVIEW');
   const [selectedTicketId, setSelectedTicketId] = useState<string | null>(null);
   const [showInvoiceModal, setShowInvoiceModal] = useState(false);
   const [documentError, setDocumentError] = useState('');
   const [installments, setInstallments] = useState<PaymentInstallment[]>([]);
+  const [calendarMonth, setCalendarMonth] = useState(new Date().toISOString().slice(0, 7));
+  const [eftReference, setEftReference] = useState('');
+  const [selectedPopFile, setSelectedPopFile] = useState<File | null>(null);
+  const [uploadingPop, setUploadingPop] = useState(false);
+  const [popError, setPopError] = useState('');
+  const [bankDetailsCopied, setBankDetailsCopied] = useState(false);
 
   // Resolution modal state
   const [resolutionText, setResolutionText] = useState('');
-  const [psCommand, setPsCommand] = useState('');
-  const [psOutput, setPsOutput] = useState<string | null>(null);
 
-  const studentCohort = (cohorts && cohorts.length > 0)
-    ? (cohorts.find(c => c.id === currentStudent?.cohortId) || cohorts[0])
-    : COHORTS[0];
+  const studentCohort = (cohorts || []).find(c => c.id === currentStudent?.cohortId);
 
   const studentApp = (applications || []).find(
     a => a.email.trim().toLowerCase() === (currentStudent?.email || '').trim().toLowerCase()
@@ -93,7 +91,7 @@ export const StudentDashboard: React.FC = () => {
   );
   useEffect(() => { if (studentInvoice) void apiRequest<PaymentInstallment[]>('/student/payment-plan').then(setInstallments).catch(() => setInstallments([])); else setInstallments([]); }, [studentInvoice?.id, studentInvoice?.paidZAR]);
 
-  const isFullyEnrolled = studentApp?.status === 'ENROLLED';
+  const isFullyEnrolled = studentApp?.status === 'ENROLLED' || studentApp?.status === 'COMPLETED';
 
   const studentCert = (certificates && certificates.length > 0)
     ? certificates.find(c => c.studentId === currentStudent?.id)
@@ -102,6 +100,69 @@ export const StudentDashboard: React.FC = () => {
   const assignedTickets = (tickets || []).filter(t => t?.assignedStudentId === currentStudent?.id);
   const studentPayments = (payments || []).filter(payment => payment.studentId === currentStudent?.id);
   const verifiedPayments = studentPayments.filter(payment => payment.status === 'VERIFIED');
+  const paymentAwaitingReview = studentPayments.some(payment => payment.status === 'SUBMITTED');
+  const canSubmitPayment = Boolean(studentInvoice?.balanceZAR && ['APPROVED', 'PAYMENT_REQUIRED', 'ENROLLED'].includes(studentApp?.status || '') && !paymentAwaitingReview);
+  const nextStep = useMemo(() => {
+    const status = studentApp?.status;
+    if (!studentApp) return { title: 'Contact admissions', detail: 'We could not match an application to this account.', action: 'Contact admissions', kind: 'contact' as const };
+    if (status === 'REJECTED' || status === 'WITHDRAWN') return { title: status === 'REJECTED' ? 'Application decision recorded' : 'Application withdrawn', detail: studentApp.adminNotes || 'Contact admissions if you need clarification about this decision.', action: 'Contact admissions', kind: 'contact' as const };
+    if (status === 'WAITLISTED') return { title: 'You are on the cohort waitlist', detail: 'No further payment is required right now. Admissions will contact you when a suitable seat becomes available.', action: 'View documents', kind: 'documents' as const };
+    if (status === 'NEW' || status === 'UNDER_REVIEW') return { title: 'Admissions is reviewing your application', detail: 'No action is required unless admissions asks for more information. We will email you after the hardware review.', action: 'View application documents', kind: 'documents' as const };
+    if (paymentAwaitingReview) return { title: 'Your proof of payment is under review', detail: 'Admissions will compare it with the bank statement. Do not upload the same POP again while verification is pending.', action: 'View submitted POP', kind: 'documents' as const };
+    if ((status === 'APPROVED' || status === 'PAYMENT_REQUIRED') && studentInvoice?.balanceZAR) return { title: 'Secure your seat', detail: 'View the banking details, pay the required amount, and upload your proof of payment for verification.', action: 'View banking details', kind: 'payment' as const };
+    if (status === 'COMPLETED') return { title: 'Course completed', detail: 'Your course records remain available. Open the document centre for your certificate and payment records.', action: 'View completion documents', kind: 'documents' as const };
+    if (status === 'ENROLLED' && studentInvoice?.balanceZAR) return { title: 'Continue learning and manage your balance', detail: `Your seat is secured. R${studentInvoice.balanceZAR.toLocaleString('en-ZA')} remains payable according to your payment plan.`, action: 'Pay balance', kind: 'payment' as const };
+    return { title: 'Continue your course', detail: 'Your seat is active and your learning resources are available below.', action: 'Open modules', kind: 'modules' as const };
+  }, [studentApp, studentInvoice?.balanceZAR, paymentAwaitingReview]);
+
+  const runNextStep = () => {
+    if (nextStep.kind === 'payment') setActiveTab('PAYMENTS');
+    else if (nextStep.kind === 'documents') setActiveTab('DOCUMENTS');
+    else if (nextStep.kind === 'modules') setActiveTab('MODULES');
+    else window.location.href = `mailto:${settings.admissionsEmail}?subject=${encodeURIComponent(`Student portal query - ${studentApp?.referenceNumber || currentStudent?.email || ''}`)}`;
+  };
+
+  const copyBankDetails = async () => {
+    if (!paymentSettings || !studentInvoice) return;
+    try {
+      await navigator.clipboard.writeText(`Bank: ${paymentSettings.bankName}\nAccount name: ${paymentSettings.accountName}\nAccount number: ${paymentSettings.accountNumber}\nBranch code: ${paymentSettings.branchCode}\nEFT reference: ${studentInvoice.invoiceNumber}`);
+      setBankDetailsCopied(true);
+      window.setTimeout(() => setBankDetailsCopied(false), 3_000);
+    } catch {
+      setPopError('Could not copy the banking details. Please copy them from the details shown below.');
+    }
+  };
+
+  const selectPopFile = (file?: File) => {
+    setPopError('');
+    if (!file) return;
+    if (!['application/pdf', 'image/jpeg', 'image/png'].includes(file.type)) {
+      setSelectedPopFile(null);
+      setPopError('Choose a PDF, JPG, or PNG proof of payment.');
+      return;
+    }
+    if (file.size > 5 * 1024 * 1024) {
+      setSelectedPopFile(null);
+      setPopError('The proof of payment must be 5 MB or smaller.');
+      return;
+    }
+    setSelectedPopFile(file);
+  };
+
+  const submitPop = async () => {
+    if (!studentInvoice || !selectedPopFile || !eftReference.trim()) {
+      setPopError('Enter the EFT reference and choose a proof of payment before submitting.');
+      return;
+    }
+    setUploadingPop(true);
+    setPopError('');
+    const uploaded = await uploadProofOfPayment(studentInvoice.id, selectedPopFile, eftReference.trim());
+    if (uploaded) {
+      setSelectedPopFile(null);
+      setEftReference('');
+    }
+    setUploadingPop(false);
+  };
 
   const openDocument = async (path: string) => {
     setDocumentError('');
@@ -109,8 +170,27 @@ export const StudentDashboard: React.FC = () => {
     catch (error) { setDocumentError(error instanceof Error ? error.message : 'The PDF could not be opened.'); }
   };
 
-  const modulesToUse = (courseModules && courseModules.length > 0) ? courseModules : COURSE_MODULES;
+  const modulesToUse = ((courseModules && courseModules.length > 0) ? courseModules : COURSE_MODULES).filter(module => module.published !== false);
   const scheduledModules = useMemo(() => buildCurriculumSchedule(modulesToUse, studentCohort), [modulesToUse, studentCohort]);
+  const calendarEvents = useMemo(() => buildCohortCalendar(modulesToUse, studentCohort), [modulesToUse, studentCohort]);
+  const nextCalendarEvent = useMemo(() => calendarEvents.find(event => event.date >= new Date().toISOString().slice(0, 10)) || calendarEvents.at(-1), [calendarEvents]);
+  useEffect(() => { if (studentCohort?.startDate) setCalendarMonth(studentCohort.startDate.slice(0, 7)); }, [studentCohort?.id]);
+  const calendarDays = useMemo(() => {
+    const monthStart = new Date(`${calendarMonth}-01T12:00:00.000Z`);
+    if (!Number.isFinite(monthStart.getTime())) return [];
+    const gridStart = new Date(monthStart); gridStart.setUTCDate(1 - ((monthStart.getUTCDay() + 6) % 7));
+    return Array.from({ length: 42 }, (_, index) => { const date = new Date(gridStart); date.setUTCDate(gridStart.getUTCDate() + index); return { iso: date.toISOString().slice(0, 10), day: date.getUTCDate(), inMonth: date.getUTCMonth() === monthStart.getUTCMonth() }; });
+  }, [calendarMonth]);
+  const moveCalendarMonth = (offset: number) => { const date = new Date(`${calendarMonth}-01T12:00:00.000Z`); date.setUTCMonth(date.getUTCMonth() + offset); setCalendarMonth(date.toISOString().slice(0, 7)); };
+  const portalTabs = [
+    { id: 'OVERVIEW', label: 'Home', icon: Sparkles },
+    { id: 'CALENDAR', label: 'Calendar', icon: CalendarDays },
+    { id: 'MODULES', label: 'Learning', icon: Layers },
+    { id: 'PAYMENTS', label: 'Payments', icon: Receipt },
+    { id: 'DOCUMENTS', label: 'Documents', icon: FolderOpen },
+    { id: 'TICKETS', label: 'Support', icon: MessageSquare },
+    { id: 'CERTIFICATE', label: 'Certificate', icon: Award },
+  ] as const;
 
   const moduleProgress = useMemo(() => {
     if (!modulesToUse.length) {
@@ -127,11 +207,6 @@ export const StudentDashboard: React.FC = () => {
     };
   }, [modulesToUse, assessments]);
 
-  const handleSimulatePS = () => {
-    if (!psCommand.trim()) return;
-    setPsOutput(`Running PowerShell 7 in VMnet2 isolated environment...\n[OK] ${psCommand}\nExecution result: Configuration updated successfully. All DC and Intune policies synchronized.`);
-  };
-
   const handleResolveTicket = (ticketId: string) => {
     if (!resolutionText.trim()) {
       alert('Please describe your root cause analysis and resolution steps.');
@@ -140,7 +215,6 @@ export const StudentDashboard: React.FC = () => {
     updateTicketStatus(ticketId, 'RESOLVED', resolutionText);
     setSelectedTicketId(null);
     setResolutionText('');
-    setPsOutput(null);
   };
 
   return (
@@ -155,7 +229,7 @@ export const StudentDashboard: React.FC = () => {
               {isFullyEnrolled ? 'Enrolled Student Portal' : `Application Status: ${studentApp?.status || 'UNDER_REVIEW'}`}
             </span>
             <span className="text-xs text-[#707070] font-mono">
-              Cohort: {studentCohort?.name || 'Cape Town IT Support Oct 2026'}
+              Cohort: {studentCohort?.name || 'Assignment pending'}
             </span>
           </div>
 
@@ -165,7 +239,7 @@ export const StudentDashboard: React.FC = () => {
 
           <p className="text-xs sm:text-sm text-[#707070] max-w-xl leading-relaxed">
             {isFullyEnrolled ? (
-              <>Cape Town IT Support Bootcamp • Next Live Microsoft Teams Session: <strong className="text-[#000000]">Saturday at 09:00 SAST</strong> (VMnet2 Active Directory & GPO Sprint).</>
+              <>{studentCohort?.name || 'Your TechLabs cohort'} • {studentCohort?.scheduleFormat || 'Course schedule available in your document centre'}.</>
             ) : (
               <>Your application is currently being processed by admissions. Once approved and fully enrolled, full course modules, lab blueprints, and tickets will unlock below.</>
             )}
@@ -174,23 +248,13 @@ export const StudentDashboard: React.FC = () => {
 
         {isFullyEnrolled && <div className="flex flex-wrap items-center gap-3">
           <a
-            href="https://teams.microsoft.com"
-            target="_blank"
-            rel="noopener noreferrer"
-            className="px-4 py-2.5 bg-[#464EB8] hover:bg-[#3b42a0] text-white font-bold rounded-xl text-xs uppercase tracking-[0.15em] flex items-center gap-1.5 transition shadow"
-          >
-            <Video className="w-4 h-4" />
-            <span>Join Live MS Teams Class</span>
-          </a>
-
-          <a
-            href={`https://wa.me/${(settings?.whatsappNumber || '+27821234567').replace(/[^0-9]/g, '')}?text=Hi!%20I'm%20working%20on%20Lab%204%20and%20need%20mentor%20assistance.`}
+            href={`https://wa.me/${(settings?.studentSupportWhatsappNumber || settings?.whatsappNumber || '+27821234567').replace(/[^0-9]/g, '')}?text=${encodeURIComponent(`Hi TechLabs Student Support, I need assistance. Student: ${currentStudent?.name || currentStudent?.email || ''}. Reference: ${studentApp?.referenceNumber || ''}. Cohort: ${studentCohort?.name || 'Not assigned'}.`)}`}
             target="_blank"
             rel="noopener noreferrer"
             className="px-4 py-2.5 bg-[#000000] hover:bg-neutral-800 text-white font-bold rounded-xl text-xs uppercase tracking-[0.2em] flex items-center gap-1.5 transition shadow"
           >
             <MessageSquare className="w-4 h-4" />
-            <span>Mentor WhatsApp Group</span>
+            <span>Student Support Chat</span>
           </a>
 
           <button
@@ -202,12 +266,21 @@ export const StudentDashboard: React.FC = () => {
         </div>}
       </div>
 
+      <nav className="bg-[#FAFAFA] p-1.5 rounded-xl border border-[#E0E0E0] flex items-center gap-1 overflow-x-auto" aria-label="Student portal sections">
+        {portalTabs.map(tab => { const Icon = tab.icon; return <button key={tab.id} type="button" onClick={() => setActiveTab(tab.id)} className={`flex items-center gap-2 px-4 py-2.5 rounded-lg whitespace-nowrap text-[11px] font-bold transition ${activeTab === tab.id ? 'bg-black text-white shadow-sm' : 'text-[#707070] hover:bg-white hover:text-black'}`}><Icon className="w-4 h-4" /><span>{tab.label}</span>{tab.id === 'TICKETS' && assignedTickets.filter(ticket => ticket.status === 'IN_PROGRESS').length > 0 && <span className="min-w-5 h-5 px-1 rounded-full bg-white text-black flex items-center justify-center text-[9px]">{assignedTickets.filter(ticket => ticket.status === 'IN_PROGRESS').length}</span>}</button>; })}
+      </nav>
+
+      {activeTab === 'OVERVIEW' && <section className="bg-[#000000] text-white rounded-2xl p-6 sm:p-7 flex flex-col md:flex-row md:items-center justify-between gap-5 shadow-sm">
+        <div className="space-y-1"><span className="text-[10px] font-mono font-bold uppercase tracking-[0.2em] text-neutral-400">Your next step</span><h2 className="text-xl font-bold">{nextStep.title}</h2><p className="text-xs sm:text-sm text-neutral-300 max-w-2xl leading-relaxed">{nextStep.detail}</p></div>
+        <button type="button" onClick={runNextStep} className="shrink-0 px-5 py-3 bg-white text-black rounded-xl text-xs font-bold uppercase tracking-wider hover:bg-neutral-200 transition">{nextStep.action}</button>
+      </section>}
+
       {/* Tuition & Installment Payment Banner */}
-      {studentInvoice && (
+      {activeTab === 'PAYMENTS' && studentInvoice && (
         <div className="bg-[#FFFFFF] border border-[#E0E0E0] p-6 rounded-2xl shadow-sm space-y-4 font-mono text-xs">
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-[#E0E0E0] pb-3">
             <div>
-              <span className="text-[10px] uppercase font-bold text-[#707070]">Tuition Payment Lifecycle & Balance Tracking</span>
+              <span className="text-[10px] uppercase font-bold text-[#707070]">Your payments</span>
               <h3 className="text-base font-bold text-[#000000] font-sans">
                 {studentInvoice.balanceZAR === 0 
                   ? '✔ Fully Paid & Settled (R0 Outstanding Balance)' 
@@ -256,6 +329,28 @@ export const StudentDashboard: React.FC = () => {
           </div>
           {studentInvoice.paymentOption !== 'FULL' && installments.length > 0 && <div className="space-y-2"><div className="flex items-center justify-between"><strong className="text-[10px] uppercase tracking-wider">Your installment schedule</strong><span className="text-[9px] text-[#707070]">Payments apply oldest first</span></div>{installments.map(item => <div key={item.id} className={`grid grid-cols-[1fr_auto] gap-3 p-3 rounded-xl border ${item.status === 'OVERDUE' ? 'border-[#CC0000] bg-[#FFF5F5]' : 'border-[#E0E0E0] bg-[#FAFAFA]'}`}><div><strong className="block text-[#000000]">{item.sequence}. {item.label}</strong><span className="text-[10px] text-[#707070]">Due {item.dueDate} · R{item.paidZAR.toLocaleString()} of R{item.amountZAR.toLocaleString()} paid</span></div><strong className={item.status === 'OVERDUE' ? 'text-[#CC0000]' : item.status === 'PAID' ? 'text-[#008000]' : ''}>{item.status}</strong></div>)}</div>}
 
+          {canSubmitPayment && paymentSettings && <section id="student-payment-upload" className="border-t border-[#E0E0E0] pt-5 space-y-4">
+            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+              <div><h4 className="font-sans font-bold text-sm text-[#000000] flex items-center gap-2"><Building2 className="w-4 h-4" /> EFT payment details</h4><p className="mt-1 font-sans text-[11px] text-[#707070]">Pay the required amount, use the invoice number as the reference, then upload one bank-generated proof.</p></div>
+              <button type="button" onClick={() => void copyBankDetails()} className="shrink-0 inline-flex items-center justify-center gap-1.5 px-3 py-2 border border-[#E0E0E0] rounded-lg bg-white hover:bg-[#FAFAFA] font-sans text-[10px] font-bold uppercase tracking-wider"><Copy className="w-3.5 h-3.5" />{bankDetailsCopied ? 'Copied' : 'Copy details'}</button>
+            </div>
+            <dl className="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-2 p-4 bg-[#FAFAFA] border border-[#E0E0E0] rounded-xl text-[11px]">
+              <div><dt className="text-[#707070]">Bank</dt><dd className="mt-0.5 font-bold text-[#000000]">{paymentSettings.bankName}</dd></div>
+              <div><dt className="text-[#707070]">Account name</dt><dd className="mt-0.5 font-bold text-[#000000]">{paymentSettings.accountName}</dd></div>
+              <div><dt className="text-[#707070]">Account number</dt><dd className="mt-0.5 font-bold text-[#000000]">{paymentSettings.accountNumber}</dd></div>
+              <div><dt className="text-[#707070]">Branch code</dt><dd className="mt-0.5 font-bold text-[#000000]">{paymentSettings.branchCode}</dd></div>
+              <div className="sm:col-span-2 pt-2 border-t border-[#E0E0E0]"><dt className="text-[#707070]">EFT reference</dt><dd className="mt-0.5 font-bold text-[#000000]">{studentInvoice.invoiceNumber}</dd></div>
+            </dl>
+            <div className="grid grid-cols-1 sm:grid-cols-[1fr_auto] gap-3">
+              <label className="space-y-1"><span className="block font-sans text-[10px] font-bold uppercase tracking-wider text-[#000000]">EFT payment reference</span><input maxLength={100} value={eftReference} onChange={event => setEftReference(event.target.value)} placeholder={studentInvoice.invoiceNumber} className="w-full px-3 py-2.5 bg-white border border-[#E0E0E0] rounded-lg text-[#000000] focus:border-black" /></label>
+              <label className="space-y-1"><span className="block font-sans text-[10px] font-bold uppercase tracking-wider text-[#000000]">Proof of payment</span><input type="file" accept="application/pdf,image/jpeg,image/png" onChange={event => selectPopFile(event.target.files?.[0])} className="block w-full max-w-full py-2 text-[11px]" /></label>
+            </div>
+            <p className="text-[10px] text-[#707070]">Accepted: PDF, JPG, or PNG up to 5 MB. Upload only one clear, bank-generated proof. Do not submit another while admissions is reviewing it.</p>
+            {selectedPopFile && <p className="text-[11px] font-bold text-[#000000]">Selected: {selectedPopFile.name}</p>}
+            {popError && <p className="text-[11px] font-bold text-[#CC0000]" role="alert">{popError}</p>}
+            <button type="button" disabled={!selectedPopFile || !eftReference.trim() || uploadingPop} onClick={() => void submitPop()} className="w-full py-3 bg-[#000000] hover:bg-neutral-800 disabled:bg-[#E0E0E0] disabled:text-[#707070] text-white font-sans font-bold text-xs uppercase tracking-wider rounded-lg transition">{uploadingPop ? 'Uploading proof securely...' : 'Submit proof for verification'}</button>
+          </section>}
+
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pt-1">
             <p className="text-[11px] text-[#707070] font-sans">
               {studentInvoice.balanceZAR > 0 ? (
@@ -269,20 +364,23 @@ export const StudentDashboard: React.FC = () => {
                 onClick={() => setShowInvoiceModal(true)}
                 className="px-4 py-2.5 bg-[#FAFAFA] hover:bg-[#E0E0E0] text-[#000000] font-bold text-xs uppercase tracking-wider rounded-xl border border-[#E0E0E0] transition font-sans"
               >
-                View / Print Tax Invoice
+                View invoice
               </button>
-              {studentInvoice.balanceZAR > 0 && (
+              {canSubmitPayment && (
                 <button
-                  onClick={() => navigate('/payment')}
+                  onClick={() => document.getElementById('student-payment-upload')?.scrollIntoView({ behavior: 'smooth', block: 'start' })}
                   className="px-5 py-2.5 bg-[#000000] hover:bg-neutral-800 text-white font-bold text-xs uppercase tracking-wider rounded-xl shadow transition font-sans"
                 >
-                  Pay Balance via EFT / Upload POP
+                  Pay or upload POP
                 </button>
               )}
+              {paymentAwaitingReview && <span className="px-4 py-2.5 bg-[#FFF8EE] border border-[#E08A00] text-[#8A5200] rounded-xl text-[10px] font-bold uppercase font-sans">POP awaiting verification</span>}
             </div>
           </div>
         </div>
       )}
+
+      {activeTab === 'PAYMENTS' && !studentInvoice && <div className="p-8 text-center bg-[#FAFAFA] border border-[#E0E0E0] rounded-2xl"><Receipt className="w-8 h-8 mx-auto mb-3" /><h3 className="font-bold">No invoice yet</h3><p className="text-xs text-[#707070] mt-1">Your invoice and payment options will appear here after admissions processes your application.</p></div>}
 
       {/* Printable Invoice Modal for Student */}
       {showInvoiceModal && studentInvoice && (
@@ -303,7 +401,7 @@ export const StudentDashboard: React.FC = () => {
       )}
 
       {/* Application Feedback Banner for Non-Enrolled Applicants */}
-      {studentApp && !isFullyEnrolled && (
+      {activeTab === 'OVERVIEW' && studentApp && !isFullyEnrolled && (
         <div className="bg-[#FFFFFF] border-2 border-[#000000] p-6 rounded-2xl shadow-sm space-y-4">
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-[#E0E0E0] pb-4">
             <div>
@@ -350,49 +448,21 @@ export const StudentDashboard: React.FC = () => {
             <p className="text-xs text-[#707070]">
               Need to send pop or query admissions? WhatsApp us with reference <strong className="text-[#000000]">{studentApp.referenceNumber}</strong>.
             </p>
-            <button
-              onClick={() => navigate('/payment')}
-              className="px-5 py-2.5 bg-[#000000] hover:bg-neutral-800 text-white font-bold text-xs uppercase tracking-wider rounded-xl shadow transition"
-            >
-              Complete Payment / View Banking Details
-            </button>
+            {(studentApp.status === 'APPROVED' || studentApp.status === 'PAYMENT_REQUIRED') && !paymentAwaitingReview && <button onClick={() => navigate('/payment')} className="px-5 py-2.5 bg-[#000000] hover:bg-neutral-800 text-white font-bold text-xs uppercase tracking-wider rounded-xl shadow transition">Complete Payment / View Banking Details</button>}
+            {paymentAwaitingReview && <button onClick={() => setActiveTab('DOCUMENTS')} className="px-5 py-2.5 bg-[#FAFAFA] border border-[#E0E0E0] text-black font-bold text-xs uppercase tracking-wider rounded-xl">View Submitted POP</button>}
           </div>
         </div>
       )}
-      <div className="bg-[#FAFAFA] p-1.5 rounded-xl border border-[#E0E0E0] shadow-sm flex items-center gap-1 overflow-x-auto text-xs font-bold font-mono">
-        {[
-          { id: 'OVERVIEW', label: 'Dashboard Overview', icon: Sparkles },
-          { id: 'DOCUMENTS', label: 'Document Centre', icon: FolderOpen },
-          { id: 'MODULES', label: '15 Modules & Lessons', icon: Layers },
-          { id: 'LABS', label: 'Virtual Machine Labs', icon: Server },
-          { id: 'TICKETS', label: 'Assigned Incident Tickets', icon: Terminal },
-          { id: 'DOWNLOADS', label: 'ISO & Software Downloads', icon: Download },
-          { id: 'CERTIFICATE', label: 'Verified Certificate', icon: Award }
-        ].map((tab) => {
-          const Icon = tab.icon;
-          const isSelected = activeTab === tab.id;
-          return (
-            <button
-              key={tab.id}
-              onClick={() => setActiveTab(tab.id as any)}
-              className={`flex items-center gap-2 px-4 py-2.5 rounded-lg transition whitespace-nowrap uppercase tracking-wider text-[11px] ${
-                isSelected 
-                  ? 'bg-[#000000] text-white shadow' 
-                  : 'text-[#707070] hover:text-[#000000] hover:bg-[#E0E0E0]/50'
-              }`}
-            >
-              <Icon className="w-3.5 h-3.5" />
-              <span>{tab.label}</span>
-            </button>
-          );
-        })}
-      </div>
-
       {/* TAB CONTENT: 1. OVERVIEW */}
       {activeTab === 'OVERVIEW' && (
         <div className="space-y-8 animate-in fade-in">
-          {/* 3 Metric Cards */}
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-6">
+          {/* Student progress metrics */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
+            <button type="button" onClick={() => setActiveTab('CALENDAR')} className="bg-[#FFFFFF] p-6 rounded-xl border border-[#E0E0E0] hover:border-black shadow-sm space-y-2 text-left transition">
+              <span className="text-[10px] font-mono text-[#A0A0A0] uppercase font-bold tracking-wider">Next lesson</span>
+              <strong className="block text-base">{nextCalendarEvent?.title || 'Schedule pending'}</strong>
+              <span className="text-xs text-[#707070]">{nextCalendarEvent ? new Date(`${nextCalendarEvent.date}T12:00:00.000Z`).toLocaleDateString('en-ZA', { weekday: 'long', day: '2-digit', month: 'long', timeZone: 'UTC' }) : 'Your cohort calendar will appear once assigned.'}</span>
+            </button>
             <div className="bg-[#FFFFFF] p-6 rounded-xl border border-[#E0E0E0] shadow-sm space-y-2">
               <span className="text-[10px] font-mono text-[#A0A0A0] uppercase font-bold tracking-wider">Curriculum Progress</span>
               <div className="flex items-baseline justify-between">
@@ -413,23 +483,10 @@ export const StudentDashboard: React.FC = () => {
                 <span className="text-3xl font-light text-[#000000]">
                   {assignedTickets.filter(t => t.status === 'RESOLVED').length} / {assignedTickets.length}
                 </span>
-                <span className="text-[10px] font-mono text-[#000000] bg-[#FAFAFA] border border-[#E0E0E0] px-2 py-0.5 rounded uppercase font-bold">
-                  85% Practical Pass
-                </span>
               </div>
               <p className="text-xs text-[#707070]">Enterprise helpdesk tickets successfully resolved and verified.</p>
             </div>
 
-            <div className="bg-[#FFFFFF] p-6 rounded-xl border border-[#E0E0E0] shadow-sm space-y-2">
-              <span className="text-[10px] font-mono text-[#A0A0A0] uppercase font-bold tracking-wider">Lab Topology Health</span>
-              <div className="flex items-baseline justify-between">
-                <span className="text-2xl font-light text-[#000000]">HEALTHY</span>
-                <span className="text-[10px] font-mono text-[#000000] bg-[#FAFAFA] border border-[#E0E0E0] px-2 py-0.5 rounded uppercase font-bold">
-                  VMnet2 Synced
-                </span>
-              </div>
-              <p className="text-xs text-[#707070]">DC01, CLIENT01 and Entra ID Cloud Connector active.</p>
-            </div>
           </div>
 
           {/* Quick Active Tickets Action List */}
@@ -515,11 +572,29 @@ export const StudentDashboard: React.FC = () => {
         </div>
       )}
 
+      {/* TAB CONTENT: COHORT CALENDAR */}
+      {activeTab === 'CALENDAR' && (
+        <div className="space-y-6 animate-in fade-in">
+          <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-4">
+            <div><h3 className="text-2xl font-light tracking-tight">Cohort Lesson Calendar</h3><p className="text-xs text-[#707070]">Induction and lessons calculated from {studentCohort?.name || 'your assigned cohort'} dates.</p></div>
+            {studentCohort && <span className="text-[10px] font-mono font-bold uppercase px-3 py-1.5 bg-[#FAFAFA] border border-[#E0E0E0] rounded-lg">{studentCohort.scheduleFormat}</span>}
+          </div>
+          {!studentCohort ? <div className="p-8 text-center bg-[#FAFAFA] border border-[#E0E0E0] rounded-2xl"><CalendarDays className="w-8 h-8 mx-auto mb-3" /><h4 className="font-bold">Cohort assignment pending</h4><p className="text-xs text-[#707070] mt-1">Your lesson calendar will appear after admissions assigns your cohort.</p></div> : <>
+            <section className="bg-white border border-[#E0E0E0] rounded-2xl overflow-hidden shadow-sm">
+              <header className="p-4 flex items-center justify-between border-b border-[#E0E0E0]"><button type="button" onClick={() => moveCalendarMonth(-1)} className="p-2 border border-[#E0E0E0] rounded-lg" aria-label="Previous month"><ChevronLeft className="w-4 h-4" /></button><h4 className="font-bold">{new Date(`${calendarMonth}-01T12:00:00.000Z`).toLocaleDateString('en-ZA', { month: 'long', year: 'numeric', timeZone: 'UTC' })}</h4><button type="button" onClick={() => moveCalendarMonth(1)} className="p-2 border border-[#E0E0E0] rounded-lg" aria-label="Next month"><ChevronRight className="w-4 h-4" /></button></header>
+              <div className="grid grid-cols-7 bg-[#FAFAFA] border-b border-[#E0E0E0]">{['Mon','Tue','Wed','Thu','Fri','Sat','Sun'].map(day => <span key={day} className="p-2 text-center text-[9px] font-mono font-bold uppercase text-[#707070]">{day}</span>)}</div>
+              <div className="grid grid-cols-7">{calendarDays.map(day => { const events = calendarEvents.filter(event => event.date === day.iso); return <div key={day.iso} className={`min-h-20 sm:min-h-28 p-1.5 sm:p-2 border-r border-b border-[#F0F0F0] ${day.inMonth ? 'bg-white' : 'bg-[#FAFAFA] text-[#A0A0A0]'}`}><span className="text-[10px] font-mono">{day.day}</span><div className="mt-1 space-y-1">{events.map(event => <div key={event.id} title={event.detail} className={`p-1.5 rounded text-[8px] sm:text-[9px] leading-tight font-bold ${event.type === 'INDUCTION' ? 'bg-[#4B50B8] text-white' : 'bg-black text-white'}`}>{event.type === 'INDUCTION' ? 'INDUCTION' : `M${event.moduleNumber}`}<span className="hidden sm:block font-normal mt-0.5 line-clamp-2">{event.title}</span></div>)}</div></div>; })}</div>
+            </section>
+            <section className="space-y-2"><h4 className="text-sm font-bold">Schedule details</h4>{calendarEvents.map(event => <article key={event.id} className="p-4 bg-white border border-[#E0E0E0] rounded-xl flex items-start gap-3"><span className={`px-2 py-1 rounded text-[9px] font-mono font-bold text-white ${event.type === 'INDUCTION' ? 'bg-[#4B50B8]' : 'bg-black'}`}>{event.type}</span><div><h5 className="text-xs font-bold">{event.title}</h5><time className="text-[10px] font-mono text-[#707070]">{new Date(`${event.date}T12:00:00.000Z`).toLocaleDateString('en-ZA', { weekday: 'long', day: '2-digit', month: 'long', year: 'numeric', timeZone: 'UTC' })}</time><p className="text-[10px] text-[#707070] mt-1">{event.detail}</p></div></article>)}</section>
+          </>}
+        </div>
+      )}
+
       {/* TAB CONTENT: 2. MODULES */}
       {activeTab === 'MODULES' && (
         <div className="space-y-6 animate-in fade-in">
           <div className="space-y-1">
-            <h3 className="text-2xl font-light text-[#000000] tracking-tight">15-Module Bootcamp Progression</h3>
+            <h3 className="text-2xl font-light text-[#000000] tracking-tight">{modulesToUse.length}-Module Bootcamp Progression</h3>
             <p className="text-xs text-[#707070]">Each module contains live session replays, lab blueprints, and guided troubleshooting steps.</p>
           </div>
 
@@ -606,53 +681,7 @@ export const StudentDashboard: React.FC = () => {
         </div>
       )}
 
-      {/* TAB CONTENT: 3. LABS */}
-      {activeTab === 'LABS' && (
-        <div className="space-y-6 animate-in fade-in">
-          <div className="space-y-1">
-            <h3 className="text-2xl font-light text-[#000000] tracking-tight">Local Virtual Lab Management</h3>
-            <p className="text-xs text-[#707070]">
-              Verify your local VMware Workstation virtual machines and isolated VMnet2 network parameters.
-            </p>
-          </div>
-
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 text-xs font-mono">
-            <div className="bg-[#FAFAFA] text-[#1A1A1A] p-5 rounded-xl border border-[#E0E0E0] space-y-2">
-              <div className="flex items-center justify-between">
-                <strong className="text-[#000000]">DC01 (Server 2022)</strong>
-                <span className="w-2 h-2 rounded-full bg-[#000000] animate-pulse"></span>
-              </div>
-              <p className="text-[#707070] text-[11px]">Roles: AD DS, DNS, DHCP<br />IP: 10.0.10.10 /24<br />Domain: ad.ubuntu-mfg.co.za</p>
-            </div>
-
-            <div className="bg-[#FAFAFA] text-[#1A1A1A] p-5 rounded-xl border border-[#E0E0E0] space-y-2">
-              <div className="flex items-center justify-between">
-                <strong className="text-[#000000]">CLIENT01 (Win 11)</strong>
-                <span className="w-2 h-2 rounded-full bg-[#000000]"></span>
-              </div>
-              <p className="text-[#707070] text-[11px]">User: sipho.dlamini<br />Joined: Domain Member<br />IP: 10.0.10.101 (DHCP)</p>
-            </div>
-
-            <div className="bg-[#FAFAFA] text-[#1A1A1A] p-5 rounded-xl border border-[#E0E0E0] space-y-2">
-              <div className="flex items-center justify-between">
-                <strong className="text-[#000000]">CLIENT02 (Win 11)</strong>
-                <span className="w-2 h-2 rounded-full bg-[#707070]"></span>
-              </div>
-              <p className="text-[#707070] text-[11px]">User: nomsa.nkosi<br />Intune MDM: Enrolled<br />BitLocker: Escrow Pending</p>
-            </div>
-
-            <div className="bg-[#FAFAFA] text-[#1A1A1A] p-5 rounded-xl border border-[#E0E0E0] space-y-2">
-              <div className="flex items-center justify-between">
-                <strong className="text-[#000000]">ADMIN01 (Mgmt VM)</strong>
-                <span className="w-2 h-2 rounded-full bg-[#000000]"></span>
-              </div>
-              <p className="text-[#707070] text-[11px]">Tools: RSAT, PowerShell 7<br />Graph SDK Connected<br />IP: 10.0.10.50 (Static)</p>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* TAB CONTENT: 4. TICKETS */}
+      {/* TAB CONTENT: TICKETS */}
       {activeTab === 'TICKETS' && (
         <div className="space-y-6 animate-in fade-in">
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
@@ -678,35 +707,6 @@ export const StudentDashboard: React.FC = () => {
                 >
                   Cancel / Close
                 </button>
-              </div>
-
-              {/* Diagnostic Command Simulator */}
-              <div className="space-y-3 text-xs font-mono">
-                <label className="text-[#000000] font-bold block uppercase tracking-wider text-[10px]">
-                  PowerShell 7 Remote Diagnostic Cmdlet:
-                </label>
-                <div className="flex gap-2">
-                  <input
-                    type="text"
-                    placeholder="e.g. Test-ComputerSecureChannel -Repair or Repair-IntuneCompliance"
-                    value={psCommand}
-                    onChange={(e) => setPsCommand(e.target.value)}
-                    className="flex-1 p-3 bg-[#FFFFFF] border border-[#E0E0E0] rounded-xl text-[#000000] font-mono text-xs focus:border-[#000000] focus:outline-none"
-                  />
-                  <button
-                    type="button"
-                    onClick={handleSimulatePS}
-                    className="px-4 py-3 bg-[#000000] hover:bg-neutral-800 text-white font-bold text-xs uppercase tracking-wider rounded-xl transition"
-                  >
-                    Execute
-                  </button>
-                </div>
-
-                {psOutput && (
-                  <pre className="p-3 bg-[#000000] rounded-xl border border-[#333333] text-neutral-200 text-[11px] whitespace-pre-wrap font-mono">
-                    {psOutput}
-                  </pre>
-                )}
               </div>
 
               {/* Root Cause & Resolution Documentation */}
@@ -762,75 +762,7 @@ export const StudentDashboard: React.FC = () => {
         </div>
       )}
 
-      {/* TAB CONTENT: 5. DOWNLOADS */}
-      {activeTab === 'DOWNLOADS' && (
-        <div className="space-y-6 animate-in fade-in">
-          <div className="space-y-1">
-            <h3 className="text-2xl font-light text-[#000000] tracking-tight">Evaluation ISOs, Tools & Lab Blueprints</h3>
-            <p className="text-xs text-[#707070]">Direct official evaluation mirrors and automation scripts for student VMware setup.</p>
-          </div>
-
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-xs">
-            <div className="p-5 bg-[#FFFFFF] rounded-xl border border-[#E0E0E0] shadow-sm flex items-center justify-between">
-              <div className="space-y-1">
-                <strong className="text-sm font-bold text-[#000000] block">Windows Server 2022 Evaluation ISO</strong>
-                <p className="text-[#707070] font-mono text-[11px]">Size: 4.7 GB • SHA-256 Verified</p>
-              </div>
-              <button 
-                onClick={() => alert('Downloading Windows Server 2022 Eval ISO mirror (Microsoft Evaluation Center)...')}
-                className="px-4 py-2 bg-[#000000] hover:bg-neutral-800 text-white font-bold rounded-xl flex items-center gap-1.5 text-xs uppercase tracking-wider"
-              >
-                <Download className="w-3.5 h-3.5" />
-                <span>Download</span>
-              </button>
-            </div>
-
-            <div className="p-5 bg-[#FFFFFF] rounded-xl border border-[#E0E0E0] shadow-sm flex items-center justify-between">
-              <div className="space-y-1">
-                <strong className="text-sm font-bold text-[#000000] block">Windows 11 Enterprise 64-bit ISO</strong>
-                <p className="text-[#707070] font-mono text-[11px]">Size: 5.2 GB • Client Evaluation</p>
-              </div>
-              <button 
-                onClick={() => alert('Downloading Windows 11 Enterprise ISO mirror...')}
-                className="px-4 py-2 bg-[#000000] hover:bg-neutral-800 text-white font-bold rounded-xl flex items-center gap-1.5 text-xs uppercase tracking-wider"
-              >
-                <Download className="w-3.5 h-3.5" />
-                <span>Download</span>
-              </button>
-            </div>
-
-            <div className="p-5 bg-[#FFFFFF] rounded-xl border border-[#E0E0E0] shadow-sm flex items-center justify-between">
-              <div className="space-y-1">
-                <strong className="text-sm font-bold text-[#000000] block">VMware Workstation Pro 17 (Free for Personal Use)</strong>
-                <p className="text-[#707070] font-mono text-[11px]">Broadcom Official Installer</p>
-              </div>
-              <button 
-                onClick={() => alert('Redirecting to Broadcom VMware Workstation free personal edition download...')}
-                className="px-4 py-2 bg-[#000000] hover:bg-neutral-800 text-white font-bold rounded-xl flex items-center gap-1.5 text-xs uppercase tracking-wider"
-              >
-                <ExternalLink className="w-3.5 h-3.5" />
-                <span>Get Installer</span>
-              </button>
-            </div>
-
-            <div className="p-5 bg-[#FFFFFF] rounded-xl border border-[#E0E0E0] shadow-sm flex items-center justify-between">
-              <div className="space-y-1">
-                <strong className="text-sm font-bold text-[#000000] block">TechLabs Automated AD Bootstrap Script (.ps1)</strong>
-                <p className="text-[#707070] font-mono text-[11px]">Creates OU Structure & 30 Mock Users</p>
-              </div>
-              <button 
-                onClick={() => alert('Downloading Bootstrap-UbuntuMfgAD.ps1...')}
-                className="px-4 py-2 bg-[#000000] hover:bg-neutral-800 text-white font-bold rounded-xl flex items-center gap-1.5 text-xs uppercase tracking-wider"
-              >
-                <Download className="w-3.5 h-3.5" />
-                <span>Download PS1</span>
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* TAB CONTENT: 6. CERTIFICATE */}
+      {/* TAB CONTENT: CERTIFICATE */}
       {activeTab === 'CERTIFICATE' && (
         <div className="space-y-6 animate-in fade-in">
           <div className="space-y-1">
