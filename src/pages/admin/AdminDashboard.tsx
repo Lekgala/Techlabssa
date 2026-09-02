@@ -102,6 +102,7 @@ export const AdminDashboard: React.FC = () => {
     scheduleFormat: '',
     deliveryMode: 'Hybrid (Cape Town Lab + Virtual)' as '100% Virtual Learning' | 'Hybrid (Cape Town Lab + Virtual)',
     location: '',
+    teamsChannelUrl: '',
     capacity: 20,
     status: 'Open' as 'Open' | 'Filling Fast' | 'Closed' | 'In Progress' | 'Completed'
   });
@@ -602,6 +603,7 @@ export const AdminDashboard: React.FC = () => {
       scheduleFormat: cohort.scheduleFormat,
       deliveryMode: cohort.deliveryMode,
       location: cohort.location,
+      teamsChannelUrl: cohort.teamsChannelUrl || '',
       capacity: cohort.capacity,
       status: cohort.status
     });
@@ -1209,6 +1211,17 @@ export const AdminDashboard: React.FC = () => {
                     onChange={(e) => setCohortForm({ ...cohortForm, location: e.target.value })}
                     className="w-full p-3 bg-[#FFFFFF] border border-[#E0E0E0] rounded-xl text-[#000000]"
                   />
+                </div>
+                <div className="space-y-1 md:col-span-2">
+                  <label className="text-[#000000] font-bold uppercase text-[10px] tracking-wider">Microsoft Teams Channel Link</label>
+                  <input
+                    type="url"
+                    value={cohortForm.teamsChannelUrl}
+                    onChange={(e) => setCohortForm({ ...cohortForm, teamsChannelUrl: e.target.value })}
+                    placeholder="https://teams.microsoft.com/..."
+                    className="w-full p-3 bg-[#FFFFFF] border border-[#E0E0E0] rounded-xl text-[#000000]"
+                  />
+                  <p className="text-[10px] text-[#707070]">Optional. Enrolled students see this link in their portal. Paste the cohort channel or meeting link.</p>
                 </div>
                 <div className="space-y-1">
                   <label className="text-[#000000] font-bold uppercase text-[10px] tracking-wider">Capacity</label>

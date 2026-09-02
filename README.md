@@ -16,7 +16,7 @@ Requirements: Node.js 20+ and npm.
 4. In another terminal, start the web application with `npm run dev`.
 5. Open `http://localhost:3000`.
 
-The API listens on port 4000 and Vite proxies `/api` during development. SQLite data is stored in `server/data/techlabs.db`.
+The API listens on port 4000 and Vite proxies `/api` during development. SQLite data is stored in `server/data/techlabs.db`. PostgreSQL is also supported; see [the migration guide](docs/POSTGRES_MIGRATION.md).
 
 ## Security model
 
@@ -36,7 +36,7 @@ Run `npm run lint` for TypeScript validation and `npm run build` for the product
 - Keep secrets in the hosting platform's secret manager; never use `VITE_` variables for secrets.
 - Rate-limit login, application, inquiry, and certificate endpoints.
 - Use Redis or another shared session store when horizontally scaling.
-- Configure database backups and retention, or migrate to a managed relational database.
+- Configure database backups and retention. Follow the staged [PostgreSQL migration guide](docs/POSTGRES_MIGRATION.md) before switching providers.
 - Connect an email provider and record provider message IDs and delivery failures.
 - Resend is supported through `RESEND_API_KEY`, `EMAIL_FROM`, and `EMAIL_REPLY_TO`. The configured sending domain is `techlabs.madilotane.co.za`.
 - For delivery, bounce, complaint, and suppression tracking, configure a Resend webhook pointing to `https://YOUR_API_DOMAIN/api/webhooks/resend` and store its signing secret as `RESEND_WEBHOOK_SECRET`.
