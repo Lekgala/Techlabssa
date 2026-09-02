@@ -45,13 +45,22 @@ export const DEFAULT_EMAIL_TEMPLATES: EmailTemplate[] = [
     id: 'tpl-app-submitted',
     name: 'Application Received',
     trigger: 'APPLICATION_SUBMITTED',
-    subject: 'Your TechLabs Academy Application Received',
+    subject: 'Application received: {referenceNumber}',
     htmlBody: `
-<h2>Thank you, {studentName}!</h2>
-<p>We've received your application for the {cohortName} cohort.</p>
-<p><strong>Reference Number:</strong> {referenceNumber}</p>
-<p>Our admissions team will review your application and contact you within 2-3 business days.</p>
-<p>Best regards,<br/>TechLabs Academy Team</p>
+  <h2>Application received</h2>
+  <p>Hello {studentName},</p>
+  <p>We have received your application for <strong>{cohortName}</strong>.</p>
+  <p><strong>Your reference:</strong> {referenceNumber}</p>
+  <h3>What you need to do now</h3>
+  <p>No further action or payment is required while admissions reviews your application and laptop details. Keep this reference for any future contact.</p>
+  <h3>What happens next</h3>
+  <ol>
+    <li>Admissions reviews your application and hardware readiness.</li>
+    <li>We email you with an outcome within two business days.</li>
+    <li>If approved, that email will include your invoice, secure portal-password link, and the exact payment steps.</li>
+  </ol>
+  <p>Please do not send payment or a proof of payment until you receive an approval email and invoice. If you have not received an update after two business days, reply to this email and include <strong>{referenceNumber}</strong>.</p>
+  <p>Regards,<br/>TechLabs Academy</p>
     `,
     enabled: true,
     variables: ['studentName', 'cohortName', 'referenceNumber']
@@ -60,20 +69,20 @@ export const DEFAULT_EMAIL_TEMPLATES: EmailTemplate[] = [
     id: 'tpl-app-approved',
     name: 'Application Approved',
     trigger: 'APPLICATION_APPROVED',
-    subject: 'Congratulations! Your TechLabs Application is Approved',
+    subject: 'Action required: secure your TechLabs seat',
     htmlBody: `
-<h2>Welcome to TechLabs Academy, {studentName}!</h2>
-<p>We're excited to inform you that your application has been <strong>APPROVED</strong>.</p>
-<p>You're enrolled in the <strong>{cohortName}</strong> cohort starting on <strong>{cohortStartDate}</strong>.</p>
-<h3>Next Steps:</h3>
+<h2>Your application is approved</h2>
+<p>Hello {studentName},</p>
+<p>You are eligible for <strong>{cohortName}</strong>, which starts on <strong>{cohortStartDate}</strong>. Your seat is confirmed only after admissions verifies the required payment.</p>
+<h3>Complete these steps in order</h3>
 <ol>
-  <li>Review your invoice (attached): R{invoiceAmount}</li>
-  <li>Complete payment via EFT to confirm enrollment</li>
-  <li>Receive your onboarding welcome package</li>
-  <li>Join our student WhatsApp community</li>
+  <li>Open the secure portal link below this message and create your password. The link expires after 24 hours and can be used once.</li>
+  <li>Review the attached invoice. Your total tuition is <strong>R{invoiceAmount}</strong>.</li>
+  <li>Make the EFT payment due by <strong>{dueDate}</strong>, using the invoice number as the payment reference.</li>
+  <li>Sign in to the student portal and upload the bank-generated proof of payment as a PDF, JPG, or PNG.</li>
 </ol>
-<p><strong>Payment Due Date:</strong> {dueDate}</p>
-<p>Questions? Reply to this email or contact us on WhatsApp.</p>
+<p>After upload, your proof is marked for admissions review. Do not upload it again while it is awaiting review. We will email you when the payment is verified or if a correction is needed.</p>
+<p>Use the portal for payment and document actions. Reply to this email only for a problem the portal cannot resolve.</p>
     `,
     enabled: true,
     variables: ['studentName', 'cohortName', 'cohortStartDate', 'invoiceAmount', 'dueDate']
@@ -82,20 +91,20 @@ export const DEFAULT_EMAIL_TEMPLATES: EmailTemplate[] = [
     id: 'tpl-payment-verified',
     name: 'Payment Verified',
     trigger: 'PAYMENT_VERIFIED',
-    subject: 'Payment Confirmed - Welcome to Your Course!',
+    subject: 'Payment verified: your TechLabs access is active',
     htmlBody: `
-<h2>Payment Confirmed!</h2>
+<h2>Your payment has been verified</h2>
 <p>Hi {studentName},</p>
-<p>We've verified your payment of <strong>R{amount}</strong>.</p>
-<p>Your enrollment in <strong>{cohortName}</strong> is now confirmed.</p>
-<h3>What Happens Next:</h3>
-<ul>
-  <li>Access your student portal at techlabs.co.za/student</li>
-  <li>Download your course materials and schedule</li>
-  <li>Set up your lab environment (instructions sent separately)</li>
-  <li>First class starts on {courseStartDate}</li>
-</ul>
-<p>We're ready to transform your IT career! 🚀</p>
+<p>We verified your payment of <strong>R{amount}</strong> for <strong>{cohortName}</strong>.</p>
+<h3>Do this next</h3>
+<ol>
+  <li>Sign in to the student portal and open your calendar to confirm your first session on <strong>{courseStartDate}</strong>.</li>
+  <li>Open the Documents section to download your admission confirmation, invoice, and course schedule.</li>
+  <li>Open Learning before your first session and complete the lab setup instructions shown there.</li>
+  <li>Use the Support section for a course or technical issue after checking the relevant portal instructions.</li>
+</ol>
+<p>Your portal shows any remaining balance and due dates. Pay only according to that payment plan, using your invoice number as the EFT reference.</p>
+<p>Regards,<br/>TechLabs Academy</p>
     `,
     enabled: true,
     variables: ['studentName', 'amount', 'cohortName', 'courseStartDate']

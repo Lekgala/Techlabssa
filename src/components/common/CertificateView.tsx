@@ -161,7 +161,7 @@ export const CertificateView: React.FC<CertificateViewProps> = ({ certificate, a
 
         {/* Disclaimer per requirement */}
         <div className="mt-8 pt-4 border-t border-[#F0F0F0] text-center text-[10px] text-[#A0A0A0] leading-tight font-mono">
-          This Certificate of Completion verifies that the recipient has completed practical lab requirements on real virtualized systems at TechLabs Academy SA. TechLabs Academy is an independent training provider.
+          This Certificate of Completion records completion of TechLabs Academy's independent, non-accredited practical training. It is not an SAQA/NQF qualification, SETA/QCTO-accredited award, university qualification, or Microsoft/vendor certification, and it does not guarantee employment.
         </div>
       </div>
     </div>

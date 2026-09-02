@@ -12,7 +12,7 @@ export type EmailDelivery = {
   reason?: string;
 };
 
-const RESEND_ENDPOINT = 'https://api.resend.com/emails';
+const RESEND_ENDPOINT = process.env.RESEND_API_URL || 'https://api.resend.com/emails';
 
 export const escapeHtml = (value: unknown) => String(value ?? '')
   .replaceAll('&', '&amp;')

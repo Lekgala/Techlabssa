@@ -37,6 +37,14 @@ export type LeadSource =
 
 export type CourseTier = 'STARTER' | 'PROFESSIONAL' | 'CAREER_ACCELERATOR';
 
+export type CourseTierPricing = Record<CourseTier, {
+  priceZAR: number;
+  displayName?: string;
+  description?: string;
+  features?: string[];
+  badgeLabel?: string;
+}>;
+
 export type PaymentOption = 'FULL' | 'DEPOSIT' | 'INSTALLMENTS';
 
 export type PaymentStatus = 'PENDING' | 'AWAITING_VERIFICATION' | 'PARTIALLY_PAID' | 'VERIFIED' | 'FAILED' | 'REFUNDED';
@@ -46,12 +54,6 @@ export type AttendanceStatus = 'PRESENT' | 'LATE' | 'ABSENT' | 'EXCUSED';
 export type TicketPriority = 'P1' | 'P2' | 'P3' | 'P4';
 
 export type TicketStatus = 'OPEN' | 'IN_PROGRESS' | 'RESOLVED' | 'VERIFIED' | 'CLOSED';
-
-export type VirtualSessionStatus = 'SCHEDULED' | 'LIVE' | 'COMPLETED' | 'CANCELLED';
-
-export type LearningDeliveryMode = 'VIRTUAL' | 'HYBRID';
-
-export type SessionPlatform = 'TEAMS' | 'ZOOM' | 'GOOGLE_MEET' | 'GENERIC_LINK';
 
 export interface FlashSaleConfig {
   enabled: boolean;
@@ -64,6 +66,7 @@ export interface FlashSaleConfig {
 
 export interface AcademySettings {
   whatsappNumber: string;
+  studentSupportWhatsappNumber?: string;
   admissionsEmail: string;
   campusAddress: string;
   bankName: string;
@@ -76,6 +79,7 @@ export interface AcademySettings {
   companyName?: string;
   leadInstructorName?: string;
   flashSale?: FlashSaleConfig;
+  courseTierPricing?: CourseTierPricing;
 }
 
 export interface User {
@@ -282,6 +286,7 @@ export interface CourseModule {
   exampleTickets: string[];
   technologies: string[];
   startDate?: string;
+  published?: boolean;
 }
 
 export interface PracticalLab {
@@ -419,59 +424,4 @@ export interface LearningResource {
   fileSize: string;
   description: string;
   downloadUrl: string;
-}
-
-export interface VirtualSession {
-  id: string;
-  cohortId: string;
-  sessionNumber: number; // Session 1, 2, 3, etc.
-  topic: string; // e.g. "Active Directory Fundamentals"
-  moduleNumber?: number; // Link to course module
-  status: VirtualSessionStatus;
-  scheduledDate: string; // ISO date
-  scheduledStartTime: string; // HH:MM (24-hour)
-  scheduledEndTime: string; // HH:MM (24-hour)
-  platform: SessionPlatform;
-  meetingLink: string; // Teams/Zoom/Google Meet URL
-  meetingId?: string; // For Teams: meeting ID
-  passcode?: string; // For Zoom: meeting passcode
-  recordingUrl?: string; // Link to recording after session
-  instructorId: string;
-  instructorName: string;
-  description: string;
-  agenda: string[]; // Array of topics to cover
-  createdAt: string;
-  updatedAt: string;
-}
-
-export interface SessionAttendance {
-  id: string;
-  sessionId: string;
-  cohortId: string;
-  studentId: string;
-  studentName: string;
-  studentEmail: string;
-  joinedAt?: string; // ISO timestamp when student joined
-  leftAt?: string; // ISO timestamp when student left
-  attendanceStatus: AttendanceStatus;
-  durationMinutes?: number; // How long they attended
-  notes?: string;
-  recordedAt: string;
-}
-
-export interface VirtualLearningSettings {
-  id: string;
-  cohortId: string;
-  deliveryMode: LearningDeliveryMode;
-  defaultPlatform: SessionPlatform;
-  recordSessions: boolean;
-  requireCameraForAttendance: boolean;
-  autoMarkAttendance: boolean; // Auto-mark present if joined meeting
-  attendanceThreshold: number; // Percentage required for completion
-  enableChat: boolean;
-  enableScreenShare: boolean;
-  enableRecording: boolean;
-  sessionNotificationMinutes: number; // Send reminder X mins before
-  createdAt: string;
-  updatedAt: string;
 }

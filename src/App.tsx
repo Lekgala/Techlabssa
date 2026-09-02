@@ -21,6 +21,7 @@ import { AdminDashboard } from './pages/admin/AdminDashboard';
 
 const AppContent: React.FC = () => {
   const { currentPath, currentRole } = useApp();
+  const isAdminRoute = currentPath === '/admin' || currentPath === '/admin/login' || currentPath.startsWith('/admin/');
 
   const renderPage = () => {
     const path = (currentPath || '/')
@@ -68,8 +69,8 @@ const AppContent: React.FC = () => {
       <main className="flex-grow">
         {renderPage()}
       </main>
-      <Footer />
-      <WhatsAppButton />
+      {!isAdminRoute && <Footer />}
+      {!isAdminRoute && <WhatsAppButton />}
       <ToastContainer />
     </div>
   );

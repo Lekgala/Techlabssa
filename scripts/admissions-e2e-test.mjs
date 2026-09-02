@@ -1,0 +1,34 @@
+const api = process.env.ADMISSIONS_TEST_BASE_URL || 'http://127.0.0.1:4015/api';
+const mock = process.env.MOCK_RESEND_URL || 'http://127.0.0.1:4016';
+const request = async (path, options = {}) => {
+  const response = await fetch(`${api}${path}`, options);
+  const body = response.status === 204 ? null : await response.json();
+  if (!response.ok) throw new Error(`${options.method || 'GET'} ${path} failed (${response.status}): ${JSON.stringify(body)}`);
+  return body;
+};
+const json = (method, body, token) => ({ method, headers: { 'content-type': 'application/json', ...(token ? { authorization: `Bearer ${token}` } : {}) }, body: JSON.stringify(body) });
+
+const catalog = await request('/data');
+const cohort = catalog.cohorts.find(item => ['Open', 'Filling Fast'].includes(item.status));
+if (!cohort) throw new Error('No open test cohort');
+const email = `admissions-e2e-${Date.now()}@example.test`;
+const created = await request('/applications', json('POST', { firstName: 'Admissions', lastName: 'Test', email, whatsapp: '+27820000000', city: 'Cape Town', province: 'Western Cape', highestQualification: 'Matric', itExperienceYears: '0 - 1 years', currentEmploymentStatus: 'Job seeking', currentRole: '', technologiesKnown: [], laptopBrand: 'Test Laptop', cpu: 'Intel Core i5', ramGB: 16, storageType: 'NVMe SSD', freeStorageGB: 150, os: 'Windows 11 64-bit', hasVirtualizationEnabled: true, isLaptopCompliant: true, selectedTier: 'PROFESSIONAL', paymentOption: 'DEPOSIT', cohortId: cohort.id, acceptedTerms: true, acceptedPrivacy: true, marketingConsent: false, amountZAR: 1 }));
+if (created.invoice.amountZAR !== 3499) throw new Error(`Server trusted manipulated price: ${created.invoice.amountZAR}`);
+const admin = await request('/auth/admin', json('POST', { email: 'admissions-test@example.test', password: 'AdmissionsTest123' }));
+const approved = await request('/email/approval', json('POST', { email, type: 'APPROVED', referenceNumber: created.application.referenceNumber }, admin.token));
+if (approved.application.status !== 'APPROVED' || !approved.ok) throw new Error('Approval was not saved and emailed');
+const messages = await (await fetch(`${mock}/messages`)).json();
+const approvalEmail = messages.find(message => message.to?.includes(email) && message.attachments?.[0]?.filename?.endsWith('.pdf'));
+if (!approvalEmail) throw new Error('Approval email did not include a PDF invoice');
+const link = approvalEmail.html.match(/href="([^"]*action=setup[^"]*)"/)?.[1]?.replaceAll('&amp;', '&');
+if (!link) throw new Error('Approval email did not contain a setup link');
+const token = new URL(link).searchParams.get('token');
+await request('/auth/set-password', json('POST', { token, password: 'StudentTest123' }));
+const student = await request('/auth/student', json('POST', { email, password: 'StudentTest123' }));
+const png = Buffer.from([137,80,78,71,13,10,26,10]);
+const payment = await request(`/student/invoices/${created.invoice.id}/proof`, { method: 'POST', headers: { authorization: `Bearer ${student.token}`, 'content-type': 'image/png', 'x-file-name': 'test-pop.png', 'x-eft-reference': created.invoice.invoiceNumber }, body: png });
+const verified = await request(`/admin/payments/${payment.payment.id}/verify`, json('POST', { amountZAR: 1000 }, admin.token));
+if (verified.application.status !== 'ENROLLED' || verified.invoice.paidZAR !== 1000 || verified.invoice.balanceZAR !== 2499) throw new Error('Deposit verification did not enroll and recalculate correctly');
+const audit = await request('/admin/audit-logs', { headers: { authorization: `Bearer ${admin.token}` } });
+if (!audit.some(item => item.action === 'APPLICATION_APPROVED' && item.entityId === created.application.id) || !audit.some(item => item.action === 'PAYMENT_VERIFIED' && item.entityId === payment.payment.id)) throw new Error('Admissions audit trail is incomplete');
+console.log('Admissions E2E passed: server pricing, confirmation, approval, PDF invoice, account setup, POP, payment, enrollment, balance, and audit.');

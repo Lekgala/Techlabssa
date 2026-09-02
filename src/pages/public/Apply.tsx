@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { useApp, getTierPrice } from '../../context/AppContext';
 import { CourseTier, PaymentOption } from '../../types';
 import { PrintableInvoice } from '../../components/common/PrintableInvoice';
@@ -25,6 +25,10 @@ import {
 
 export const Apply: React.FC = () => {
   const { submitApplication, studentLogin, cohorts, navigate, settings } = useApp();
+  const availableCohorts = useMemo(
+    () => cohorts.filter(cohort => cohort.status === 'Open' || cohort.status === 'Filling Fast'),
+    [cohorts]
+  );
   const [currentStep, setCurrentStep] = useState(1);
   const [submittedRef, setSubmittedRef] = useState<string | null>(null);
   const [submissionError, setSubmissionError] = useState('');
@@ -57,12 +61,19 @@ export const Apply: React.FC = () => {
     selectedTier: 'PROFESSIONAL' as CourseTier,
     paymentOption: 'DEPOSIT' as PaymentOption,
     // Step 5: Intake
-    cohortId: 'cohort-oct-2026',
+    cohortId: '',
     // Step 6: Consent
     acceptedTerms: false,
     acceptedPrivacy: false,
     marketingConsent: true
   });
+
+  useEffect(() => {
+    setFormData(current => {
+      if (availableCohorts.some(cohort => cohort.id === current.cohortId)) return current;
+      return { ...current, cohortId: availableCohorts[0]?.id || '' };
+    });
+  }, [availableCohorts]);
 
   const availableTechs = [
     'Basic Computer Literacy',
@@ -183,32 +194,26 @@ export const Apply: React.FC = () => {
             <ol className="space-y-2.5 text-[#707070]">
               <li className="flex items-start gap-2.5">
                 <span className="w-4 h-4 rounded-full bg-[#000000] text-white text-[9px] flex items-center justify-center font-bold shrink-0 mt-0.5">1</span>
-                <span><strong className="text-[#000000]">Laptop & Admission Review:</strong> Our technical team verifies your hardware specifications within 24 business hours.</span>
+                <span><strong className="text-[#000000]">Laptop & Admission Review:</strong> Admissions will review your application and laptop details. No action or payment is required while this is in progress.</span>
               </li>
               <li className="flex items-start gap-2.5">
                 <span className="w-4 h-4 rounded-full bg-[#000000] text-white text-[9px] flex items-center justify-center font-bold shrink-0 mt-0.5">2</span>
-                <span><strong className="text-[#000000]">Payment Instructions:</strong> You will receive formal EFT banking instructions via email and WhatsApp.</span>
+                <span><strong className="text-[#000000]">Approval Email:</strong> Within two business days, we will email your application outcome. If approved, the email includes your invoice, secure portal-password link, and payment steps.</span>
               </li>
               <li className="flex items-start gap-2.5">
                 <span className="w-4 h-4 rounded-full bg-[#000000] text-white text-[9px] flex items-center justify-center font-bold shrink-0 mt-0.5">3</span>
-                <span><strong className="text-[#000000]">Student Portal & Onboarding:</strong> Upon payment confirmation (deposit or full), your student account unlocks with the VMware lab checklist.</span>
+                <span><strong className="text-[#000000]">Portal & Onboarding:</strong> After you create your portal password, pay, and admissions verifies your proof of payment, your course access and onboarding instructions unlock.</span>
               </li>
             </ol>
           </div>
 
           <div className="pt-2 flex flex-col sm:flex-row items-center justify-center gap-3">
             <button
-              onClick={() => navigate('/student')}
+              onClick={() => navigate('/courses/it-support')}
               className="w-full sm:w-auto px-6 py-3 bg-[#000000] hover:bg-neutral-800 text-white font-bold text-xs uppercase tracking-[0.2em] rounded-xl shadow transition flex items-center justify-center gap-2"
             >
-              <span>Go to Student Portal to View Status</span>
+              <span>Review Course Details</span>
               <ArrowRight className="w-4 h-4" />
-            </button>
-            <button
-              onClick={() => navigate('/payment')}
-              className="w-full sm:w-auto px-6 py-3 bg-[#FFFFFF] hover:bg-[#F0F0F0] text-[#000000] font-bold text-xs uppercase tracking-[0.2em] rounded-xl border border-[#E0E0E0] transition"
-            >
-              Proceed to Payment Instructions
             </button>
           </div>
         </div>
@@ -555,9 +560,12 @@ export const Apply: React.FC = () => {
           {/* STEP 4: COURSE TIER & PAYMENT OPTION */}
           {/* Step 4: Course Tier Selection */}
           {currentStep === 4 && (() => {
-            const starterP = getTierPrice('STARTER', settings?.flashSale);
-            const proP = getTierPrice('PROFESSIONAL', settings?.flashSale);
-            const careerP = getTierPrice('CAREER_ACCELERATOR', settings?.flashSale);
+            const starterP = getTierPrice('STARTER', settings);
+            const proP = getTierPrice('PROFESSIONAL', settings);
+            const careerP = getTierPrice('CAREER_ACCELERATOR', settings);
+            const starterContent = settings?.courseTierPricing?.STARTER;
+            const professionalContent = settings?.courseTierPricing?.PROFESSIONAL;
+            const acceleratorContent = settings?.courseTierPricing?.CAREER_ACCELERATOR;
 
             return (
               <div className="space-y-6 animate-in fade-in duration-200">
@@ -583,14 +591,14 @@ export const Apply: React.FC = () => {
                       </span>
                     )}
                     <div>
-                      <span className="text-[10px] font-mono uppercase text-[#707070] font-bold">Starter</span>
+                      <span className="text-[10px] font-mono uppercase text-[#707070] font-bold">{starterContent?.displayName || 'Starter'}</span>
                       <div className="flex items-baseline gap-1.5 mt-1">
                         {starterP.isDiscounted && (
                           <span className="text-xs line-through text-[#A0A0A0] font-mono">R{starterP.original.toLocaleString()}</span>
                         )}
                         <span className="text-2xl font-light text-[#000000]">R{starterP.current.toLocaleString()}</span>
                       </div>
-                      <p className="text-xs text-[#707070] mt-1">Weekend self-paced practical lab track & workbook.</p>
+                      <p className="text-xs text-[#707070] mt-1">{starterContent?.description || 'Weekend self-paced practical lab track & workbook.'}</p>
                     </div>
                     <span className="text-xs font-bold text-[#000000] uppercase tracking-wider">
                       {formData.selectedTier === 'STARTER' ? '✔ Selected' : 'Select'}
@@ -608,10 +616,10 @@ export const Apply: React.FC = () => {
                   >
                     <div className="absolute -top-2.5 right-3 bg-[#FFFFFF] text-[#000000] font-bold text-[9px] uppercase tracking-wider px-2 py-0.5 rounded-full border border-[#E0E0E0] flex items-center gap-1">
                       {proP.isDiscounted && <Zap className="w-2.5 h-2.5 fill-black text-black" />}
-                      <span>{proP.isDiscounted ? `${proP.discountPercent}% OFF` : 'Most Popular'}</span>
+                      <span>{proP.isDiscounted ? `${proP.discountPercent}% OFF` : professionalContent?.badgeLabel || 'Most Popular'}</span>
                     </div>
                     <div>
-                      <span className={`text-[10px] font-mono uppercase font-bold ${formData.selectedTier === 'PROFESSIONAL' ? 'text-neutral-400' : 'text-[#707070]'}`}>Professional</span>
+                      <span className={`text-[10px] font-mono uppercase font-bold ${formData.selectedTier === 'PROFESSIONAL' ? 'text-neutral-400' : 'text-[#707070]'}`}>{professionalContent?.displayName || 'Professional'}</span>
                       <div className="flex items-baseline gap-1.5 mt-1">
                         {proP.isDiscounted && (
                           <span className={`text-xs line-through font-mono ${formData.selectedTier === 'PROFESSIONAL' ? 'text-neutral-400' : 'text-[#A0A0A0]'}`}>
@@ -622,7 +630,7 @@ export const Apply: React.FC = () => {
                           R{proP.current.toLocaleString()}
                         </span>
                       </div>
-                      <p className={`text-xs mt-1 ${formData.selectedTier === 'PROFESSIONAL' ? 'text-neutral-300' : 'text-[#707070]'}`}>Full 15-module bootcamp, live evening/weekend classes & tickets.</p>
+                      <p className={`text-xs mt-1 ${formData.selectedTier === 'PROFESSIONAL' ? 'text-neutral-300' : 'text-[#707070]'}`}>{professionalContent?.description || 'Full 15-module bootcamp, live evening/weekend classes & tickets.'}</p>
                     </div>
                     <span className={`text-xs font-bold uppercase tracking-wider ${formData.selectedTier === 'PROFESSIONAL' ? 'text-white' : 'text-[#000000]'}`}>
                       {formData.selectedTier === 'PROFESSIONAL' ? '✔ Selected' : 'Select'}
@@ -645,14 +653,14 @@ export const Apply: React.FC = () => {
                       </span>
                     )}
                     <div>
-                      <span className="text-[10px] font-mono uppercase text-[#707070] font-bold">Career Accelerator</span>
+                      <span className="text-[10px] font-mono uppercase text-[#707070] font-bold">{acceleratorContent?.displayName || 'Career Accelerator'}</span>
                       <div className="flex items-baseline gap-1.5 mt-1">
                         {careerP.isDiscounted && (
                           <span className="text-xs line-through text-[#A0A0A0] font-mono">R{careerP.original.toLocaleString()}</span>
                         )}
                         <span className="text-2xl font-light text-[#000000]">R{careerP.current.toLocaleString()}</span>
                       </div>
-                      <p className="text-xs text-[#707070] mt-1">Everything in Professional + 1-on-1 CV review & mock interview.</p>
+                      <p className="text-xs text-[#707070] mt-1">{acceleratorContent?.description || 'Everything in Professional + 1-on-1 CV review & mock interview.'}</p>
                     </div>
                     <span className="text-xs font-bold text-[#000000] uppercase tracking-wider">
                       {formData.selectedTier === 'CAREER_ACCELERATOR' ? '✔ Selected' : 'Select'}
@@ -696,7 +704,7 @@ export const Apply: React.FC = () => {
               </div>
 
               <div className="space-y-3 text-xs">
-                {cohorts.map((cohort) => {
+                {availableCohorts.map((cohort) => {
                   const selected = formData.cohortId === cohort.id;
                   const seatsLeft = Math.max(0, cohort.capacity - cohort.enrolledCount);
                   return (
@@ -729,6 +737,12 @@ export const Apply: React.FC = () => {
                     </div>
                   );
                 })}
+                {!availableCohorts.length && (
+                  <div className="p-6 rounded-xl border border-[#E0E0E0] bg-[#FAFAFA] text-center">
+                    <h4 className="font-bold text-sm text-[#000000]">No cohorts are currently accepting applications</h4>
+                    <p className="mt-2 text-xs text-[#707070]">Please check back soon or contact admissions for the next available intake.</p>
+                  </div>
+                )}
               </div>
             </div>
           )}
@@ -752,7 +766,7 @@ export const Apply: React.FC = () => {
                     className="mt-0.5 w-4 h-4 accent-black rounded"
                   />
                   <label htmlFor="terms-check" className="cursor-pointer text-[#707070]">
-                    <strong className="text-[#000000]">Terms & Conditions:</strong> I understand that TechLabs Academy SA is an independent IT training provider. Practical VMware labs run on my own laptop, and I agree to the academy code of conduct.
+                    <strong className="text-[#000000]">Course status and Terms:</strong> I understand that this is independent, non-accredited practical skills training. It is not an SAQA/NQF qualification, SETA/QCTO-accredited programme, university award, or Microsoft/vendor certification, and completion does not guarantee employment. Practical labs run on my own laptop, and I agree to the academy code of conduct.
                   </label>
                 </div>
 
@@ -822,7 +836,7 @@ export const Apply: React.FC = () => {
                 </div>
                 <div className="text-right">
                   {(() => {
-                    const price = getTierPrice(formData.selectedTier, settings?.flashSale);
+                    const price = getTierPrice(formData.selectedTier, settings);
                     return (
                       <div>
                         {price.isDiscounted && (
@@ -858,7 +872,8 @@ export const Apply: React.FC = () => {
             {currentStep < 7 ? (
               <button
                 type="submit"
-                className="px-6 py-3 bg-[#000000] hover:bg-neutral-800 text-white font-bold rounded-xl text-xs uppercase tracking-[0.2em] flex items-center gap-2 transition"
+                disabled={currentStep === 5 && !formData.cohortId}
+                className="px-6 py-3 bg-[#000000] hover:bg-neutral-800 disabled:bg-[#A0A0A0] disabled:cursor-not-allowed text-white font-bold rounded-xl text-xs uppercase tracking-[0.2em] flex items-center gap-2 transition"
               >
                 <span>Continue to Step {currentStep + 1}</span>
                 <ArrowRight className="w-4 h-4 text-white" />
@@ -866,7 +881,7 @@ export const Apply: React.FC = () => {
             ) : (
               <button
                 type="submit"
-                disabled={submitting}
+                disabled={submitting || !formData.cohortId}
                 className="px-8 py-3.5 bg-[#000000] hover:bg-neutral-800 disabled:bg-[#A0A0A0] text-white font-bold rounded-xl text-xs uppercase tracking-[0.2em] shadow transition flex items-center gap-2"
               >
                 <Sparkles className="w-4 h-4" />
@@ -881,14 +896,14 @@ export const Apply: React.FC = () => {
 };
 
 export const Payment: React.FC = () => {
-  const { invoices, payments, paymentSettings, currentUser, uploadProofOfPayment, navigate } = useApp();
+  const { invoices, applications, payments, paymentSettings, currentUser, uploadProofOfPayment, navigate } = useApp();
 
   // Pick the invoice matching the logged-in student, or fallback to first available
   const userInvoice = currentUser?.email
     ? invoices.find(i => i.studentEmail.trim().toLowerCase() === currentUser.email.trim().toLowerCase())
     : undefined;
 
-  const [selectedInvoiceId, setSelectedInvoiceId] = useState(userInvoice?.id || invoices[0]?.id || '');
+  const [selectedInvoiceId, setSelectedInvoiceId] = useState(userInvoice?.id || '');
   const [copied, setCopied] = useState(false);
   const [popUploaded, setPopUploaded] = useState(false);
   const [eftReference, setEftReference] = useState('');
@@ -897,7 +912,10 @@ export const Payment: React.FC = () => {
   const [popError, setPopError] = useState('');
   const [showInvoiceModal, setShowInvoiceModal] = useState(false);
 
-  const selectedInvoice = invoices.find(i => i.id === selectedInvoiceId) || userInvoice || invoices[0];
+  const selectedInvoice = invoices.find(i => i.id === selectedInvoiceId && i.studentEmail.trim().toLowerCase() === currentUser?.email?.trim().toLowerCase()) || userInvoice;
+  const studentApplication = currentUser?.email ? applications.find(application => application.email.trim().toLowerCase() === currentUser.email.trim().toLowerCase()) : undefined;
+  const paymentAwaitingReview = Boolean(selectedInvoice && payments.some(payment => payment.invoiceId === selectedInvoice.id && payment.status === 'SUBMITTED'));
+  const paymentAllowed = ['APPROVED', 'PAYMENT_REQUIRED', 'ENROLLED'].includes(studentApplication?.status || '');
 
   const handleCopyBanking = () => {
     const txt = `TechLabs Banking Details (Madilotane Design Pty Ltd):
@@ -913,6 +931,12 @@ Reference: ${selectedInvoice?.invoiceNumber || 'TLS-Reference'}`;
 
   if (!currentUser || !selectedInvoice || !paymentSettings) {
     return <div className="max-w-2xl mx-auto px-4 py-20 text-center space-y-4"><h1 className="text-3xl font-light">Payment details are not available yet</h1><p className="text-sm text-[#707070]">Banking details and POP upload unlock after admissions approves your application. Sign in to your applicant portal to check the latest status.</p></div>;
+  }
+
+  if (!paymentAllowed || selectedInvoice.balanceZAR <= 0 || paymentAwaitingReview) {
+    const title = paymentAwaitingReview ? 'Proof of payment awaiting verification' : selectedInvoice.balanceZAR <= 0 ? 'Your account is paid in full' : studentApplication?.status === 'WAITLISTED' ? 'No payment is required while waitlisted' : 'Payment is not available at this stage';
+    const detail = paymentAwaitingReview ? 'Admissions is checking your submitted POP against the bank statement. Please do not upload it again.' : selectedInvoice.balanceZAR <= 0 ? 'Your receipts and invoice remain available in the student document centre.' : 'Return to your portal to see the current application status and next step.';
+    return <div className="max-w-2xl mx-auto px-4 py-20 text-center space-y-5"><h1 className="text-3xl font-light">{title}</h1><p className="text-sm text-[#707070]">{detail}</p><button type="button" onClick={() => navigate('/student')} className="px-5 py-3 bg-black text-white rounded-xl text-xs font-bold uppercase tracking-wider">Return to Student Portal</button></div>;
   }
 
   return (
@@ -1031,7 +1055,7 @@ Reference: ${selectedInvoice?.invoiceNumber || 'TLS-Reference'}`;
           <div className="pt-2 space-y-3">
             <div className="space-y-1">
               <label className="font-bold text-xs uppercase tracking-wider text-[#000000] block">EFT payment reference</label>
-              <input value={eftReference} onChange={(event) => setEftReference(event.target.value)} placeholder={selectedInvoice?.invoiceNumber || 'Invoice reference'} className="w-full p-3 bg-[#FAFAFA] border border-[#E0E0E0] rounded-xl font-mono text-xs" />
+              <input maxLength={100} value={eftReference} onChange={(event) => setEftReference(event.target.value)} placeholder={selectedInvoice?.invoiceNumber || 'Invoice reference'} className="w-full p-3 bg-[#FAFAFA] border border-[#E0E0E0] rounded-xl font-mono text-xs" />
             </div>
             <label className="font-bold text-xs uppercase tracking-wider text-[#000000] block">
               Upload Proof of Payment (POP / PDF / Image):

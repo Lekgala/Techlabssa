@@ -108,13 +108,13 @@ export const VerifyCertificate: React.FC = () => {
       <section className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 space-y-4 text-center">
         <div className="inline-flex items-center gap-2 bg-[#FAFAFA] text-[#000000] border border-[#E0E0E0] px-3.5 py-1.5 rounded-full text-xs font-mono font-bold uppercase tracking-[0.2em]">
           <ShieldCheck className="w-4 h-4 text-[#000000]" />
-          <span>Official Public Credential Registry</span>
+          <span>TechLabs Completion Record Registry</span>
         </div>
         <h1 className="text-3xl sm:text-4xl font-light text-[#000000] tracking-tight">
           Verify TechLabs Academy Digital Certificate
         </h1>
         <p className="text-sm text-[#707070] max-w-xl mx-auto leading-relaxed">
-          Enter any Certificate Number issued by TechLabs Academy SA to verify student authenticity, practical graduation audit status, and technical competencies.
+          Enter a certificate number to confirm that TechLabs Academy issued the completion record. Verification confirms our internal record only; it does not indicate accredited or vendor-certified status.
         </p>
 
         {/* Verification search box */}
@@ -143,7 +143,7 @@ export const VerifyCertificate: React.FC = () => {
               <div className="bg-[#FAFAFA] border border-[#000000] p-4 rounded-xl flex items-center justify-between text-xs text-[#000000] font-medium">
                 <div className="flex items-center gap-2 font-bold font-mono">
                   <CheckCircle className="w-4 h-4 text-[#000000] shrink-0" />
-                  <span>Verified Authenticity: Certificate {foundCert.certificateNumber} is genuine and on official record.</span>
+                  <span>TechLabs record confirmed: Certificate {foundCert.certificateNumber} was issued by TechLabs Academy SA.</span>
                 </div>
                 <span className="text-[11px] font-mono text-[#707070]">Issued by TechLabs Academy SA</span>
               </div>

@@ -2,6 +2,10 @@
 
 TechLabs Academy SA is a practical IT training platform for admissions, student labs, simulated enterprise support work, progress tracking, invoicing, and certificate verification.
 
+See [AUDIT.md](AUDIT.md) for the verified system architecture, operational workflows, security posture, risks, and production-readiness checklist.
+
+Staff members should use the [Staff Guide](STAFF_GUIDE.md) for admissions, payment verification, cohort management, communications, student documents, and daily operating procedures.
+
 ## Local development
 
 Requirements: Node.js 20+ and npm.

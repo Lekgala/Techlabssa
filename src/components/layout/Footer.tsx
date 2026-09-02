@@ -190,7 +190,7 @@ export const Footer: React.FC = () => {
             Legal Notice:
           </p>
           <p className="leading-relaxed">
-            TechLabs is a practical IT skills training division operated by Madilotane Design (Pty) Ltd, registered in the Republic of South Africa. Practical labs leverage industry technologies including VMware, Windows Server, Microsoft 365, Entra ID, Intune, and Microsoft Defender. TechLabs and Madilotane Design (Pty) Ltd are independent entities and are not affiliated with Microsoft Corporation unless explicitly stated.
+            TechLabs is a non-accredited practical IT skills training division operated by Madilotane Design (Pty) Ltd, registered in the Republic of South Africa. Its courses and completion certificates are not SAQA/NQF qualifications, SETA/QCTO-accredited awards, university qualifications, or Microsoft/vendor certifications. Technology names identify tools used in training and do not imply affiliation or endorsement.
           </p>
         </div>
 
