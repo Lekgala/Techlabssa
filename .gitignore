@@ -8,3 +8,4 @@ server/data/*.db*
 server/data/payment-proofs/
 .env*
 !.env.example
+.neon
