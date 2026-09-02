@@ -257,6 +257,15 @@ export const StudentDashboard: React.FC = () => {
             <span>Student Support Chat</span>
           </a>
 
+          {studentCohort?.teamsChannelUrl && <a
+            href={studentCohort.teamsChannelUrl}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="px-4 py-2.5 bg-[#FFFFFF] hover:bg-[#F0F0F0] text-[#000000] font-bold rounded-xl text-xs uppercase tracking-wider border border-[#E0E0E0] transition"
+          >
+            Open Teams Channel
+          </a>}
+
           <button
             onClick={() => setActiveTab('TICKETS')}
             className="px-4 py-2.5 bg-[#FFFFFF] hover:bg-[#F0F0F0] text-[#000000] font-bold rounded-xl text-xs uppercase tracking-wider border border-[#E0E0E0] transition"

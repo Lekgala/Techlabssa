@@ -1,4 +1,5 @@
 import Database from 'better-sqlite3';
+import { Pool } from 'pg';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { 
@@ -59,6 +60,11 @@ export type {
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const DB_PATH = path.resolve(process.env.TECHLABS_DB_PATH || path.join(__dirname, 'techlabs.db'));
+const DATABASE_PROVIDER = (process.env.DATABASE_PROVIDER || (process.env.DATABASE_URL ? 'postgres' : 'sqlite')).toLowerCase();
+
+if (!['sqlite', 'postgres'].includes(DATABASE_PROVIDER)) {
+  throw new Error('DATABASE_PROVIDER must be either "sqlite" or "postgres".');
+}
 
 export type TechlabsDatabase = {
   currentUser: User | null;
@@ -259,35 +265,46 @@ const defaultDatabase: TechlabsDatabase = {
   emailTemplates: DEFAULT_EMAIL_TEMPLATES,
 };
 
-const db = new Database(DB_PATH);
-db.pragma('journal_mode = WAL');
+type CollectionRow = { key: string; value: unknown };
 
-db.exec(`
-  CREATE TABLE IF NOT EXISTS collections (
-    key TEXT PRIMARY KEY,
-    value TEXT NOT NULL
-  );
-`);
+const sqlite = DATABASE_PROVIDER === 'sqlite' ? new Database(DB_PATH) : null;
+const postgres = DATABASE_PROVIDER === 'postgres'
+  ? new Pool({
+      connectionString: process.env.DATABASE_URL,
+      ssl: process.env.DATABASE_SSL === 'true' ? { rejectUnauthorized: false } : undefined,
+      max: Number(process.env.DATABASE_POOL_SIZE || 10),
+    })
+  : null;
 
-function ensureSeeded(): void {
-  const insert = db.prepare('INSERT INTO collections (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value');
-  const transaction = db.transaction(() => {
-    for (const [key, value] of Object.entries(defaultDatabase)) {
-      const existing = db.prepare('SELECT value FROM collections WHERE key = ?').get(key) as { value: string } | undefined;
-      if (!existing || existing.value === '[]' || existing.value === 'null' || existing.value.includes('Cape Town On-Campus')) {
-        insert.run(key, JSON.stringify(value));
-      }
+let initialization: Promise<void> | null = null;
+let writeQueue: Promise<void> = Promise.resolve();
+
+async function initializeStorage(): Promise<void> {
+  if (initialization) return initialization;
+  initialization = (async () => {
+    if (sqlite) {
+      sqlite.pragma('journal_mode = WAL');
+      sqlite.exec('CREATE TABLE IF NOT EXISTS collections (key TEXT PRIMARY KEY, value TEXT NOT NULL)');
+    } else {
+      if (!process.env.DATABASE_URL) throw new Error('DATABASE_URL is required when DATABASE_PROVIDER=postgres.');
+      await postgres!.query('CREATE TABLE IF NOT EXISTS collections (key TEXT PRIMARY KEY, value JSONB NOT NULL)');
     }
-    const storedTemplates = db.prepare("SELECT value FROM collections WHERE key = 'emailTemplates'").get() as { value: string } | undefined;
-    if (storedTemplates) {
-      const templates = JSON.parse(storedTemplates.value) as EmailTemplate[];
+
+    const existing = await readCollections();
+    const seedEntries = Object.entries(defaultDatabase).filter(([key, value]) => {
+      const stored = existing[key];
+      return stored === undefined || stored === null || (Array.isArray(stored) && stored.length === 0 && Array.isArray(value) && value.length > 0);
+    });
+    if (seedEntries.length) await writeCollections(seedEntries);
+    const templates = existing.emailTemplates as EmailTemplate[] | undefined;
+    if (templates) {
       const legacyMarkers: Record<string, string> = {
         'tpl-app-submitted': 'Our admissions team will review your application',
         'tpl-app-approved': "We're excited to inform you that your application has been",
         'tpl-payment-verified': "We're ready to transform your IT career!",
       };
       let changed = false;
-      const updatedTemplates = templates.map(template => {
+      const updated = templates.map(template => {
         const replacement = defaultDatabase.emailTemplates.find(candidate => candidate.id === template.id);
         if (replacement && legacyMarkers[template.id] && template.htmlBody.includes(legacyMarkers[template.id])) {
           changed = true;
@@ -295,20 +312,47 @@ function ensureSeeded(): void {
         }
         return template;
       });
-      if (changed) insert.run('emailTemplates', JSON.stringify(updatedTemplates));
+      if (changed) await writeCollections([['emailTemplates', updated]]);
     }
-  });
-
-  transaction();
-  db.prepare("UPDATE collections SET value = 'null' WHERE key = 'currentUser'").run();
-  db.prepare("UPDATE collections SET value = '\"VISITOR\"' WHERE key = 'currentRole'").run();
+    await writeCollections([['currentUser', null], ['currentRole', 'VISITOR']]);
+  })();
+  return initialization;
 }
 
-ensureSeeded();
+async function readCollections(): Promise<Record<string, unknown>> {
+  const rows: CollectionRow[] = sqlite
+    ? (sqlite.prepare('SELECT key, value FROM collections').all() as Array<{ key: string; value: string }>).map(row => ({ key: row.key, value: JSON.parse(row.value) }))
+    : (await postgres!.query<CollectionRow>('SELECT key, value FROM collections')).rows;
+  return Object.fromEntries(rows.map(row => [row.key, row.value]));
+}
+
+async function writeCollections(entries: Array<[string, unknown]>): Promise<void> {
+  if (sqlite) {
+    const upsert = sqlite.prepare('INSERT INTO collections (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value');
+    sqlite.transaction(() => entries.forEach(([key, value]) => upsert.run(key, JSON.stringify(value))))();
+    return;
+  }
+  const client = await postgres!.connect();
+  try {
+    await client.query('BEGIN');
+    for (const [key, value] of entries) {
+      await client.query(
+        'INSERT INTO collections (key, value) VALUES ($1, $2::jsonb) ON CONFLICT(key) DO UPDATE SET value = EXCLUDED.value',
+        [key, JSON.stringify(value)],
+      );
+    }
+    await client.query('COMMIT');
+  } catch (error) {
+    await client.query('ROLLBACK');
+    throw error;
+  } finally {
+    client.release();
+  }
+}
 
 export async function getDatabase(): Promise<TechlabsDatabase> {
-  const rows = db.prepare('SELECT key, value FROM collections').all() as Array<{ key: string; value: string }>;
-  const recordMap = Object.fromEntries(rows.map((row) => [row.key, JSON.parse(row.value)]));
+  await initializeStorage();
+  const recordMap = await readCollections() as Partial<TechlabsDatabase>;
   const applications = recordMap.applications ?? defaultDatabase.applications;
 
   return {
@@ -349,18 +393,16 @@ export async function getDatabase(): Promise<TechlabsDatabase> {
 }
 
 export async function saveDatabase(database: TechlabsDatabase): Promise<void> {
-  const upsert = db.prepare('INSERT INTO collections (key, value) VALUES (@key, @value) ON CONFLICT(key) DO UPDATE SET value = excluded.value');
-  const transaction = db.transaction(() => {
-    for (const [key, value] of Object.entries(database)) {
-      upsert.run({ key, value: JSON.stringify(value) });
-    }
-  });
-
-  transaction();
+  await initializeStorage();
+  const pending = writeQueue.then(() => writeCollections(Object.entries(database)));
+  writeQueue = pending.catch(() => undefined);
+  await pending;
 }
 
 export async function resetDatabase(): Promise<TechlabsDatabase> {
-  db.prepare('DELETE FROM collections').run();
+  await initializeStorage();
+  if (sqlite) sqlite.prepare('DELETE FROM collections').run();
+  else await postgres!.query('DELETE FROM collections');
   const seeded = { ...defaultDatabase };
   await saveDatabase(seeded);
   return seeded;

@@ -270,6 +270,7 @@ export interface Cohort {
   scheduleFormat: string; // e.g. "Saturday (09:00 - 13:00) + Tuesday (18:30 - 20:30)"
   deliveryMode: '100% Virtual Learning' | 'Hybrid (Cape Town Lab + Virtual)';
   location: string;
+  teamsChannelUrl?: string;
   capacity: number;
   enrolledCount: number;
   status: 'Open' | 'Filling Fast' | 'Closed' | 'In Progress' | 'Completed';
