@@ -234,6 +234,10 @@ export const Apply: React.FC = () => {
         <p className="text-xs sm:text-sm text-[#707070] max-w-xl mx-auto leading-relaxed">
           Complete our 7-step admissions application. We review every applicant's hardware readiness and IT background to ensure a high-impact learning cohort.
         </p>
+        <div className="mx-auto max-w-xl" aria-label={`${Math.round((currentStep / 7) * 100)}% complete`}>
+          <div className="mb-1 flex justify-between text-[11px] font-bold text-[#555]"><span>Application progress</span><span>{Math.round((currentStep / 7) * 100)}%</span></div>
+          <div className="h-2 overflow-hidden rounded-full bg-[#E0E0E0]"><div className="h-full rounded-full bg-black transition-all duration-300" style={{ width: `${(currentStep / 7) * 100}%` }} /></div>
+        </div>
       </div>
 
       {/* Progress Stepper Bar */}
@@ -857,7 +861,7 @@ export const Apply: React.FC = () => {
 
           {/* Form Actions Footer */}
           {submissionError && <div className="mt-6 p-4 rounded-xl border border-[#E6AAAA] bg-[#FFF5F5] text-[#9B1C1C] text-xs font-bold">{submissionError}</div>}
-          <div className="flex items-center justify-between pt-8 border-t border-[#F0F0F0]">
+          <div className="sticky bottom-0 -mx-6 sm:-mx-10 px-6 sm:px-10 py-4 mt-8 flex items-center justify-between border-t border-[#E0E0E0] bg-white/95 backdrop-blur shadow-[0_-8px_20px_rgba(0,0,0,0.04)]">
             {currentStep > 1 ? (
               <button
                 type="button"

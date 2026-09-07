@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { useApp } from '../../context/AppContext';
 import { COURSE_MODULES } from '../../data/mockData';
 import { TicketCard } from '../../components/common/TicketCard';
+import { LabPilotPanel } from '../../components/common/LabPilotPanel';
 import { CertificateView } from '../../components/common/CertificateView';
 import { PrintableInvoice } from '../../components/common/PrintableInvoice';
 import { apiOpenPrivate, apiRequest } from '../../lib/api';
@@ -26,6 +27,8 @@ import {
   Building2,
   Copy
 } from 'lucide-react';
+
+const displayStatus = (status: string) => status.replaceAll('_', ' ').toLowerCase().replace(/\b\w/g, letter => letter.toUpperCase());
 
 const DocumentCard: React.FC<{
   icon: React.ComponentType<{ className?: string }>;
@@ -226,7 +229,7 @@ export const StudentDashboard: React.FC = () => {
             <span className={`text-[10px] font-mono font-bold text-white px-2.5 py-0.5 rounded-full uppercase tracking-[0.2em] ${
               isFullyEnrolled ? 'bg-[#000000]' : 'bg-[#E08A00]'
             }`}>
-              {isFullyEnrolled ? 'Enrolled Student Portal' : `Application Status: ${studentApp?.status || 'UNDER_REVIEW'}`}
+              {isFullyEnrolled ? 'Enrolled Student Portal' : `Application status: ${displayStatus(studentApp?.status || 'UNDER_REVIEW')}`}
             </span>
             <span className="text-xs text-[#707070] font-mono">
               Cohort: {studentCohort?.name || 'Assignment pending'}
@@ -276,7 +279,7 @@ export const StudentDashboard: React.FC = () => {
       </div>
 
       <nav className="bg-[#FAFAFA] p-1.5 rounded-xl border border-[#E0E0E0] flex items-center gap-1 overflow-x-auto" aria-label="Student portal sections">
-        {portalTabs.map(tab => { const Icon = tab.icon; return <button key={tab.id} type="button" onClick={() => setActiveTab(tab.id)} className={`flex items-center gap-2 px-4 py-2.5 rounded-lg whitespace-nowrap text-[11px] font-bold transition ${activeTab === tab.id ? 'bg-black text-white shadow-sm' : 'text-[#707070] hover:bg-white hover:text-black'}`}><Icon className="w-4 h-4" /><span>{tab.label}</span>{tab.id === 'TICKETS' && assignedTickets.filter(ticket => ticket.status === 'IN_PROGRESS').length > 0 && <span className="min-w-5 h-5 px-1 rounded-full bg-white text-black flex items-center justify-center text-[9px]">{assignedTickets.filter(ticket => ticket.status === 'IN_PROGRESS').length}</span>}</button>; })}
+        {portalTabs.map(tab => { const Icon = tab.icon; return <button key={tab.id} type="button" aria-current={activeTab === tab.id ? 'page' : undefined} onClick={() => setActiveTab(tab.id)} className={`flex items-center gap-2 px-4 py-2.5 rounded-lg whitespace-nowrap text-[11px] font-bold transition ${activeTab === tab.id ? 'bg-black text-white shadow-sm' : 'text-[#555] hover:bg-white hover:text-black'}`}><Icon className="w-4 h-4" /><span>{tab.label}</span>{tab.id === 'TICKETS' && assignedTickets.filter(ticket => ticket.status === 'IN_PROGRESS').length > 0 && <span className="min-w-5 h-5 px-1 rounded-full bg-white text-black flex items-center justify-center text-[9px]">{assignedTickets.filter(ticket => ticket.status === 'IN_PROGRESS').length}</span>}</button>; })}
       </nav>
 
       {activeTab === 'OVERVIEW' && <section className="bg-[#000000] text-white rounded-2xl p-6 sm:p-7 flex flex-col md:flex-row md:items-center justify-between gap-5 shadow-sm">
@@ -420,7 +423,7 @@ export const StudentDashboard: React.FC = () => {
             <div className="flex items-center gap-2">
               <span className="text-xs font-mono uppercase font-bold text-[#707070]">Current Stage:</span>
               <span className="px-3 py-1 bg-[#000000] text-white text-xs font-bold font-mono rounded-full uppercase tracking-wider">
-                {studentApp.status}
+                {displayStatus(studentApp.status)}
               </span>
             </div>
           </div>
@@ -700,6 +703,7 @@ export const StudentDashboard: React.FC = () => {
             </div>
           </div>
 
+          <LabPilotPanel />
           {/* Resolution Simulator Modal if ticket selected */}
           {selectedTicketId && (
             <div className="bg-[#FAFAFA] text-[#1A1A1A] p-6 sm:p-8 rounded-2xl border-2 border-[#000000] shadow-xl space-y-6">

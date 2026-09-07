@@ -9,3 +9,4 @@ server/data/payment-proofs/
 .env*
 !.env.example
 .neon
+server/data/lab-pilot/

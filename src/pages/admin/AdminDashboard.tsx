@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { useApp } from '../../context/AppContext';
+import { LabPilotPanel } from '../../components/common/LabPilotPanel';
 import { apiDownload, apiGetPrivateBlob, apiOpenPrivate, apiRequest } from '../../lib/api';
 import { ApplicationStatus, LeadStatus, SupportTicket, Certificate, Invoice, CourseTier, PaymentOption, AuditLogRecord, StudentTimelineEvent, StaffAccount, AdmissionNote, AdmissionTask, PaymentInstallment } from '../../types';
 import { CertificateView } from '../../components/common/CertificateView';
@@ -36,19 +37,35 @@ import {
   ,RotateCw
   ,ZoomIn
   ,ZoomOut
+  ,Download
 } from 'lucide-react';
 
 type PipelineStage = 'NEW' | 'HARDWARE_REVIEW' | 'APPROVED' | 'AWAITING_DEPOSIT' | 'POP_SUBMITTED' | 'ENROLLED' | 'COMPLETED' | 'OTHER';
+type AdminTab = 'OVERVIEW' | 'APPLICATIONS' | 'COHORTS' | 'TICKETS' | 'LEADS' | 'INVOICES' | 'CERTIFICATES' | 'CURRICULUM' | 'SETTINGS' | 'STAFF' | 'AUDIT_LOG' | 'BULK_OPS' | 'EMAIL_AUTOMATION' | 'LAB_MACHINES';
 const PIPELINE_STAGES: Array<{ id: Exclude<PipelineStage, 'OTHER'>; label: string }> = [
   { id: 'NEW', label: 'New' }, { id: 'HARDWARE_REVIEW', label: 'Hardware Review' }, { id: 'APPROVED', label: 'Approved' },
   { id: 'AWAITING_DEPOSIT', label: 'Awaiting Deposit' }, { id: 'POP_SUBMITTED', label: 'POP Submitted' }, { id: 'ENROLLED', label: 'Enrolled' }, { id: 'COMPLETED', label: 'Completed' },
 ];
 type ActionCentreGroup = { count: number; items: Array<{ id: string; label: string; detail: string }> };
 type ActionCentreData = { generatedAt: string; hardware: ActionCentreGroup; pops: ActionCentreGroup; overdue: ActionCentreGroup; cohorts: ActionCentreGroup; emails: ActionCentreGroup; followUps: ActionCentreGroup };
+const friendlyStatus = (status: string) => status.replaceAll('_', ' ').toLowerCase().replace(/\b\w/g, letter => letter.toUpperCase());
+const statusTone = (status: string) => {
+  if (/ENROLLED|PAID|VERIFIED|COMPLETED|RESOLVED|OPEN/i.test(status)) return 'border-emerald-200 bg-emerald-50 text-emerald-800';
+  if (/REJECTED|FAILED|BOUNCED|OVERDUE|WITHDRAWN/i.test(status)) return 'border-red-200 bg-red-50 text-red-800';
+  if (/SUBMITTED|IN_PROGRESS|ACTIVE/i.test(status)) return 'border-blue-200 bg-blue-50 text-blue-800';
+  if (/PENDING|REVIEW|REQUIRED|WAITLISTED|FILLING/i.test(status)) return 'border-amber-200 bg-amber-50 text-amber-800';
+  return 'border-neutral-200 bg-neutral-50 text-neutral-700';
+};
+const StatusBadge = ({ status }: { status: string }) => <span className={`inline-flex items-center rounded-full border px-2.5 py-1 text-[11px] font-bold ${statusTone(status)}`}>{friendlyStatus(status)}</span>;
 const TIER_CARD_DEFAULTS: Record<CourseTier, { priceZAR: number; displayName: string; description: string; features: string[]; badgeLabel: string }> = {
   STARTER: { priceZAR: 1999, displayName: 'Starter Tier', description: 'Weekend practical self-paced lab track with comprehensive workbooks and VMware guidance.', features: ['Weekend practical labs', 'Student workbook & architecture diagrams', 'VMware lab guidance & ISO links', 'Practical exercises & helpdesk scripts', 'Certificate of Completion'], badgeLabel: 'Self-paced' },
   PROFESSIONAL: { priceZAR: 3499, displayName: 'Professional Tier', description: 'Full bootcamp with live evening and weekend sessions, enterprise VMware labs, and tickets.', features: ['Full 8-12 week bootcamp', 'Live evening and weekend practical sessions', 'VMware enterprise labs (Server, AD, DNS)', 'Microsoft 365, Entra ID, Intune & Defender', 'PowerShell automation & helpdesk tickets', 'Graded assessments & verified certificate'], badgeLabel: 'Most Popular' },
   CAREER_ACCELERATOR: { priceZAR: 4999, displayName: 'Career Accelerator', description: 'Everything in Professional plus dedicated 1-on-1 career coaching and mock interviews.', features: ['Everything in Professional Tier', 'Technical CV and portfolio review', 'LinkedIn profile optimization', '1-on-1 technical mock interview', 'Job application guidance', 'Priority placement assistance'], badgeLabel: 'Full Support' },
+};
+const SESSION_TRACKS: Record<CourseTier, { name: string; detail: string }> = {
+  STARTER: { name: 'Weekend Practical Track', detail: 'Weekend practical labs and self-paced workbook support.' },
+  PROFESSIONAL: { name: 'Live Bootcamp Track', detail: 'Live weekend and evening sessions with graded labs and tickets.' },
+  CAREER_ACCELERATOR: { name: 'Live Bootcamp Track + Coaching', detail: 'Professional live sessions plus dedicated career coaching.' },
 };
 
 export const AdminDashboard: React.FC = () => {
@@ -61,6 +78,7 @@ export const AdminDashboard: React.FC = () => {
     recordApplicationDecision,
     transferApplicationCohort,
     updateStudentRecord,
+    deleteStudentRecord,
     setPaymentRemindersPaused,
     sendApprovalEmail,
     cohorts,
@@ -91,7 +109,7 @@ export const AdminDashboard: React.FC = () => {
     navigate
   } = useApp();
 
-  const [activeTab, setActiveTab] = useState<'OVERVIEW' | 'APPLICATIONS' | 'COHORTS' | 'TICKETS' | 'LEADS' | 'INVOICES' | 'CERTIFICATES' | 'CURRICULUM' | 'SETTINGS' | 'STAFF' | 'AUDIT_LOG' | 'BULK_OPS' | 'EMAIL_AUTOMATION'>('OVERVIEW');
+  const [activeTab, setActiveTab] = useState<AdminTab>('OVERVIEW');
   const [selectedAppId, setSelectedAppId] = useState<string | null>(null);
   const [editingCohortId, setEditingCohortId] = useState<string | null>(null);
   const [selectedInvoiceForPdf, setSelectedInvoiceForPdf] = useState<Invoice | null>(null);
@@ -164,15 +182,15 @@ export const AdminDashboard: React.FC = () => {
   const [moduleForm, setModuleForm] = useState({ title: '', duration: '', summary: '', learningOutcomes: '', practicalLabs: '', exampleTickets: '', technologies: '', published: true });
 
   useEffect(() => {
-    if (activeTab !== 'AUDIT_LOG') return;
+    if (!['ADMIN', 'INSTRUCTOR'].includes(currentRole || '') || activeTab !== 'AUDIT_LOG') return;
     setAuditLoading(true);
     void apiRequest<AuditLogRecord[]>('/admin/audit-logs').then(setAuditLogs).catch(error => showToast('error', 'Audit Log Unavailable', error instanceof Error ? error.message : 'Could not load audit records.')).finally(() => setAuditLoading(false));
-  }, [activeTab]);
+  }, [activeTab, currentRole]);
 
   useEffect(() => {
-    if (activeTab !== 'OVERVIEW') return; setActionCentreLoading(true);
+    if (!['ADMIN', 'INSTRUCTOR'].includes(currentRole || '') || activeTab !== 'OVERVIEW') return; setActionCentreLoading(true);
     void apiRequest<ActionCentreData>('/admin/action-centre').then(setActionCentre).catch(error => showToast('error', 'Action Centre Unavailable', error instanceof Error ? error.message : 'Could not load dashboard alerts.')).finally(() => setActionCentreLoading(false));
-  }, [activeTab]);
+  }, [activeTab, currentRole]);
 
   const openActionItem = (kind: keyof Omit<ActionCentreData, 'generatedAt'>, item: { id: string; label: string }) => {
     if (kind === 'cohorts') { setActiveTab('COHORTS'); return; }
@@ -185,7 +203,7 @@ export const AdminDashboard: React.FC = () => {
   };
 
   useEffect(() => {
-    if (!['STAFF', 'APPLICATIONS'].includes(activeTab)) return;
+    if (!['ADMIN', 'INSTRUCTOR'].includes(currentRole || '') || !['STAFF', 'APPLICATIONS'].includes(activeTab)) return;
     void apiRequest<Array<Omit<StaffAccount, 'passwordHash'>>>('/admin/staff').then(setStaffAccounts).catch(error => showToast('error', 'Staff Unavailable', error instanceof Error ? error.message : 'Could not load staff accounts.'));
   }, [activeTab, currentRole]);
 
@@ -355,7 +373,7 @@ export const AdminDashboard: React.FC = () => {
     e.preventDefault();
     const ok = await adminLogin(adminForm.email, adminForm.password);
     if (!ok) {
-      setAdminLoginError('Use an active TechLabs administrator or instructor account to continue.');
+      setAdminLoginError('Sign-in could not be completed. See the notification for the reason, then try again.');
       return;
     }
     setAdminLoginError('');
@@ -379,6 +397,12 @@ export const AdminDashboard: React.FC = () => {
   };
   const startStudentRecordEdit = (application: typeof applications[number]) => { setRecordForm({ firstName: application.firstName, lastName: application.lastName, email: application.email, whatsapp: application.whatsapp, city: application.city, province: application.province, selectedTier: application.selectedTier, laptopBrand: application.laptopBrand, cpu: application.cpu, ramGB: application.ramGB, storageType: application.storageType, freeStorageGB: application.freeStorageGB, os: application.os, hasVirtualizationEnabled: application.hasVirtualizationEnabled }); setEditingStudentRecord(true); };
   const saveStudentRecord = async (applicationId: string) => { setRecordSaving(true); const saved = await updateStudentRecord(applicationId, recordForm); setRecordSaving(false); if (saved) { setEditingStudentRecord(false); void loadStudentTimeline(applicationId); } };
+  const handleDeleteStudent = async (application: typeof applications[number]) => {
+    const confirmed = window.confirm(`Delete ${application.firstName} ${application.lastName}'s unused student record? This cannot be undone.`);
+    if (!confirmed) return;
+    const deleted = await deleteStudentRecord(application.id);
+    if (deleted) { setSelectedAppId(null); setEditingStudentRecord(false); }
+  };
 
   const handleEmailInvoice = async (invoice: Invoice) => {
     setEmailingInvoiceId(invoice.id);
@@ -537,6 +561,28 @@ export const AdminDashboard: React.FC = () => {
       && (!pipelineDateTo || application.submissionDate <= pipelineDateTo));
   const filteredApplications = pipelineBaseApplications.filter(application => (pipelineStage === 'ALL' || getPipelineStage(application) === pipelineStage)
     && `${application.firstName} ${application.lastName} ${application.email} ${application.whatsapp} ${application.referenceNumber}`.toLowerCase().includes(pipelineSearch.trim().toLowerCase()));
+  const exportCohortRoster = (cohort: typeof cohorts[number]) => {
+    const roster = applications.filter(application => application.cohortId === cohort.id && ['ENROLLED', 'COMPLETED'].includes(application.status));
+    const headers = ['Student name', 'Email', 'Plan', 'Session track', 'Cohort', 'Schedule', 'Status'];
+    const csvValue = (value: string) => `"${value.replaceAll('"', '""')}"`;
+    const rows = roster.map(student => [
+      `${student.firstName} ${student.lastName}`,
+      student.email,
+      TIER_CARD_DEFAULTS[student.selectedTier].displayName,
+      SESSION_TRACKS[student.selectedTier].name,
+      cohort.name,
+      cohort.scheduleFormat,
+      student.status,
+    ].map(csvValue).join(','));
+    const csv = [headers.map(csvValue).join(','), ...rows].join('\r\n');
+    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `${cohort.id}-student-roster.csv`;
+    link.click();
+    URL.revokeObjectURL(url);
+  };
   const reviewApplication = (application: typeof applications[number]) => {
     setSelectedAppId(application.id);
     if (application.status === 'NEW') updateApplicationStatus(application.id, 'UNDER_REVIEW', 'Hardware review started by admissions.');
@@ -706,40 +752,24 @@ export const AdminDashboard: React.FC = () => {
         </div>
       </div>
 
-      {/* Navigation Tabs */}
-      <div className="bg-[#FAFAFA] p-1.5 rounded-xl border border-[#E0E0E0] shadow-sm flex items-center gap-1 overflow-x-auto text-xs font-bold font-mono">
-        {[
-          { id: 'OVERVIEW', label: 'Operations Overview', icon: TrendingUp },
-          { id: 'APPLICATIONS', label: `Student Applications (${applications.length})`, icon: Users },
-          { id: 'BULK_OPS', label: 'Bulk Operations', icon: Zap },
-          { id: 'EMAIL_AUTOMATION', label: 'Email Templates', icon: Mail },
-          { id: 'INVOICES', label: `Invoices (${invoices.length})`, icon: FileText },
-          { id: 'COHORTS', label: `Cohorts (${cohorts.length})`, icon: Calendar },
-          { id: 'LEADS', label: `Leads CRM (${leads.length})`, icon: MessageSquare },
-          { id: 'CERTIFICATES', label: `Certificates (${certificates.length})`, icon: Award },
-          { id: 'AUDIT_LOG', label: 'Audit Log', icon: ScrollText },
-          ...(currentRole === 'ADMIN' ? [{ id: 'CURRICULUM', label: 'Curriculum', icon: Layers }, { id: 'STAFF', label: 'Staff Accounts', icon: Users }, { id: 'SETTINGS', label: 'Settings', icon: Settings }] : [])
-        ].map((tab) => {
-          const Icon = tab.icon;
-          const isSelected = activeTab === tab.id;
-          return (
-            <button
-              key={tab.id}
-              onClick={() => setActiveTab(tab.id as any)}
-              className={`flex items-center gap-2 px-3.5 py-2 rounded-lg transition whitespace-nowrap uppercase tracking-wider text-[11px] ${
-                isSelected 
-                  ? 'bg-[#000000] text-white shadow' 
-                  : 'text-[#707070] hover:text-[#000000] hover:bg-[#E0E0E0]/50'
-              }`}
-            >
-              <Icon className="w-3.5 h-3.5" />
-              <span>{tab.label}</span>
-            </button>
-          );
-        })}
-      </div>
+      <nav aria-label="Administration sections" className="space-y-3 rounded-2xl border border-[#E0E0E0] bg-[#FAFAFA] p-3 shadow-sm">
+        {([
+          ['Operations', [{ id: 'OVERVIEW', label: 'Overview', icon: TrendingUp }, { id: 'APPLICATIONS', label: `Applications (${applications.length})`, icon: Users }, { id: 'LEADS', label: `Leads (${leads.length})`, icon: MessageSquare }]],
+          ['Finance', [{ id: 'INVOICES', label: `Invoices (${invoices.length})`, icon: FileText }, { id: 'BULK_OPS', label: 'Bulk operations', icon: Zap }]],
+          ['Learning', [{ id: 'COHORTS', label: `Cohorts (${cohorts.length})`, icon: Calendar }, { id: 'TICKETS', label: 'Tickets', icon: Terminal }, { id: 'LAB_MACHINES', label: 'Lab Machines', icon: Terminal }, { id: 'CERTIFICATES', label: `Certificates (${certificates.length})`, icon: Award }, ...(currentRole === 'ADMIN' ? [{ id: 'CURRICULUM' as AdminTab, label: 'Curriculum', icon: Layers }] : [])]],
+          ['System', [{ id: 'EMAIL_AUTOMATION', label: 'Email templates', icon: Mail }, { id: 'AUDIT_LOG', label: 'Audit log', icon: ScrollText }, ...(currentRole === 'ADMIN' ? [{ id: 'STAFF' as AdminTab, label: 'Staff', icon: Users }, { id: 'SETTINGS' as AdminTab, label: 'Settings', icon: Settings }] : [])]],
+        ] as Array<[string, Array<{ id: AdminTab; label: string; icon: React.ComponentType<{ className?: string }> }>]>).map(([group, tabs]) => (
+          <div key={group} className="flex flex-col gap-1 sm:flex-row sm:items-center">
+            <span className="w-24 shrink-0 px-2 text-[10px] font-bold uppercase tracking-[0.16em] text-[#707070]">{group}</span>
+            <div className="flex min-w-0 gap-1 overflow-x-auto pb-1 sm:pb-0">
+              {tabs.map(tab => { const Icon = tab.icon; const selected = activeTab === tab.id; return <button key={tab.id} type="button" aria-current={selected ? 'page' : undefined} onClick={() => setActiveTab(tab.id)} className={`flex shrink-0 items-center gap-2 rounded-lg px-3 py-2 text-[11px] font-bold transition ${selected ? 'bg-black text-white shadow-sm' : 'text-[#555] hover:bg-white hover:text-black'}`}><Icon className="h-3.5 w-3.5" /><span>{tab.label}</span></button>; })}
+            </div>
+          </div>
+        ))}
+      </nav>
 
       {/* TAB 1: OVERVIEW */}
+      {activeTab === 'LAB_MACHINES' && <LabPilotPanel staff />}
       {activeTab === 'OVERVIEW' && (
         <div className="space-y-8 animate-in fade-in">
           {/* Top 4 Metric KPI Cards */}
@@ -909,7 +939,7 @@ export const AdminDashboard: React.FC = () => {
                     {selectedApp.firstName} {selectedApp.lastName}
                   </h4>
                 </div>
-                <div className="flex items-center gap-2">{currentRole === 'ADMIN' && <button onClick={() => editingStudentRecord ? setEditingStudentRecord(false) : startStudentRecordEdit(selectedApp)} className="px-3 py-1.5 border border-[#E0E0E0] bg-white rounded-lg text-[10px] font-bold uppercase">{editingStudentRecord ? 'Cancel Edit' : 'Edit Record'}</button>}<button onClick={() => setSelectedAppId(null)} className="text-xs font-mono uppercase text-[#707070] hover:text-[#000000]">Close Inspection</button></div>
+                <div className="flex items-center gap-2">{currentRole === 'ADMIN' && <><button onClick={() => editingStudentRecord ? setEditingStudentRecord(false) : startStudentRecordEdit(selectedApp)} className="px-3 py-1.5 border border-[#E0E0E0] bg-white rounded-lg text-[10px] font-bold uppercase">{editingStudentRecord ? 'Cancel Edit' : 'Edit Record'}</button><button onClick={() => void handleDeleteStudent(selectedApp)} className="px-3 py-1.5 border border-red-200 bg-red-50 text-red-700 rounded-lg text-[10px] font-bold uppercase hover:bg-red-100">Delete</button></>}<button onClick={() => setSelectedAppId(null)} className="text-xs font-mono uppercase text-[#707070] hover:text-[#000000]">Close Inspection</button></div>
               </div>
 
               {editingStudentRecord && <section className="p-5 bg-white rounded-xl border-2 border-black space-y-4"><div><h5 className="font-bold text-sm">Edit Student Record</h5><p className="text-[11px] text-[#707070]">Cohort transfers and installment schedules remain in their dedicated controlled workflows below.</p></div><div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 text-xs">{([
@@ -1027,7 +1057,7 @@ export const AdminDashboard: React.FC = () => {
               <div className="flex flex-wrap items-center justify-between gap-3 pt-2 border-t border-[#E0E0E0]">
                 <div className="flex items-center gap-2 text-xs font-mono">
                   <span>Current Status:</span>
-                  <strong className="text-[#000000] uppercase font-bold">{selectedApp.status}</strong>
+                  <StatusBadge status={selectedApp.status} />
                 </div>
 
                 <div className="flex items-center gap-2">
@@ -1249,7 +1279,7 @@ export const AdminDashboard: React.FC = () => {
                 <div className="flex items-center justify-between border-b border-[#E0E0E0] pb-3">
                   <h4 className="font-bold text-base text-[#000000]">{cohort.name}</h4>
                   <span className="text-[10px] font-mono font-bold bg-[#000000] text-white px-2 py-0.5 rounded uppercase tracking-wider">
-                    {cohort.status}
+                    <StatusBadge status={cohort.status} />
                   </span>
                 </div>
 
@@ -1260,6 +1290,53 @@ export const AdminDashboard: React.FC = () => {
                   <p><strong className="text-[#000000]">Enrolled:</strong> <strong className="text-[#000000]">{cohort.enrolledCount} / {cohort.capacity} Students</strong></p>
                   <p><strong className="text-[#000000]">Remaining:</strong> <strong className={cohort.enrolledCount >= cohort.capacity ? 'text-[#A05A00]' : 'text-[#008000]'}>{Math.max(0, cohort.capacity - cohort.enrolledCount)} seats{cohort.enrolledCount >= cohort.capacity ? ' - waitlist active' : ''}</strong></p>
                   <p><strong className="text-[#000000]">Waitlisted:</strong> <strong className="text-[#000000]">{applications.filter(application => application.cohortId === cohort.id && application.status === 'WAITLISTED').length} applicants</strong></p>
+                </div>
+
+                <div className="border-t border-[#E0E0E0] pt-4 space-y-3">
+                  <div className="flex items-start justify-between gap-3">
+                    <div>
+                    <h5 className="text-[10px] font-bold uppercase tracking-wider text-[#000000]">Class roster by plan</h5>
+                    <p className="text-[10px] text-[#707070] mt-1">Shared cohort: {cohort.scheduleFormat}</p>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => exportCohortRoster(cohort)}
+                      className="inline-flex shrink-0 items-center gap-1.5 rounded-lg border border-[#E0E0E0] bg-[#FAFAFA] px-2.5 py-2 text-[10px] font-bold uppercase tracking-wider text-[#000000] hover:bg-[#E0E0E0]"
+                      title={`Export ${cohort.name} roster as CSV`}
+                    >
+                      <Download className="h-3.5 w-3.5" />
+                      CSV
+                    </button>
+                  </div>
+                  {applications.some(application => application.cohortId === cohort.id && ['ENROLLED', 'COMPLETED'].includes(application.status)) ? (
+                    <div className="overflow-x-auto rounded-lg border border-[#E0E0E0]">
+                      <table className="w-full min-w-[680px] text-left text-[11px]">
+                        <thead className="bg-[#FAFAFA] text-[10px] uppercase tracking-wider text-[#707070]">
+                          <tr>
+                            <th className="px-3 py-2 font-bold">Student</th>
+                            <th className="px-3 py-2 font-bold">Plan</th>
+                            <th className="px-3 py-2 font-bold">Session</th>
+                            <th className="px-3 py-2 font-bold">Status</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-[#E0E0E0]">
+                          {applications.filter(application => application.cohortId === cohort.id && ['ENROLLED', 'COMPLETED'].includes(application.status)).map(student => (
+                            <tr key={student.id} className="bg-white">
+                              <td className="px-3 py-2">
+                                <span className="block font-bold text-[#000000]">{student.firstName} {student.lastName}</span>
+                                <span className="text-[10px] text-[#707070]">{student.email}</span>
+                              </td>
+                              <td className="px-3 py-2 text-[#1A1A1A]">{TIER_CARD_DEFAULTS[student.selectedTier].displayName}</td>
+                              <td className="px-3 py-2 text-[#1A1A1A]">{SESSION_TRACKS[student.selectedTier].name}</td>
+                              <td className="px-3 py-2"><StatusBadge status={student.status} /></td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  ) : (
+                    <p className="text-xs text-[#707070]">No enrolled students assigned yet.</p>
+                  )}
                 </div>
 
                 <div className="pt-2 border-t border-[#E0E0E0] flex items-center gap-2">
@@ -1395,7 +1472,7 @@ export const AdminDashboard: React.FC = () => {
                 <p className="text-xs text-[#707070] line-clamp-2 leading-relaxed">{ticket.symptoms}</p>
                 <div className="pt-2 border-t border-[#E0E0E0] flex items-center justify-between text-xs font-mono">
                   <span className="text-[#707070] text-[11px]">Target: {ticket.vmEnvironment}</span>
-                  <span className="font-bold text-[#000000]">{ticket.status}</span>
+                  <StatusBadge status={ticket.status} />
                 </div>
               </div>
             ))}
@@ -2080,7 +2157,7 @@ export const AdminDashboard: React.FC = () => {
                           <span className={`text-[10px] font-mono font-bold px-3 py-1 rounded-full uppercase tracking-wider border ${
                             invoice.status === 'VERIFIED' ? 'bg-[#000000] text-white border-[#000000]' : 'bg-[#FAFAFA] text-[#707070] border-[#E0E0E0]'
                           }`}>
-                            {invoice.status}
+                            {friendlyStatus(invoice.status)}
                           </span>
                           {payments.some(item => item.invoiceId === invoice.id && item.status === 'SUBMITTED') && (
                             <button
