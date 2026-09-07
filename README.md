@@ -4,7 +4,13 @@ TechLabs Academy SA is a practical IT training platform for admissions, student 
 
 See [AUDIT.md](AUDIT.md) for the verified system architecture, operational workflows, security posture, risks, and production-readiness checklist.
 
+For instructor-controlled Windows VM exercises, see the [Lab Agent pilot setup](docs/LAB_AGENT_PILOT.md). The pilot adds Lab Machines for staff and practical verification in the student Support tab.
+
+For private cloud storage of payment proofs, see [Cloudflare R2 setup and migration](docs/R2_PAYMENT_PROOFS.md).
+
 Staff members should use the [Staff Guide](STAFF_GUIDE.md) for admissions, payment verification, cohort management, communications, student documents, and daily operating procedures.
+
+Applicants and students should use the [User Guide](USER_GUIDE.md) for applications, portal access, payments, learning activities, documents, support, and certificate verification.
 
 ## Local development
 

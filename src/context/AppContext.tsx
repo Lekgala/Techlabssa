@@ -128,6 +128,7 @@ interface AppContextType {
   
   submitApplication: (appData: Omit<Application, 'id' | 'referenceNumber' | 'submissionDate' | 'status'>) => Promise<string>;
   updateApplicationStatus: (id: string, status: ApplicationStatus, notes?: string) => void;
+  deleteStudentRecord: (id: string) => Promise<boolean>;
   recordApplicationDecision: (id: string, status: 'REJECTED' | 'WAITLISTED' | 'WITHDRAWN', reason: string) => Promise<boolean>;
   transferApplicationCohort: (id: string, cohortId: string, reason: string) => Promise<boolean>;
   updateStudentRecord: (id: string, updates: Partial<Application>) => Promise<boolean>;
@@ -240,6 +241,16 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     }
   };
 
+  // Tabs share the API token. Rehydrate the whole page when another tab changes
+  // accounts so an old staff view cannot continue with a student session.
+  useEffect(() => {
+    const syncSession = (event: StorageEvent) => {
+      if (event.storageArea === localStorage && (event.key === 'techlabs_session' || event.key === null) && event.oldValue !== event.newValue) window.location.reload();
+    };
+    window.addEventListener('storage', syncSession);
+    return () => window.removeEventListener('storage', syncSession);
+  }, []);
+
   // Navigation
   const normalizeRoute = (input?: string): string => {
     if (!input) return '/';
@@ -316,15 +327,19 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   const adminLogin = async (email: string, password: string): Promise<boolean> => {
     try {
-      const response = await apiRequest<{ token: string; user: User }>('/auth/admin', { method: 'POST', body: JSON.stringify({ email, password }) });
+      const response = await apiRequest<{ token: string; user: User }>('/auth/admin', { method: 'POST', body: JSON.stringify({ email, password }), signal: AbortSignal.timeout(15000) });
       setApiSession(response.token); setCurrentRole(response.user.role); setCurrentUser(response.user);
-      const data = await apiRequest<any>('/admin/data');
+      const data = await apiRequest<any>('/admin/data', { signal: AbortSignal.timeout(15000) });
       setLeads(data.leads || []); setApplications(data.applications || []); setCohorts(data.cohorts || []); setTickets(data.tickets || []); setLabs(data.labs || []); setInvoices(data.invoices || []); setAssessments(data.assessments || []); setCertificates(data.certificates || []); setAttendance(data.attendance || []); setCourseModules(data.courseModules || []);
       setPayments(data.payments || []);
       if (data.academySettings) setSettings(data.academySettings);
       showToast('success', 'Admin Signed In', 'Welcome to the TechLabs admissions console.'); navigate('/admin'); return true;
-    } catch {
-      showToast('error', 'Access Denied', 'Invalid administrator credentials.'); return false;
+    } catch (error) {
+      const message = error instanceof Error && error.name === 'TimeoutError'
+        ? 'The server took too long to respond. Check that the Academy API is running and can reach the database.'
+        : error instanceof TypeError ? 'Could not reach the Academy API. Check the local server connection.'
+        : error instanceof Error ? error.message : 'Sign-in could not be completed. Please try again.';
+      showToast('error', 'Sign-in could not be completed', message); return false;
     }
   };
 
@@ -666,6 +681,18 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       if (response.invoice) setInvoices(current => current.map(invoice => invoice.id === response.invoice!.id ? response.invoice! : invoice));
       showToast('success', 'Student Record Updated', 'Corrections were saved and added to the audit log.'); return true;
     } catch (error) { showToast('error', 'Record Update Failed', error instanceof Error ? error.message : 'The student record could not be updated.'); return false; }
+  };
+
+  const deleteStudentRecord = async (id: string): Promise<boolean> => {
+    try {
+      await apiRequest(`/admin/applications/${encodeURIComponent(id)}`, { method: 'DELETE' });
+      setApplications(current => current.filter(application => application.id !== id));
+      showToast('success', 'Student Record Deleted', 'The student and their unused admission records were removed.');
+      return true;
+    } catch (error) {
+      showToast('error', 'Student Not Deleted', error instanceof Error ? error.message : 'The student record could not be deleted.');
+      return false;
+    }
   };
 
   const setPaymentRemindersPaused = async (id: string, paused: boolean): Promise<boolean> => {
@@ -1023,6 +1050,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         saveCourseModule,
         submitApplication,
         updateApplicationStatus,
+        deleteStudentRecord,
         recordApplicationDecision,
         transferApplicationCohort,
         updateStudentRecord,

@@ -1,7 +1,5 @@
 import cors from 'cors';
 import crypto from 'node:crypto';
-import fs from 'node:fs/promises';
-import path from 'node:path';
 import 'dotenv/config';
 import express, { type NextFunction, type Request, type Response } from 'express';
 import { getDatabase, saveDatabase } from './data/store';
@@ -10,6 +8,8 @@ import { emailAutomationEngine } from './services/email-automation';
 import { bulkOperationsService } from './services/bulk-operations';
 import { escapeHtml, sendEmail } from './services/email-service';
 import { runPaymentReminders } from './services/payment-reminders';
+import { createLabPilotRouter } from './services/lab-pilot';
+import { createProofStorage, proofNotFound } from './services/proof-storage';
 import { buildCohortCalendar, buildCurriculumSchedule } from '../src/lib/curriculumSchedule';
 
 type Session = { role: 'ADMIN' | 'INSTRUCTOR' | 'STUDENT'; userId: string; email: string; expiresAt: number };
@@ -19,7 +19,7 @@ const PORT = Number(process.env.PORT || 4000);
 const requestWindows = new Map<string, { count: number; resetAt: number }>();
 const adminEmail = (process.env.ADMIN_EMAIL || 'admin@localhost').toLowerCase();
 const adminPassword = process.env.ADMIN_PASSWORD || '';
-const proofDirectory = path.resolve(process.env.PAYMENT_PROOF_DIR || 'server/data/payment-proofs');
+const proofStorage = createProofStorage();
 setInterval(() => {
   const now = Date.now();
   for (const [key, value] of requestWindows) if (value.resetAt <= now) requestWindows.delete(key);
@@ -142,6 +142,25 @@ const rateLimit = (name: string, limit: number, windowMs: number) => (req: Reque
   next();
 };
 
+app.use('/api/lab-pilot', authenticate, rateLimit('lab-pilot', 60, 60 * 1000), createLabPilotRouter({ getTickets: async () => (await getDatabase()).tickets }));
+app.get('/api/admin/lab-pilot-students', authenticate, requireAnyRole('ADMIN', 'INSTRUCTOR'), async (_req, res, next) => {
+  try { const db = await getDatabase(); res.json(db.applications.filter(a => a.status === 'ENROLLED').map(a => ({ id: a.id, name: `${a.firstName} ${a.lastName}` }))); } catch (error) { next(error); }
+});
+app.post('/api/admin/lab-pilot-tickets', authenticate, requireAnyRole('ADMIN', 'INSTRUCTOR'), async (req: AuthedRequest, res, next) => {
+  try {
+    const scenarios: Record<string, { title: string; description: string }> = {
+      'TEST-001': { title: 'Practice incident: lab marker remains present', description: 'Locate C:\\ProgramData\\TechLabs\\LabAgent\\Sandbox\\broken.txt in the assigned VM. Remove only this marker file, explain your action, and request verification.' },
+      'WIN-001': { title: 'Printing is unavailable on the lab workstation', description: 'Investigate why the lab workstation cannot print. Restore printing services and document your diagnosis.' },
+      'DNS-001': { title: 'The lab workstation cannot resolve expected hostnames', description: 'Investigate the lab network configuration and restore the instructor-approved DNS configuration. Document your checks and repair.' },
+    };
+    const scenario = scenarios[req.body?.faultId];
+    if (!scenario || !['TEST-001', 'WIN-001', 'DNS-001'].includes(req.body?.faultId)) return res.status(400).json({ error: 'Choose a pilot scenario.' });
+    const db = await getDatabase(); const student = db.applications.find(a => a.id === req.body?.studentId && a.status === 'ENROLLED');
+    if (!student) return res.status(400).json({ error: 'Choose an enrolled student.' });
+    const ticket = { id: makeId('tkt'), ticketNumber: `LAB-${crypto.randomUUID().slice(0, 8).toUpperCase()}`, priority: 'P3' as const, department: 'Training Lab', companyName: 'TechLabs', requestedBy: 'Lab instructor', device: 'Assigned pilot VM', issueTitle: scenario.title, description: scenario.description, systemEnvironment: 'Disposable Windows lab VM', stepsToReproduce: [], troubleshootingGuidance: [], expectedFix: '', status: 'OPEN' as const, assignedStudentId: student.id };
+    db.tickets.push(ticket); addAudit(db, req, 'LAB_TICKET_CREATED', 'ticket', ticket.id, `Pilot ticket assigned to ${student.id}`); await saveDatabase(db); res.status(201).json(ticket);
+  } catch (error) { next(error); }
+});
 app.get('/api/health', (_req, res) => res.json({ ok: true, service: 'techlabs-api', timestamp: new Date().toISOString() }));
 app.post('/api/webhooks/resend', async (req: AuthedRequest, res) => {
   if (!verifyResendWebhook(req)) return res.status(401).json({ error: 'Invalid webhook signature' });
@@ -507,7 +526,8 @@ app.get(['/api/student/documents/:type/:recordId?', '/api/admin/applications/:ap
   res.type('application/pdf').setHeader('Content-Disposition', `inline; filename="${filename.replace(/[^A-Za-z0-9._-]/g, '-')}"`).send(pdf);
 });
 
-app.post('/api/student/invoices/:id/proof', authenticate, requireRole('STUDENT'), express.raw({ type: ['application/pdf', 'image/jpeg', 'image/png'], limit: '5mb' }), async (req: AuthedRequest, res) => {
+app.post('/api/student/invoices/:id/proof', authenticate, requireRole('STUDENT'), express.raw({ type: ['application/pdf', 'image/jpeg', 'image/png'], limit: '5mb' }), async (req: AuthedRequest, res, next) => {
+  try {
   const mimeType = req.header('content-type') as 'application/pdf' | 'image/jpeg' | 'image/png';
   const file = req.body as Buffer;
   const originalFileName = decodeURIComponent(req.header('x-file-name') || 'proof-of-payment');
@@ -530,22 +550,27 @@ app.post('/api/student/invoices/:id/proof', authenticate, requireRole('STUDENT')
   const nextInstallment = db.paymentInstallments.filter(item => item.invoiceId === invoice.id && item.status !== 'PAID').sort((a, b) => a.sequence - b.sequence)[0];
   const amountZAR = nextInstallment ? nextInstallment.amountZAR - nextInstallment.paidZAR : type === 'DEPOSIT' ? Math.min(1000, invoice.amountZAR) : invoice.amountZAR - paidZAR;
   const extension = mimeType === 'application/pdf' ? '.pdf' : mimeType === 'image/png' ? '.png' : '.jpg';
-  const id = makeId('pay'); const storageKey = `${id}${extension}`;
-  await fs.mkdir(proofDirectory, { recursive: true });
-  await fs.writeFile(path.join(proofDirectory, storageKey), file, { flag: 'wx' });
+  const id = makeId('pay');
+  const storageKey = await proofStorage.put(`${id}${extension}`, file, mimeType);
   const payment = { id, invoiceId: invoice.id, studentId: application.id, amountZAR, type, status: 'SUBMITTED', originalFileName: originalFileName.slice(0, 255), storageKey, mimeType, sizeBytes: file.length, sha256, eftReference, submittedAt: new Date().toISOString() } as const;
   db.payments = [payment, ...db.payments];
   invoice.status = 'AWAITING_VERIFICATION'; invoice.proofOfPaymentUrl = `/api/payments/${id}/proof`;
   if (application.status !== 'ENROLLED') application.status = 'PAYMENT_REQUIRED';
   await saveDatabase(db);
   res.status(201).json({ payment, invoice });
+  } catch (error) { next(error); }
 });
 
-app.get('/api/payments/:id/proof', authenticate, async (req: AuthedRequest, res) => {
+app.get('/api/payments/:id/proof', authenticate, async (req: AuthedRequest, res, next) => {
+  try {
   const db = await getDatabase(); const payment = db.payments.find(item => item.id === req.params.id);
   if (!payment) return res.status(404).json({ error: 'Payment proof not found' });
   if (req.session!.role !== 'ADMIN' && payment.studentId !== req.session!.userId) return res.status(403).json({ error: 'Forbidden' });
-  res.type(payment.mimeType).setHeader('Content-Disposition', `inline; filename="${payment.originalFileName.replace(/["\r\n]/g, '')}"`).sendFile(path.join(proofDirectory, payment.storageKey));
+  const file = await proofStorage.get(payment.storageKey, payment.sha256);
+  res.setHeader('Cache-Control', 'private, no-store');
+  res.setHeader('X-Content-Type-Options', 'nosniff');
+  res.type(payment.mimeType).setHeader('Content-Disposition', `inline; filename="${payment.originalFileName.replace(/[^\x20-\x7E]|["\\]/g, '_')}"`).send(file);
+  } catch (error) { if (proofNotFound(error)) return res.status(404).json({ error: 'Payment proof file not found' }); next(error); }
 });
 
 app.post('/api/admin/payments/:id/verify', authenticate, requireRole('ADMIN'), serializeEnrollment, async (req: AuthedRequest, res) => {
@@ -598,7 +623,7 @@ app.post('/api/admin/payments/:id/reject', authenticate, requireRole('ADMIN'), a
 });
 
 // Application, CRM lead, and invoice are committed together.
-app.post('/api/applications', rateLimit('applications', 5, 60 * 60 * 1000), async (req, res) => {
+app.post('/api/applications', rateLimit('applications', 5, 60 * 60 * 1000), serializeEnrollment, async (req, res) => {
   const data = req.body || {};
   if (!requiredText(data.firstName, 80) || !requiredText(data.lastName, 80) || !validEmail(data.email) || !requiredText(data.whatsapp, 30) || !requiredText(data.cohortId, 100) || data.acceptedTerms !== true || data.acceptedPrivacy !== true) return res.status(400).json({ error: 'Valid contact details, cohort and required consent are required' });
   const db = await getDatabase();
@@ -772,6 +797,35 @@ app.post('/api/admin/applications/:id/transfer', authenticate, requireRole('ADMI
   res.json({ application, sourceCohort, targetCohort, emailDelivery: delivery });
 });
 
+app.delete('/api/admin/applications/:id', authenticate, requireRole('ADMIN'), serializeEnrollment, async (req: AuthedRequest, res) => {
+  const db = await getDatabase();
+  const application = db.applications.find(item => item.id === req.params.id);
+  if (!application) return res.status(404).json({ error: 'Student record not found' });
+  if (['ENROLLED', 'COMPLETED'].includes(application.status)) return res.status(409).json({ error: 'Enrolled students must be withdrawn instead of deleted' });
+
+  const invoiceIds = new Set(db.invoices.filter(item => item.studentEmail.toLowerCase() === application.email.toLowerCase()).map(item => item.id));
+  if (db.payments.some(item => item.studentId === application.id || invoiceIds.has(item.invoiceId))) return res.status(409).json({ error: 'Students with payment history cannot be deleted; withdraw the application to preserve financial records' });
+  if (db.attendance.some(item => item.studentId === application.id)
+    || db.assessments.some(item => item.studentId === application.id)
+    || db.certificates.some(item => item.studentId === application.id)
+    || db.tickets.some(item => item.assignedStudentId === application.id)) return res.status(409).json({ error: 'Students with academic or support history cannot be deleted; withdraw the application instead' });
+
+  const cohort = db.cohorts.find(item => item.id === application.cohortId);
+  addAudit(db, req, 'STUDENT_RECORD_DELETED', 'application', application.id, `Unused student record deleted for ${application.referenceNumber}`, { email: { before: application.email, after: null }, status: { before: application.status, after: null } });
+  db.applications = db.applications.filter(item => item.id !== application.id);
+  db.invoices = db.invoices.filter(item => !invoiceIds.has(item.id));
+  db.paymentInstallments = db.paymentInstallments.filter(item => !invoiceIds.has(item.invoiceId));
+  db.studentCredentials = db.studentCredentials.filter(item => item.applicationId !== application.id);
+  db.authTokens = db.authTokens.filter(item => item.applicationId !== application.id);
+  db.sessions = db.sessions.filter(item => item.userId !== application.id);
+  db.paymentReminders = db.paymentReminders.filter(item => item.applicationId !== application.id);
+  db.admissionNotes = db.admissionNotes.filter(item => item.applicationId !== application.id);
+  db.admissionTasks = db.admissionTasks.filter(item => item.applicationId !== application.id);
+  if (cohort) cohort.enrolledCount = db.applications.filter(item => item.cohortId === cohort.id && ['ENROLLED', 'COMPLETED'].includes(item.status)).length;
+  await saveDatabase(db);
+  res.status(204).send();
+});
+
 const adminCollections = ['leads','applications','cohorts','tickets','labs','invoices','assessments','certificates','attendance','courseModules'] as const;
 for (const collection of adminCollections) {
   app.put(`/api/${collection}/:id`, authenticate, requireRole('ADMIN'), serializeEnrollment, async (req: AuthedRequest, res) => {
@@ -792,6 +846,9 @@ for (const collection of adminCollections) {
     if (collection === 'applications' && updates.status === 'ENROLLED' && !['ENROLLED', 'COMPLETED'].includes(before.status)) {
       const targetCohortId = updates.cohortId || before.cohortId; const cohort = db.cohorts.find(item => item.id === targetCohortId);
       if (!cohort) return res.status(409).json({ error: 'Linked cohort is missing' });
+      const invoice = db.invoices.find(item => item.studentEmail.toLowerCase() === before.email.toLowerCase());
+      const verifiedPaid = invoice ? db.payments.filter(item => item.invoiceId === invoice.id && item.status === 'VERIFIED').reduce((total, item) => total + item.amountZAR, 0) : 0;
+      if (!invoice || verifiedPaid < Math.min(1000, invoice.amountZAR)) return res.status(409).json({ error: 'Verify the required seat deposit before enrolling this student' });
       const occupiedSeats = db.applications.filter(item => item.id !== before.id && item.cohortId === targetCohortId && ['ENROLLED', 'COMPLETED'].includes(item.status)).length;
       if (occupiedSeats >= cohort.capacity) updates.status = 'WAITLISTED';
     }
