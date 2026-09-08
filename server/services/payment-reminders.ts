@@ -1,7 +1,7 @@
 import crypto from 'node:crypto';
 import type { TechlabsDatabase } from '../data/store';
 import type { PaymentReminderType } from '../../src/types';
-import { escapeHtml, sendEmail } from './email-service';
+import { escapeHtml, sendEmail } from './email-service.ts';
 
 const DAY = 86_400_000;
 const dateValue = (value: string) => new Date(`${value}T00:00:00Z`).getTime();

@@ -1,5 +1,5 @@
 import type { TechlabsDatabase } from '../data/store';
-import { matchYocoPayment } from './yoco';
+import { matchYocoPayment } from './yoco.ts';
 
 export type YocoIntent = {
   id: string; invoiceId: string; studentId: string; amountCents: number;
