@@ -10,7 +10,7 @@ import {
   INITIAL_ATTENDANCE, 
   INITIAL_ASSESSMENTS, 
   SAMPLE_CERTIFICATE 
-} from '../../src/data/mockData';
+} from '../../src/data/mockData.ts';
 
 import type {
   Application,
@@ -37,7 +37,7 @@ import type {
   AdmissionTask,
   PaymentInstallment,
 } from '../../src/types';
-import { DEFAULT_EMAIL_TEMPLATES, type EmailTemplate } from '../services/email-automation';
+import { DEFAULT_EMAIL_TEMPLATES, type EmailTemplate } from '../services/email-automation.ts';
 
 // Re-export types for use in server code
 export type {
@@ -67,6 +67,7 @@ if (!['sqlite', 'postgres'].includes(DATABASE_PROVIDER)) {
 }
 
 export type TechlabsDatabase = {
+  yocoCheckouts?: import('../services/yoco-ledger').YocoIntent[];
   currentUser: User | null;
   currentRole: 'VISITOR' | 'STUDENT' | 'INSTRUCTOR' | 'ADMIN';
   leads: Lead[];
@@ -278,6 +279,12 @@ const postgres = DATABASE_PROVIDER === 'postgres'
 
 let initialization: Promise<void> | null = null;
 let writeQueue: Promise<void> = Promise.resolve();
+const snapshots = new WeakMap<object, string>();
+const baselineValues = new WeakMap<object, Record<string, unknown>>();
+const canonical = (value: any): any => Array.isArray(value) ? value.map(canonical) : value && typeof value === 'object'
+  ? Object.fromEntries(Object.keys(value).sort().filter(key => value[key] !== undefined).map(key => [key, canonical(value[key])])) : value;
+const fingerprint = (value: Record<string, unknown>) => JSON.stringify(canonical(value));
+export class DatabaseConflict extends Error { constructor() { super('Data changed during this request. Please retry.'); } }
 
 async function initializeStorage(): Promise<void> {
   if (initialization) return initialization;
@@ -326,15 +333,28 @@ async function readCollections(): Promise<Record<string, unknown>> {
   return Object.fromEntries(rows.map(row => [row.key, row.value]));
 }
 
-async function writeCollections(entries: Array<[string, unknown]>): Promise<void> {
+async function writeCollections(entries: Array<[string, unknown]>, expected?: string, expectedKeys?: Record<string, unknown>): Promise<void> {
+  const check = (current: Record<string, unknown>) => {
+    if (expected !== undefined && fingerprint(current) !== expected) throw new DatabaseConflict();
+    if (expectedKeys && Object.keys(expectedKeys).some(key => JSON.stringify(canonical(current[key])) !== JSON.stringify(canonical(expectedKeys[key])))) throw new DatabaseConflict();
+  };
   if (sqlite) {
     const upsert = sqlite.prepare('INSERT INTO collections (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value');
-    sqlite.transaction(() => entries.forEach(([key, value]) => upsert.run(key, JSON.stringify(value))))();
+    sqlite.transaction(() => {
+      const rows = sqlite.prepare('SELECT key, value FROM collections').all() as Array<{ key: string; value: string }>;
+      check(Object.fromEntries(rows.map(row => [row.key, JSON.parse(row.value)])));
+      entries.forEach(([key, value]) => upsert.run(key, JSON.stringify(value)));
+    }).immediate();
     return;
   }
   const client = await postgres!.connect();
   try {
     await client.query('BEGIN');
+    await client.query('SELECT pg_advisory_xact_lock(7393812)');
+    if (expected !== undefined || expectedKeys) {
+      const rows = (await client.query<CollectionRow>('SELECT key, value FROM collections')).rows;
+      check(Object.fromEntries(rows.map(row => [row.key, row.value])));
+    }
     for (const [key, value] of entries) {
       await client.query(
         'INSERT INTO collections (key, value) VALUES ($1, $2::jsonb) ON CONFLICT(key) DO UPDATE SET value = EXCLUDED.value',
@@ -355,7 +375,8 @@ export async function getDatabase(): Promise<TechlabsDatabase> {
   const recordMap = await readCollections() as Partial<TechlabsDatabase>;
   const applications = recordMap.applications ?? defaultDatabase.applications;
 
-  return {
+  const database: TechlabsDatabase = {
+    yocoCheckouts: recordMap.yocoCheckouts ?? [],
     currentUser: null,
     currentRole: 'VISITOR',
     leads: recordMap.leads ?? defaultDatabase.leads,
@@ -390,11 +411,22 @@ export async function getDatabase(): Promise<TechlabsDatabase> {
     paymentInstallments: recordMap.paymentInstallments ?? [],
     emailTemplates: recordMap.emailTemplates ?? defaultDatabase.emailTemplates,
   };
+  snapshots.set(database, fingerprint(recordMap as Record<string, unknown>));
+  baselineValues.set(database, structuredClone(recordMap));
+  return database;
 }
 
-export async function saveDatabase(database: TechlabsDatabase): Promise<void> {
+export async function saveDatabase(database: TechlabsDatabase, strict = false): Promise<void> {
   await initializeStorage();
-  const pending = writeQueue.then(() => writeCollections(Object.entries(database)));
+  const expected = snapshots.get(database);
+  if (expected === undefined) throw new Error('Save requires a database snapshot from getDatabase');
+  const baseline = baselineValues.get(database)!;
+  const entries = Object.entries(database).filter(([key, value]) => JSON.stringify(canonical(value)) !== JSON.stringify(canonical(baseline[key])));
+  const pending = writeQueue.then(async () => {
+    await writeCollections(entries, strict ? expected : undefined, Object.fromEntries(entries.map(([key]) => [key, baseline[key]])));
+    snapshots.set(database, fingerprint(database));
+    baselineValues.set(database, structuredClone(database));
+  });
   writeQueue = pending.catch(() => undefined);
   await pending;
 }
@@ -404,6 +436,17 @@ export async function resetDatabase(): Promise<TechlabsDatabase> {
   if (sqlite) sqlite.prepare('DELETE FROM collections').run();
   else await postgres!.query('DELETE FROM collections');
   const seeded = { ...defaultDatabase };
-  await saveDatabase(seeded);
+  await writeCollections(Object.entries(seeded));
   return seeded;
+}
+
+/** Callbacks must be synchronous and have no external side effects: conflicts retry. */
+export async function mutateDatabase<T>(change: (db: TechlabsDatabase) => T): Promise<T> {
+  for (let attempt = 0; attempt < 8; attempt++) {
+    const db = await getDatabase();
+    const result = change(db);
+    try { await saveDatabase(db, true); return result; }
+    catch (error) { if (!(error instanceof DatabaseConflict) || attempt === 7) throw error; }
+  }
+  throw new DatabaseConflict();
 }
