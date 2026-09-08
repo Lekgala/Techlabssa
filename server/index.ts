@@ -2,7 +2,10 @@ import cors from 'cors';
 import crypto from 'node:crypto';
 import 'dotenv/config';
 import express, { type NextFunction, type Request, type Response } from 'express';
-import { getDatabase, saveDatabase } from './data/store';
+import { DatabaseConflict, getDatabase, saveDatabase } from './data/store';
+import { yocoRouter, yocoWebhook } from './services/yoco-routes';
+import { YocoError } from './services/yoco-ledger';
+import { forwardAsyncErrors } from './services/async-express';
 import { generateBrandedDocumentPDF, generateInvoiceHTML, generateInvoicePDF } from './services/invoice-service';
 import { emailAutomationEngine } from './services/email-automation';
 import { bulkOperationsService } from './services/bulk-operations';
@@ -15,6 +18,7 @@ import { buildCohortCalendar, buildCurriculumSchedule } from '../src/lib/curricu
 type Session = { role: 'ADMIN' | 'INSTRUCTOR' | 'STUDENT'; userId: string; email: string; expiresAt: number };
 type AuthedRequest = Request & { session?: Session; rawBody?: string };
 const app = express();
+forwardAsyncErrors(app);
 const PORT = Number(process.env.PORT || 4000);
 const requestWindows = new Map<string, { count: number; resetAt: number }>();
 const adminEmail = (process.env.ADMIN_EMAIL || 'admin@localhost').toLowerCase();
@@ -27,6 +31,7 @@ setInterval(() => {
 
 app.disable('x-powered-by');
 app.use(cors({ origin: process.env.APP_ORIGIN || 'http://localhost:3000' }));
+app.post('/api/webhooks/yoco', ...yocoWebhook());
 app.use(express.json({ limit: '256kb', verify: (req: AuthedRequest, _res, buffer) => { req.rawBody = buffer.toString('utf8'); } }));
 
 const safeEqual = (left: string, right: string) => {
@@ -141,6 +146,7 @@ const rateLimit = (name: string, limit: number, windowMs: number) => (req: Reque
   if (entry.count > limit) return res.status(429).json({ error: 'Too many requests. Please try again later.' });
   next();
 };
+app.use('/api', yocoRouter(authenticate, requireRole('STUDENT'), requireRole('ADMIN'), rateLimit('yoco-checkout', 10, 60_000)));
 
 app.use('/api/lab-pilot', authenticate, rateLimit('lab-pilot', 60, 60 * 1000), createLabPilotRouter({ getTickets: async () => (await getDatabase()).tickets }));
 app.get('/api/admin/lab-pilot-students', authenticate, requireAnyRole('ADMIN', 'INSTRUCTOR'), async (_req, res, next) => {
@@ -509,11 +515,12 @@ app.get(['/api/student/documents/:type/:recordId?', '/api/admin/applications/:ap
   } else if (req.params.type === 'receipt') {
     const payment = db.payments.find(item => item.id === req.params.recordId && item.studentId === application.id && item.status === 'VERIFIED');
     if (!payment || !invoice) return res.status(404).json({ error: 'Verified payment receipt not found' });
-    pdf = generateBrandedDocumentPDF({ documentTitle: 'Payment Receipt', documentNumber: payment.eftReference, issuedDate: payment.verifiedAt?.slice(0, 10) || issuedDate, ...branding, sections: [{ heading: 'Received From', lines: [{ label: 'Student', value: `${application.firstName} ${application.lastName}`, bold: true }, { label: 'Email', value: application.email }, { label: 'Invoice', value: invoice.invoiceNumber }] }, { heading: 'Payment Confirmation', lines: [{ label: 'Payment type', value: payment.type }, { label: 'Amount received', value: `R ${payment.amountZAR.toLocaleString('en-ZA', { minimumFractionDigits: 2 })}`, bold: true }, { label: 'EFT reference', value: payment.eftReference }, { label: 'Verified date', value: payment.verifiedAt || 'Verified' }, { label: 'Remaining invoice balance', value: `R ${invoice.balanceZAR.toLocaleString('en-ZA', { minimumFractionDigits: 2 })}` }] }], closingNote: 'This computer-generated receipt confirms payment verification by TechLabs Academy admissions.' });
+    pdf = generateBrandedDocumentPDF({ documentTitle: 'Payment Receipt', documentNumber: payment.eftReference, issuedDate: payment.verifiedAt?.slice(0, 10) || issuedDate, ...branding, sections: [{ heading: 'Received From', lines: [{ label: 'Student', value: `${application.firstName} ${application.lastName}`, bold: true }, { label: 'Email', value: application.email }, { label: 'Invoice', value: invoice.invoiceNumber }] }, { heading: 'Payment Confirmation', lines: [{ label: 'Payment type', value: payment.type }, { label: 'Amount received', value: `R ${payment.amountZAR.toLocaleString('en-ZA', { minimumFractionDigits: 2 })}`, bold: true }, { label: payment.provider === 'YOCO' ? 'Yoco payment reference' : 'EFT reference', value: payment.eftReference }, { label: 'Verified date', value: payment.verifiedAt || 'Verified' }, { label: 'Remaining invoice balance', value: `R ${invoice.balanceZAR.toLocaleString('en-ZA', { minimumFractionDigits: 2 })}` }] }], closingNote: payment.provider === 'YOCO' ? 'This receipt confirms a payment verified through Yoco.' : 'This computer-generated receipt confirms payment verification by TechLabs Academy admissions.' });
     filename = `receipt-${payment.eftReference}.pdf`;
   } else if (req.params.type === 'pop') {
     const payment = db.payments.find(item => item.id === req.params.recordId && item.studentId === application.id);
     if (!payment) return res.status(404).json({ error: 'Proof of payment record not found' });
+    if (payment.provider === 'YOCO') return res.status(404).json({ error: 'Use the payment receipt for card payments' });
     pdf = generateBrandedDocumentPDF({ documentTitle: 'POP Submission Record', documentNumber: payment.eftReference, issuedDate: payment.submittedAt.slice(0, 10), ...branding, sections: [{ heading: 'Submission', lines: [{ label: 'Student', value: `${application.firstName} ${application.lastName}`, bold: true }, { label: 'Invoice', value: invoice?.invoiceNumber || payment.invoiceId }, { label: 'Original POP file', value: payment.originalFileName }, { label: 'Submitted', value: payment.submittedAt }] }, { heading: 'Verification Record', lines: [{ label: 'Payment type', value: payment.type }, { label: 'Declared amount', value: `R ${payment.amountZAR.toLocaleString('en-ZA', { minimumFractionDigits: 2 })}` }, { label: 'EFT reference', value: payment.eftReference }, { label: 'Status', value: payment.status, bold: true }, { label: 'Document fingerprint', value: payment.sha256.slice(0, 40) }] }], closingNote: 'The original bank-generated POP remains securely stored and linked to this submission record.' });
     filename = `pop-record-${payment.eftReference}.pdf`;
   } else if (req.params.type === 'certificate') {
@@ -540,6 +547,7 @@ app.post('/api/student/invoices/:id/proof', authenticate, requireRole('STUDENT')
   const application = db.applications.find(item => item.id === req.session!.userId);
   const invoice = db.invoices.find(item => item.id === req.params.id && item.studentEmail.toLowerCase() === req.session!.email.toLowerCase());
   if (!application || !invoice) return res.status(404).json({ error: 'Invoice not found' });
+  if (db.yocoCheckouts?.some(i => i.invoiceId === invoice.id && i.mode === 'live' && ['PENDING', 'REVIEW'].includes(i.status))) return res.status(409).json({ error: 'A card payment is pending or needs review. Contact admissions before submitting an EFT proof.' });
   if (!['APPROVED', 'PAYMENT_REQUIRED', 'ENROLLED'].includes(application.status)) return res.status(403).json({ error: 'Payment is available after application approval' });
   if (db.payments.some(item => item.invoiceId === invoice.id && item.status === 'SUBMITTED')) return res.status(409).json({ error: 'A payment is already awaiting verification' });
   const sha256 = crypto.createHash('sha256').update(file).digest('hex');
@@ -565,6 +573,7 @@ app.get('/api/payments/:id/proof', authenticate, async (req: AuthedRequest, res,
   try {
   const db = await getDatabase(); const payment = db.payments.find(item => item.id === req.params.id);
   if (!payment) return res.status(404).json({ error: 'Payment proof not found' });
+  if (payment.provider === 'YOCO') return res.status(404).json({ error: 'Card payments do not have an uploaded proof' });
   if (req.session!.role !== 'ADMIN' && payment.studentId !== req.session!.userId) return res.status(403).json({ error: 'Forbidden' });
   const file = await proofStorage.get(payment.storageKey, payment.sha256);
   res.setHeader('Cache-Control', 'private, no-store');
@@ -1040,7 +1049,11 @@ app.post('/api/bulk/send-emails', authenticate, requireRole('ADMIN'), async (req
 });
 
 app.use('/api', (_req, res) => res.status(404).json({ error: 'API route not found' }));
-app.use((error: unknown, _req: Request, res: Response, _next: NextFunction) => { console.error(error); res.status(500).json({ error: 'Internal server error' }); });
+app.use((error: unknown, _req: Request, res: Response, _next: NextFunction) => {
+  if (error instanceof DatabaseConflict) { res.status(409).json({ error: error.message }); return; }
+  if (error instanceof YocoError) { res.status(error.status).json({ error: error.message }); return; }
+  console.error(error instanceof Error ? error.message : 'Request failed'); res.status(500).json({ error: 'Internal server error' });
+});
 let reminderRunActive = false;
 const runScheduledPaymentReminders = async () => {
   if (reminderRunActive) return;
