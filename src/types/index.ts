@@ -372,17 +372,19 @@ export interface PaymentInstallment {
 }
 
 export interface PaymentRecord {
+  provider?: 'EFT' | 'YOCO';
+  mode?: 'test' | 'live';
   id: string;
   invoiceId: string;
   studentId: string;
   amountZAR: number;
   type: 'DEPOSIT' | 'BALANCE';
   status: 'SUBMITTED' | 'VERIFIED' | 'REJECTED';
-  originalFileName: string;
-  storageKey: string;
-  mimeType: 'application/pdf' | 'image/jpeg' | 'image/png';
-  sizeBytes: number;
-  sha256: string;
+  originalFileName?: string;
+  storageKey?: string;
+  mimeType?: 'application/pdf' | 'image/jpeg' | 'image/png';
+  sizeBytes?: number;
+  sha256?: string;
   eftReference: string;
   submittedAt: string;
   verifiedAt?: string;
