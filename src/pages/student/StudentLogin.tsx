@@ -6,7 +6,7 @@ import { apiRequest, setApiSession } from '../../lib/api';
 type AccessMode = 'login' | 'forgot' | 'magic' | 'setup' | 'reset' | 'verify';
 
 export const StudentLogin: React.FC = () => {
-  const { studentLogin, navigate } = useApp();
+  const { studentLogin } = useApp();
   const params = new URLSearchParams(window.location.search);
   const linkAction = params.get('action') as AccessMode | null;
   const token = params.get('token') || '';
@@ -43,7 +43,7 @@ export const StudentLogin: React.FC = () => {
     event.preventDefault();
     setError('');
     setBusy(true);
-    if (await studentLogin(email.trim(), password)) navigate('/student');
+    if (await studentLogin(email.trim(), password)) return;
     else setError('Sign-in failed. Check your details or reset your password.');
     setBusy(false);
   };

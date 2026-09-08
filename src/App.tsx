@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useEffect } from 'react';
 import { AppProvider, useApp } from './context/AppContext';
 import { Navbar } from './components/layout/Navbar';
 import { Footer } from './components/layout/Footer';
@@ -20,15 +20,30 @@ import { StudentLogin } from './pages/student/StudentLogin';
 import { AdminDashboard } from './pages/admin/AdminDashboard';
 
 const AppContent: React.FC = () => {
-  const { currentPath, currentRole } = useApp();
+  const { currentPath, currentRole, hasHydrated, navigate } = useApp();
   const isAdminRoute = currentPath === '/admin' || currentPath === '/admin/login' || currentPath.startsWith('/admin/');
+  const path = (currentPath || '/')
+    .replace(/^#/, '')
+    .replace(/index\.html$/i, '')
+    .replace(/\/$/, '')
+    .trim() || '/';
+  const isStaff = currentRole === 'ADMIN' || currentRole === 'INSTRUCTOR';
+  const isStudentRoute = path === '/student' || path.startsWith('/student/');
+  const isAdminPortalRoute = path === '/admin' || path.startsWith('/admin/');
+  const redirectPath = !hasHydrated ? undefined
+    : isStudentRoute && currentRole === 'STUDENT' && path === '/student/login' ? '/student'
+    : isStudentRoute && isStaff ? '/admin'
+    : isAdminPortalRoute && isStaff && path === '/admin/login' ? '/admin'
+    : isAdminPortalRoute && currentRole === 'STUDENT' ? '/student'
+    : undefined;
+
+  useEffect(() => {
+    if (redirectPath) navigate(redirectPath, { replace: true });
+  }, [navigate, redirectPath]);
 
   const renderPage = () => {
-    const path = (currentPath || '/')
-      .replace(/^#/, '')
-      .replace(/index\.html$/i, '')
-      .replace(/\/$/, '')
-      .trim() || '/';
+    if (!hasHydrated && (isStudentRoute || isAdminPortalRoute)) return null;
+    if (redirectPath) return null;
 
     if (path === '/' || path === '') return <Home />;
     if (path === '/courses') return <Courses />;

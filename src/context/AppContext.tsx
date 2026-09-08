@@ -88,8 +88,9 @@ type StudentProfile = User & {
 
 interface AppContextType {
   // Navigation & Routing
+  hasHydrated: boolean;
   currentPath: string;
-  navigate: (path: string) => void;
+  navigate: (path: string, options?: { replace?: boolean }) => void;
   
   // Auth & Roles
   currentUser: User | null;
@@ -280,14 +281,14 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     return browserPath === '' ? '/' : browserPath;
   });
 
-  const navigate = (path: string) => {
+  const navigate = (path: string, options?: { replace?: boolean }) => {
     const safePath = normalizeRoute(path);
     setCurrentPath(safePath);
     if (typeof window !== 'undefined') {
       const nextUrl = new URL(window.location.href);
       nextUrl.pathname = safePath === '/' ? '/' : safePath;
       nextUrl.hash = '';
-      window.history.pushState({}, '', nextUrl.toString());
+      window.history[options?.replace ? 'replaceState' : 'pushState']({}, '', nextUrl.toString());
       window.scrollTo({ top: 0, behavior: 'smooth' });
     }
   };
@@ -1017,6 +1018,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   return (
     <AppContext.Provider
       value={{
+        hasHydrated,
         currentPath,
         navigate,
         currentUser,
