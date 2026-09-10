@@ -110,8 +110,8 @@ export const AdminDashboard: React.FC = () => {
     navigate
   } = useApp();
 
-  const [activeTab, setActiveTab] = useState<AdminTab>('OVERVIEW');
-  const [selectedAppId, setSelectedAppId] = useState<string | null>(null);
+  const [activeTab, setActiveTab] = useState<AdminTab>(() => new URLSearchParams(window.location.search).has('application') ? 'APPLICATIONS' : 'OVERVIEW');
+  const [selectedAppId, setSelectedAppId] = useState<string | null>(() => new URLSearchParams(window.location.search).get('application'));
   const [editingCohortId, setEditingCohortId] = useState<string | null>(null);
   const [selectedInvoiceForPdf, setSelectedInvoiceForPdf] = useState<Invoice | null>(null);
   const [cohortForm, setCohortForm] = useState({
@@ -234,11 +234,12 @@ export const AdminDashboard: React.FC = () => {
   };
 
   useEffect(() => {
+    if (!['ADMIN', 'INSTRUCTOR'].includes(currentRole || '')) return;
     if (!selectedAppId) { setStudentTimeline([]); setAdmissionNotes([]); setAdmissionTasks([]); return; }
     void loadStudentTimeline(selectedAppId);
     setAssignmentStaffId(applications.find(item => item.id === selectedAppId)?.assignedStaffId || '');
     void apiRequest<{ notes: AdmissionNote[]; tasks: AdmissionTask[] }>(`/admin/applications/${encodeURIComponent(selectedAppId)}/workflow`).then(result => { setAdmissionNotes(result.notes); setAdmissionTasks(result.tasks); }).catch(error => showToast('error', 'Workflow Unavailable', error instanceof Error ? error.message : 'Could not load notes and tasks.'));
-  }, [selectedAppId]);
+  }, [selectedAppId, currentRole]);
 
   const assignApplication = async (applicationId: string, staffId: string) => {
     setWorkflowSaving(true);

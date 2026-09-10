@@ -248,6 +248,10 @@ export const Navbar: React.FC = () => {
             </button>
             <button
               id="mobile-menu-toggle"
+              type="button"
+              aria-label={mobileMenuOpen ? 'Close navigation menu' : 'Open navigation menu'}
+              aria-expanded={mobileMenuOpen}
+              aria-controls="mobile-navigation"
               onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
               className="p-2 rounded-lg text-[#1A1A1A] hover:bg-[#FAFAFA]"
             >
@@ -259,7 +263,7 @@ export const Navbar: React.FC = () => {
 
       {/* Mobile Drawer */}
       {mobileMenuOpen && (
-        <div className="lg:hidden bg-[#FFFFFF] border-b border-[#F0F0F0] px-4 pt-2 pb-6 space-y-2 animate-in slide-in-from-top-4">
+        <div id="mobile-navigation" className="lg:hidden bg-[#FFFFFF] border-b border-[#F0F0F0] px-4 pt-2 pb-6 space-y-2 animate-in slide-in-from-top-4">
           {settings?.flashSale?.enabled && (
             <div 
               onClick={() => handleNav('/pricing')}
