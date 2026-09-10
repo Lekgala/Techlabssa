@@ -176,7 +176,7 @@ export const Footer: React.FC = () => {
                 </button>
               </li>
               <li>
-                <button onClick={() => navigate('/verify/TLS-2026-00124')} className="hover:text-[#000000] transition">
+                <button onClick={() => navigate('/verify')} className="hover:text-[#000000] transition">
                   Verify Certificate
                 </button>
               </li>

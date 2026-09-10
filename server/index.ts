@@ -10,6 +10,7 @@ import { generateBrandedDocumentPDF, generateInvoiceHTML, generateInvoicePDF } f
 import { emailAutomationEngine } from './services/email-automation.ts';
 import { bulkOperationsService } from './services/bulk-operations.ts';
 import { escapeHtml, sendEmail } from './services/email-service.ts';
+import { notifyAdmissions } from './services/application-notification.ts';
 import { runPaymentReminders } from './services/payment-reminders.ts';
 import { createLabPilotRouter } from './services/lab-pilot.ts';
 import { createProofStorage, proofNotFound } from './services/proof-storage.ts';
@@ -658,6 +659,7 @@ app.post('/api/applications', rateLimit('applications', 5, 60 * 60 * 1000), seri
   const submittedSubject = submittedTemplate?.subject || `Application received — ${referenceNumber}`;
   const emailDelivery = await sendEmail({ to: application.email, subject: submittedSubject, html: submittedTemplate?.html || `<h2>Thank you, ${escapeHtml(application.firstName)}!</h2><p>We received your application.</p><p><strong>Reference:</strong> ${escapeHtml(referenceNumber)}</p><p>Regards,<br>TechLabs Academy</p>` });
   db.emailDeliveries = [{ id: makeId('email'), providerId: emailDelivery.id, recipient: application.email, subject: submittedSubject, category: 'APPLICATION_SUBMITTED', status: emailDelivery.sent ? 'SENT' : 'FAILED', reason: emailDelivery.reason, createdAt: new Date().toISOString() }, ...db.emailDeliveries];
+  db.emailDeliveries.unshift(await notifyAdmissions(application, selectedCohort.name));
   await saveDatabase(db);
   res.status(201).json({ application, invoice, emailDelivery });
 });
