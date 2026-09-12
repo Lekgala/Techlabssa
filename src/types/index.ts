@@ -78,6 +78,25 @@ export interface AcademySettings {
   location?: string;
   companyName?: string;
   leadInstructorName?: string;
+  studentWelcomeMessage?: string;
+  studentSupportMessage?: string;
+  admissionsAcknowledgement?: string;
+  paymentInstructions?: string;
+  whatsappGreeting?: string;
+  applicationsEnabled?: boolean;
+  onlinePaymentsEnabled?: boolean;
+  showPricing?: boolean;
+  showUpcomingCohorts?: boolean;
+  maintenanceMode?: boolean;
+  publicAnnouncement?: string;
+  defaultLandingPage?: string;
+  privacyContactEmail?: string;
+  informationOfficerContact?: string;
+  privacyPolicyVersion?: string;
+  termsVersion?: string;
+  consentTextVersion?: string;
+  dataRetentionDays?: number;
+  cookieNoticeVersion?: string;
   flashSale?: FlashSaleConfig;
   courseTierPricing?: CourseTierPricing;
 }

@@ -28,6 +28,7 @@ export function yocoRouter(authenticate: RequestHandler, studentOnly: RequestHan
   router.get('/student/invoices/:id/yoco', authenticate, studentOnly, async (req: any, res, next) => {
     try {
       const db = await getDatabase(); ownedInvoice(db, req.params.id, req.session.userId);
+      if (db.academySettings.onlinePaymentsEnabled === false) return res.json({ enabled: false, reason: 'Online payments are temporarily unavailable.' });
       let config = null;
       try { config = yocoConfig(); } catch { /* unconfigured checkout stays unavailable */ }
       let amountCents = 0; let reason = 'Online payment is not configured yet.';
@@ -38,6 +39,7 @@ export function yocoRouter(authenticate: RequestHandler, studentOnly: RequestHan
   });
   router.post('/student/invoices/:id/yoco', authenticate, studentOnly, limit, async (req: any, res, next) => {
     try {
+      if ((await getDatabase()).academySettings.onlinePaymentsEnabled === false) throw new YocoError(503, 'Online payments are temporarily unavailable');
       const config = yocoConfig();
       if (!config) throw new YocoError(503, 'Online payments are disabled');
       const intent = await mutateDatabase(db => {

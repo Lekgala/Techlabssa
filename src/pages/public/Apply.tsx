@@ -171,7 +171,7 @@ export const Apply: React.FC = () => {
               Welcome to TechLabs Academy SA
             </h1>
             <p className="text-xs sm:text-sm text-[#707070] max-w-lg mx-auto leading-relaxed">
-              Thank you, <strong>{formData.firstName} {formData.lastName}</strong>. We have received your application for the upcoming IT Support Bootcamp.
+              Thank you, <strong>{formData.firstName} {formData.lastName}</strong>. {settings.admissionsAcknowledgement || 'We have received your application for the upcoming IT Support Bootcamp.'}
             </p>
           </div>
 
@@ -220,6 +220,8 @@ export const Apply: React.FC = () => {
       </div>
     );
   }
+
+  if (settings.applicationsEnabled === false) return <div className="max-w-2xl mx-auto px-4 py-24 text-center space-y-4"><h1 className="text-3xl font-light">Applications are temporarily closed</h1><p className="text-sm text-[#707070]">{settings.admissionsAcknowledgement || 'Please contact admissions for information about the next intake.'}</p><button type="button" onClick={() => navigate('/')} className="px-5 py-3 bg-black text-white rounded-xl text-xs font-bold uppercase tracking-wider">Return home</button></div>;
 
   return (
     <div className="max-w-4xl mx-auto px-4 py-12 space-y-10 bg-[#FFFFFF] text-[#1A1A1A]">

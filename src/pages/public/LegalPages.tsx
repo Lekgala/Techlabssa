@@ -197,12 +197,14 @@ export const Terms: React.FC = () => (
   </div>
 );
 
-export const Privacy: React.FC = () => (
+export const Privacy: React.FC = () => {
+  const { settings } = useApp();
+  return (
   <div className="max-w-4xl mx-auto px-4 py-16 space-y-8 text-[#1A1A1A] text-xs sm:text-sm leading-relaxed bg-[#FFFFFF]">
     <div className="space-y-2 border-b border-[#E0E0E0] pb-4">
       <span className="text-xs font-mono text-[#707070] uppercase font-bold tracking-wider">Data Privacy Notice</span>
       <h1 className="text-3xl font-light text-[#000000] tracking-tight">Privacy Policy (POPIA Compliant)</h1>
-      <p className="text-[#707070]">Protection of Personal Information Act (POPIA) • South Africa</p>
+      <p className="text-[#707070]">Protection of Personal Information Act (POPIA) • South Africa • Version {settings.privacyPolicyVersion || '2026.09'}</p>
     </div>
 
     <div className="space-y-6">
@@ -225,9 +227,16 @@ export const Privacy: React.FC = () => (
         <h2 className="text-base font-bold text-[#000000]">4. Essential Cookies</h2>
         <p className="text-[#707070]">The student and staff portals use an essential HttpOnly session cookie to keep authenticated accounts signed in. A separate security cookie helps protect authenticated form submissions against cross-site request forgery. These cookies are required for the portal to function, are not used for advertising or analytics, and are removed or expire when the session ends.</p>
       </section>
+
+      <section className="space-y-2">
+        <h2 className="text-base font-bold text-[#000000]">5. Privacy Contact</h2>
+        <p className="text-[#707070]">For privacy questions or information requests, contact <a className="underline text-[#000000]" href={`mailto:${settings.privacyContactEmail || settings.admissionsEmail}`}>{settings.privacyContactEmail || settings.admissionsEmail}</a>. Information Officer: {settings.informationOfficerContact || 'Contact admissions.'}</p>
+        <p className="text-[#A0A0A0] text-xs">Consent text version: {settings.consentTextVersion || '2026.09'} • Cookie notice version: {settings.cookieNoticeVersion || '2026.09'} • Operational retention guidance: {settings.dataRetentionDays || 1825} days.</p>
+      </section>
     </div>
   </div>
-);
+  );
+};
 
 export const RefundPolicy: React.FC = () => (
   <div className="max-w-4xl mx-auto px-4 py-16 space-y-8 text-[#1A1A1A] text-xs sm:text-sm leading-relaxed bg-[#FFFFFF]">

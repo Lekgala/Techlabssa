@@ -503,8 +503,14 @@ app.get('/api/student/payment-plan', authenticate, requireRole('STUDENT'), async
 app.put('/api/settings', authenticate, requireRole('ADMIN'), async (req: AuthedRequest, res) => {
   const db = await getDatabase();
   const updates = req.body || {};
-  const allowedKeys = ['academyName','companyName','location','campusAddress','whatsappNumber','studentSupportWhatsappNumber','admissionsEmail','leadInstructorName','bankName','accountName','accountNumber','branchCode','referenceFormat','flashSale','courseTierPricing'];
+  const allowedKeys = ['academyName','companyName','location','campusAddress','whatsappNumber','studentSupportWhatsappNumber','admissionsEmail','leadInstructorName','studentWelcomeMessage','studentSupportMessage','admissionsAcknowledgement','paymentInstructions','whatsappGreeting','applicationsEnabled','onlinePaymentsEnabled','showPricing','showUpcomingCohorts','maintenanceMode','publicAnnouncement','defaultLandingPage','privacyContactEmail','informationOfficerContact','privacyPolicyVersion','termsVersion','consentTextVersion','dataRetentionDays','cookieNoticeVersion','bankName','accountName','accountNumber','branchCode','referenceFormat','flashSale','courseTierPricing'];
   const safeUpdates = Object.fromEntries(Object.entries(updates).filter(([key]) => allowedKeys.includes(key)));
+  const textLimits: Record<string, number> = { academyName: 120, companyName: 160, location: 160, campusAddress: 240, whatsappNumber: 40, studentSupportWhatsappNumber: 40, admissionsEmail: 254, leadInstructorName: 120, studentWelcomeMessage: 500, studentSupportMessage: 800, admissionsAcknowledgement: 800, paymentInstructions: 1200, whatsappGreeting: 500, publicAnnouncement: 500, defaultLandingPage: 80, privacyContactEmail: 254, informationOfficerContact: 240, privacyPolicyVersion: 40, termsVersion: 40, consentTextVersion: 40, cookieNoticeVersion: 40, bankName: 120, accountName: 160, accountNumber: 80, branchCode: 40, referenceFormat: 120 };
+  if (Object.entries(textLimits).some(([key, limit]) => safeUpdates[key] !== undefined && !requiredText(safeUpdates[key], limit))) return res.status(400).json({ error: 'One or more text settings are invalid' });
+  const booleanKeys = ['applicationsEnabled', 'onlinePaymentsEnabled', 'showPricing', 'showUpcomingCohorts', 'maintenanceMode'];
+  if (booleanKeys.some(key => safeUpdates[key] !== undefined && typeof safeUpdates[key] !== 'boolean')) return res.status(400).json({ error: 'Website control settings must be true or false' });
+  const retentionDays = safeUpdates.dataRetentionDays === undefined ? undefined : Number(safeUpdates.dataRetentionDays);
+  if (retentionDays !== undefined && (!Number.isInteger(retentionDays) || retentionDays < 30 || retentionDays > 3650)) return res.status(400).json({ error: 'Data retention must be between 30 and 3650 days' });
   if (safeUpdates.courseTierPricing !== undefined) {
     const pricing = safeUpdates.courseTierPricing as Record<string, { priceZAR?: unknown; displayName?: unknown; description?: unknown; features?: unknown; badgeLabel?: unknown }>;
     const tiers = ['STARTER', 'PROFESSIONAL', 'CAREER_ACCELERATOR'];
@@ -680,6 +686,7 @@ app.post('/api/applications', rateLimit('applications', 5, 60 * 60 * 1000), seri
   const data = req.body || {};
   if (!requiredText(data.firstName, 80) || !requiredText(data.lastName, 80) || !validEmail(data.email) || !requiredText(data.whatsapp, 30) || !requiredText(data.cohortId, 100) || data.acceptedTerms !== true || data.acceptedPrivacy !== true) return res.status(400).json({ error: 'Valid contact details, cohort and required consent are required' });
   const db = await getDatabase();
+  if (db.academySettings.applicationsEnabled === false) return res.status(403).json({ error: 'Applications are temporarily closed. Please contact admissions for the next intake.' });
   const normalizedEmail = data.email.trim().toLowerCase();
   const normalizedCohortId = data.cohortId.trim();
   const selectedCohort = db.cohorts.find(item => item.id === normalizedCohortId);

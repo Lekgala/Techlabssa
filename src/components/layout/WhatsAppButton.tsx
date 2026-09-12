@@ -9,8 +9,8 @@ export const WhatsAppButton: React.FC = () => {
   const studentCohort = studentApplication ? cohorts.find(cohort => cohort.id === studentApplication.cohortId) : undefined;
   const isStudentSupport = Boolean(studentApplication && ['ENROLLED', 'COMPLETED'].includes(studentApplication.status));
   const defaultMessage = isStudentSupport
-    ? `Hi TechLabs Student Support, I need assistance. Student: ${currentStudent?.name || currentUser?.name || currentUser?.email || ''}. Reference: ${studentApplication?.referenceNumber || ''}. Cohort: ${studentCohort?.name || 'Not assigned'}.`
-    : 'Hi TechLabs Admissions, I would like assistance with the IT Support bootcamp.';
+    ? `${settings.studentSupportMessage || 'Hi TechLabs Student Support, I need assistance.'} Student: ${currentStudent?.name || currentUser?.name || currentUser?.email || ''}. Reference: ${studentApplication?.referenceNumber || ''}. Cohort: ${studentCohort?.name || 'Not assigned'}.`
+    : settings.whatsappGreeting || 'Hi TechLabs Admissions, I would like assistance with the IT Support bootcamp.';
   const [userMsg, setUserMsg] = useState(defaultMessage);
 
   useEffect(() => { setUserMsg(defaultMessage); }, [defaultMessage]);

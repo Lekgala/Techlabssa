@@ -44,6 +44,7 @@ export const Home: React.FC = () => {
 
   return (
     <div className="space-y-24 pb-20 bg-[#FFFFFF] text-[#1A1A1A]">
+      {settings.publicAnnouncement && <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8"><div className="p-3 bg-[#FAFAFA] border border-[#E0E0E0] rounded-xl text-center text-xs text-[#707070]">{settings.publicAnnouncement}</div></div>}
       {/* 1. HERO SECTION */}
       <section className="relative pt-12 pb-20 overflow-hidden bg-[#FAFAFA] border-b border-[#F0F0F0]">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 relative z-10">
