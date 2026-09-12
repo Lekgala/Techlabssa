@@ -67,7 +67,7 @@ app.use((req, res, next) => {
   const csrf = ensureCsrfCookie(req, res);
   if (['GET', 'HEAD', 'OPTIONS'].includes(req.method) || req.path === '/api/webhooks/yoco' || req.path === '/api/webhooks/resend') return next();
   const cookies = parseCookies(req.header('cookie'));
-  if (cookies[sessionCookieName] && req.header('x-csrf-token') !== csrf) return res.status(403).json({ error: 'CSRF validation failed' });
+  if (cookies[sessionCookieName] && !req.header('authorization') && req.header('x-csrf-token') !== csrf) return res.status(403).json({ error: 'CSRF validation failed' });
   next();
 });
 

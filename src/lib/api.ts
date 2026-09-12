@@ -1,11 +1,14 @@
 const apiBaseUrl = (import.meta.env.VITE_API_URL || '').replace(/\/$/, '');
 const apiUrl = (path: string) => `${apiBaseUrl}/api${path}`;
 const csrfToken = () => document.cookie.split('; ').find(value => value.startsWith('techlabs_csrf='))?.split('=').slice(1).join('=') || '';
+const getApiSession = () => typeof window !== 'undefined' ? sessionStorage.getItem('techlabs_session') || localStorage.getItem('techlabs_session') : null;
 
 export async function apiRequest<T>(path: string, options: RequestInit = {}): Promise<T> {
+  const token = getApiSession();
   const response = await fetch(apiUrl(path), {
     headers: {
       'Content-Type': 'application/json',
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
       ...(!['GET', 'HEAD', 'OPTIONS'].includes(options.method?.toUpperCase() || 'GET') && csrfToken() ? { 'X-CSRF-Token': decodeURIComponent(csrfToken()) } : {}),
       ...(options.headers || {}),
     },
@@ -33,13 +36,18 @@ export async function apiRequest<T>(path: string, options: RequestInit = {}): Pr
 
 export function setApiSession(token?: string): void {
   if (typeof window === 'undefined') return;
-  localStorage.removeItem('techlabs_session');
+  if (token) sessionStorage.setItem('techlabs_session', token);
+  else {
+    sessionStorage.removeItem('techlabs_session');
+    localStorage.removeItem('techlabs_session');
+  }
 }
 
 export async function apiDownload(path: string, body: unknown, filename: string): Promise<void> {
+  const token = getApiSession();
   const response = await fetch(apiUrl(path), {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json', ...(csrfToken() ? { 'X-CSRF-Token': decodeURIComponent(csrfToken()) } : {}) },
+    headers: { 'Content-Type': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}), ...(csrfToken() ? { 'X-CSRF-Token': decodeURIComponent(csrfToken()) } : {}) },
     credentials: 'include',
     body: JSON.stringify(body),
   });
@@ -51,9 +59,10 @@ export async function apiDownload(path: string, body: unknown, filename: string)
 }
 
 export async function apiUpload<T>(path: string, file: File, extraHeaders: Record<string, string> = {}): Promise<T> {
+  const token = getApiSession();
   const response = await fetch(apiUrl(path), {
     method: 'POST',
-    headers: { 'Content-Type': file.type, 'X-File-Name': encodeURIComponent(file.name), ...(csrfToken() ? { 'X-CSRF-Token': decodeURIComponent(csrfToken()) } : {}), ...extraHeaders },
+    headers: { 'Content-Type': file.type, 'X-File-Name': encodeURIComponent(file.name), ...(token ? { Authorization: `Bearer ${token}` } : {}), ...(csrfToken() ? { 'X-CSRF-Token': decodeURIComponent(csrfToken()) } : {}), ...extraHeaders },
     credentials: 'include',
     body: file,
   });
@@ -62,7 +71,8 @@ export async function apiUpload<T>(path: string, file: File, extraHeaders: Recor
 }
 
 export async function apiOpenPrivate(path: string): Promise<void> {
-  const response = await fetch(apiUrl(path), { credentials: 'include' });
+  const token = getApiSession();
+  const response = await fetch(apiUrl(path), { headers: token ? { Authorization: `Bearer ${token}` } : {}, credentials: 'include' });
   if (!response.ok) throw new Error(await response.text() || 'File could not be opened');
   const url = URL.createObjectURL(await response.blob());
   window.open(url, '_blank', 'noopener,noreferrer');
@@ -70,7 +80,8 @@ export async function apiOpenPrivate(path: string): Promise<void> {
 }
 
 export async function apiGetPrivateBlob(path: string): Promise<{ url: string; type: string }> {
-  const response = await fetch(apiUrl(path), { credentials: 'include' });
+  const token = getApiSession();
+  const response = await fetch(apiUrl(path), { headers: token ? { Authorization: `Bearer ${token}` } : {}, credentials: 'include' });
   if (!response.ok) throw new Error(await response.text() || 'File could not be loaded');
   const blob = await response.blob();
   return { url: URL.createObjectURL(blob), type: blob.type };
