@@ -21,7 +21,7 @@ import { StudentLogin } from './pages/student/StudentLogin';
 import { AdminDashboard } from './pages/admin/AdminDashboard';
 
 const AppContent: React.FC = () => {
-  const { currentPath, currentRole, hasHydrated, navigate } = useApp();
+  const { currentPath, currentRole, hasHydrated, navigate, settings } = useApp();
   const isAdminRoute = currentPath === '/admin' || currentPath === '/admin/login' || currentPath.startsWith('/admin/');
   const path = (currentPath || '/')
     .replace(/^#/, '')
@@ -31,11 +31,13 @@ const AppContent: React.FC = () => {
   const isStaff = currentRole === 'ADMIN' || currentRole === 'INSTRUCTOR';
   const isStudentRoute = path === '/student' || path.startsWith('/student/');
   const isAdminPortalRoute = path === '/admin' || path.startsWith('/admin/');
+  const isMaintenancePage = Boolean(hasHydrated && settings.maintenanceMode && !isAdminPortalRoute && !isStudentRoute && path !== '/privacy' && path !== '/terms');
   const redirectPath = !hasHydrated ? undefined
     : isStudentRoute && currentRole === 'STUDENT' && path === '/student/login' ? '/student'
     : isStudentRoute && isStaff ? '/admin'
     : isAdminPortalRoute && isStaff && path === '/admin/login' ? '/admin'
     : isAdminPortalRoute && currentRole === 'STUDENT' ? '/student'
+    : path === '/' && settings.defaultLandingPage && settings.defaultLandingPage !== '/' ? settings.defaultLandingPage
     : undefined;
 
   useEffect(() => {
@@ -43,6 +45,7 @@ const AppContent: React.FC = () => {
   }, [navigate, redirectPath]);
 
   const renderPage = () => {
+    if (isMaintenancePage) return <section className="max-w-2xl mx-auto px-4 py-24 text-center space-y-4"><p className="text-[10px] font-mono uppercase tracking-[0.2em] text-[#707070]">Temporarily unavailable</p><h1 className="text-4xl font-light">We are updating the academy site</h1><p className="text-sm text-[#707070]">Please check back shortly or contact admissions for assistance.</p></section>;
     if (!hasHydrated && (isStudentRoute || isAdminPortalRoute)) return null;
     if (redirectPath) return null;
 
@@ -52,8 +55,8 @@ const AppContent: React.FC = () => {
     if (path === '/courses/it-support/curriculum') return <Curriculum />;
     if (path === '/labs') return <Labs />;
     if (path === '/how-it-works') return <HowItWorks />;
-    if (path === '/pricing') return <Pricing />;
-    if (path === '/intakes') return <Intakes />;
+    if (path === '/pricing') return settings.showPricing === false ? <section className="max-w-2xl mx-auto px-4 py-24 text-center space-y-4"><h1 className="text-3xl font-light">Pricing is being updated</h1><p className="text-sm text-[#707070]">Please contact admissions for current tuition information.</p></section> : <Pricing />;
+    if (path === '/intakes') return settings.showUpcomingCohorts === false ? <section className="max-w-2xl mx-auto px-4 py-24 text-center space-y-4"><h1 className="text-3xl font-light">Upcoming intakes are being updated</h1><p className="text-sm text-[#707070]">Please contact admissions for the next available cohort.</p></section> : <Intakes />;
     if (path === '/career') return <Career />;
     if (path === '/about') return <About />;
     if (path === '/faq') return <FAQ />;

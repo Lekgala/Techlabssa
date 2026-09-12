@@ -1770,6 +1770,36 @@ export const AdminDashboard: React.FC = () => {
             </div>
 
             <div className="pt-4 border-t border-[#E0E0E0] space-y-4">
+              <div><h4 className="font-bold text-sm text-[#000000]">Compliance & Privacy</h4><p className="mt-1 text-[11px] text-[#707070]">Keep public policy contacts, consent versions, and retention guidance current. This does not delete records automatically.</p></div>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <label className="space-y-1"><span className="block text-[10px] font-bold uppercase tracking-wider">Privacy contact email</span><input type="email" maxLength={254} value={settings.privacyContactEmail || ''} onChange={event => updateSettings({ privacyContactEmail: event.target.value })} className="w-full p-3 bg-[#FAFAFA] border border-[#E0E0E0] rounded-xl text-xs" /></label>
+                <label className="space-y-1"><span className="block text-[10px] font-bold uppercase tracking-wider">Information officer contact</span><input maxLength={240} value={settings.informationOfficerContact || ''} onChange={event => updateSettings({ informationOfficerContact: event.target.value })} className="w-full p-3 bg-[#FAFAFA] border border-[#E0E0E0] rounded-xl text-xs" /></label>
+                <label className="space-y-1"><span className="block text-[10px] font-bold uppercase tracking-wider">Privacy policy version</span><input maxLength={40} value={settings.privacyPolicyVersion || ''} onChange={event => updateSettings({ privacyPolicyVersion: event.target.value })} className="w-full p-3 bg-[#FAFAFA] border border-[#E0E0E0] rounded-xl text-xs" /></label>
+                <label className="space-y-1"><span className="block text-[10px] font-bold uppercase tracking-wider">Terms version</span><input maxLength={40} value={settings.termsVersion || ''} onChange={event => updateSettings({ termsVersion: event.target.value })} className="w-full p-3 bg-[#FAFAFA] border border-[#E0E0E0] rounded-xl text-xs" /></label>
+                <label className="space-y-1"><span className="block text-[10px] font-bold uppercase tracking-wider">Consent text version</span><input maxLength={40} value={settings.consentTextVersion || ''} onChange={event => updateSettings({ consentTextVersion: event.target.value })} className="w-full p-3 bg-[#FAFAFA] border border-[#E0E0E0] rounded-xl text-xs" /></label>
+                <label className="space-y-1"><span className="block text-[10px] font-bold uppercase tracking-wider">Data retention (days)</span><input type="number" min={30} max={3650} value={settings.dataRetentionDays || 1825} onChange={event => updateSettings({ dataRetentionDays: Number(event.target.value) })} className="w-full p-3 bg-[#FAFAFA] border border-[#E0E0E0] rounded-xl text-xs" /></label>
+                <label className="space-y-1"><span className="block text-[10px] font-bold uppercase tracking-wider">Cookie notice version</span><input maxLength={40} value={settings.cookieNoticeVersion || ''} onChange={event => updateSettings({ cookieNoticeVersion: event.target.value })} className="w-full p-3 bg-[#FAFAFA] border border-[#E0E0E0] rounded-xl text-xs" /></label>
+              </div>
+            </div>
+
+            <div className="pt-4 border-t border-[#E0E0E0] space-y-4">
+              <div><h4 className="font-bold text-sm text-[#000000]">Student Communications</h4><p className="mt-1 text-[11px] text-[#707070]">Control the reusable messages shown to applicants and students.</p></div>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                {([['studentWelcomeMessage', 'Student welcome message'], ['studentSupportMessage', 'Student support message'], ['admissionsAcknowledgement', 'Application acknowledgement'], ['whatsappGreeting', 'WhatsApp greeting']] as Array<[keyof typeof settings, string]>).map(([key, label]) => <label key={key} className="space-y-1"><span className="block text-[10px] font-bold uppercase tracking-wider">{label}</span><textarea maxLength={800} rows={3} value={String(settings[key] || '')} onChange={event => updateSettings({ [key]: event.target.value } as Partial<typeof settings>)} className="w-full p-3 bg-[#FAFAFA] border border-[#E0E0E0] rounded-xl text-xs" /></label>)}
+              </div>
+              <label className="space-y-1 block"><span className="block text-[10px] font-bold uppercase tracking-wider">Payment instructions</span><textarea maxLength={1200} rows={3} value={settings.paymentInstructions || ''} onChange={event => updateSettings({ paymentInstructions: event.target.value })} className="w-full p-3 bg-[#FAFAFA] border border-[#E0E0E0] rounded-xl text-xs" /></label>
+            </div>
+
+            <div className="pt-4 border-t border-[#E0E0E0] space-y-4">
+              <div><h4 className="font-bold text-sm text-[#000000]">Website Controls</h4><p className="mt-1 text-[11px] text-[#707070]">Control public availability and visible website content.</p></div>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                {([['applicationsEnabled', 'Accept new applications'], ['onlinePaymentsEnabled', 'Enable online payments'], ['showPricing', 'Show pricing page'], ['showUpcomingCohorts', 'Show upcoming cohorts'], ['maintenanceMode', 'Maintenance mode']] as Array<[keyof typeof settings, string]>).map(([key, label]) => <label key={key} className="flex items-center gap-2 p-3 bg-[#FAFAFA] border border-[#E0E0E0] rounded-lg text-xs"><input type="checkbox" checked={Boolean(settings[key])} onChange={event => updateSettings({ [key]: event.target.checked } as Partial<typeof settings>)} className="accent-black" /><span>{label}</span></label>)}
+              </div>
+              <label className="space-y-1 block"><span className="block text-[10px] font-bold uppercase tracking-wider">Public announcement</span><textarea maxLength={500} rows={2} value={settings.publicAnnouncement || ''} onChange={event => updateSettings({ publicAnnouncement: event.target.value })} placeholder="Optional banner shown on public pages" className="w-full p-3 bg-[#FAFAFA] border border-[#E0E0E0] rounded-xl text-xs" /></label>
+              <label className="space-y-1 block"><span className="block text-[10px] font-bold uppercase tracking-wider">Default landing page</span><select value={settings.defaultLandingPage || '/'} onChange={event => updateSettings({ defaultLandingPage: event.target.value })} className="w-full p-3 bg-[#FAFAFA] border border-[#E0E0E0] rounded-xl text-xs"><option value="/">Home</option><option value="/pricing">Pricing</option><option value="/courses/it-support">Course details</option><option value="/apply">Application</option></select></label>
+            </div>
+
+            <div className="pt-4 border-t border-[#E0E0E0] space-y-4">
               <h4 className="font-bold text-sm text-[#000000]">South African Bank EFT Credentials (Invoicing)</h4>
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 font-mono">
                 <div className="space-y-1">

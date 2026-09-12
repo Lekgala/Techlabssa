@@ -241,11 +241,11 @@ export const StudentDashboard: React.FC = () => {
           </h1>
 
           <p className="text-xs sm:text-sm text-[#707070] max-w-xl leading-relaxed">
-            {isFullyEnrolled ? (
+            {settings.studentWelcomeMessage || (isFullyEnrolled ? (
               <>{studentCohort?.name || 'Your TechLabs cohort'} • {studentCohort?.scheduleFormat || 'Course schedule available in your document centre'}.</>
             ) : (
               <>Your application is currently being processed by admissions. Once approved and fully enrolled, full course modules, lab blueprints, and tickets will unlock below.</>
-            )}
+            ))}
           </p>
         </div>
 
@@ -343,7 +343,7 @@ export const StudentDashboard: React.FC = () => {
 
           {canSubmitPayment && paymentSettings && <section id="student-payment-upload" className="border-t border-[#E0E0E0] pt-5 space-y-4">
             <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
-              <div><h4 className="font-sans font-bold text-sm text-[#000000] flex items-center gap-2"><Building2 className="w-4 h-4" /> EFT payment details</h4><p className="mt-1 font-sans text-[11px] text-[#707070]">Pay the required amount, use the invoice number as the reference, then upload one bank-generated proof.</p></div>
+              <div><h4 className="font-sans font-bold text-sm text-[#000000] flex items-center gap-2"><Building2 className="w-4 h-4" /> EFT payment details</h4><p className="mt-1 font-sans text-[11px] text-[#707070]">{settings.paymentInstructions || 'Pay the required amount, use the invoice number as the reference, then upload one bank-generated proof.'}</p></div>
               <button type="button" onClick={() => void copyBankDetails()} className="shrink-0 inline-flex items-center justify-center gap-1.5 px-3 py-2 border border-[#E0E0E0] rounded-lg bg-white hover:bg-[#FAFAFA] font-sans text-[10px] font-bold uppercase tracking-wider"><Copy className="w-3.5 h-3.5" />{bankDetailsCopied ? 'Copied' : 'Copy details'}</button>
             </div>
             <dl className="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-2 p-4 bg-[#FAFAFA] border border-[#E0E0E0] rounded-xl text-[11px]">
