@@ -154,14 +154,14 @@ export const StudentLogin: React.FC = () => {
 const EmailField = ({ value, onChange }: { value: string; onChange: (value: string) => void }) => (
   <div className="space-y-1.5">
     <label className="font-bold uppercase tracking-wider text-[10px]">Registered Email *</label>
-    <div className="relative"><Mail className="w-4 h-4 text-[#A0A0A0] absolute left-3 top-3.5" /><input type="email" required value={value} onChange={event => onChange(event.target.value)} className="w-full pl-9 pr-3 py-3 bg-[#FAFAFA] border border-[#E0E0E0] rounded-xl focus:border-black focus:outline-none" /></div>
+    <div className="relative"><Mail className="w-4 h-4 text-[#A0A0A0] absolute left-3 top-3.5" /><input type="email" required value={value} onChange={event => onChange(event.target.value)} className="w-full pl-9 pr-3 py-3 text-base bg-[#FAFAFA] border border-[#E0E0E0] rounded-xl focus:border-black focus:outline-none" /></div>
   </div>
 );
 
 const PasswordField = ({ label, value, onChange }: { label: string; value: string; onChange: (value: string) => void }) => (
   <div className="space-y-1.5">
     <label className="font-bold uppercase tracking-wider text-[10px]">{label} *</label>
-    <div className="relative"><KeyRound className="w-4 h-4 text-[#A0A0A0] absolute left-3 top-3.5" /><input type="password" required autoComplete={label === 'Password' ? 'current-password' : 'new-password'} value={value} onChange={event => onChange(event.target.value)} className="w-full pl-9 pr-3 py-3 bg-[#FAFAFA] border border-[#E0E0E0] rounded-xl focus:border-black focus:outline-none" /></div>
+    <div className="relative"><KeyRound className="w-4 h-4 text-[#A0A0A0] absolute left-3 top-3.5" /><input type="password" required autoComplete={label === 'Password' ? 'current-password' : 'new-password'} value={value} onChange={event => onChange(event.target.value)} className="w-full pl-9 pr-3 py-3 text-base bg-[#FAFAFA] border border-[#E0E0E0] rounded-xl focus:border-black focus:outline-none" /></div>
   </div>
 );
 

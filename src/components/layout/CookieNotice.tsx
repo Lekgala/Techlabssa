@@ -20,7 +20,7 @@ export const CookieNotice: React.FC = () => {
   if (!visible) return null;
 
   return (
-    <aside className="fixed bottom-4 left-4 right-4 sm:left-6 sm:right-auto z-50 max-w-lg bg-[#000000] text-white border border-[#333333] rounded-2xl shadow-2xl p-4 sm:p-5 no-print" role="status" aria-label="Cookie notice">
+    <aside className="fixed bottom-20 sm:bottom-4 left-4 right-4 sm:left-6 sm:right-auto z-50 max-w-lg bg-[#000000] text-white border border-[#333333] rounded-2xl shadow-2xl p-4 sm:p-5 no-print" role="status" aria-label="Cookie notice">
       <div className="flex items-start gap-3">
         <Cookie className="w-5 h-5 shrink-0 mt-0.5" aria-hidden="true" />
         <div className="min-w-0 flex-1 space-y-2">

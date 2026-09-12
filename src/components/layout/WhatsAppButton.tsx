@@ -24,10 +24,10 @@ export const WhatsAppButton: React.FC = () => {
   };
 
   return (
-    <div className="fixed bottom-6 right-6 z-40 no-print flex flex-col items-end">
+    <div className="fixed bottom-4 right-4 sm:bottom-6 sm:right-6 z-40 no-print flex flex-col items-end max-w-[calc(100vw-2rem)]">
       {/* Interactive Chat Popup */}
       {isOpen && (
-        <div className="mb-3 w-84 sm:w-96 bg-[#FFFFFF] rounded-2xl shadow-xl border border-[#F0F0F0] overflow-hidden animate-in fade-in slide-in-from-bottom-5 text-[#1A1A1A]">
+        <div className="mb-3 w-[calc(100vw-2rem)] max-w-96 bg-[#FFFFFF] rounded-2xl shadow-xl border border-[#F0F0F0] overflow-hidden animate-in fade-in slide-in-from-bottom-5 text-[#1A1A1A]">
           {/* Header */}
           <div className="bg-[#FAFAFA] p-4 text-[#1A1A1A] border-b border-[#F0F0F0] flex items-center justify-between">
             <div className="flex items-center gap-3">

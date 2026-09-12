@@ -85,7 +85,7 @@ const AppContent: React.FC = () => {
   return (
     <div className="min-h-screen flex flex-col bg-[#FFFFFF] text-[#1A1A1A] font-sans antialiased selection:bg-black selection:text-white">
       <Navbar />
-      <main className="flex-grow">
+      <main className="flex-grow min-w-0">
         {renderPage()}
       </main>
       {!isAdminRoute && <Footer />}
