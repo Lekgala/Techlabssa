@@ -86,6 +86,15 @@ const calculateTuition = (tier: string, settings: Awaited<ReturnType<typeof getD
   const targeted = sale?.enabled && sale.discountPercent > 0 && sale.discountPercent < 100 && (!sale.targetTiers?.length || sale.targetTiers.includes(tier as any));
   return targeted ? Math.round(base * (1 - sale.discountPercent / 100)) : base;
 };
+const calculateTuitionBreakdown = (tier: string, settings: Awaited<ReturnType<typeof getDatabase>>['academySettings']) => {
+  const prices: Record<string, number> = { STARTER: 1999, PROFESSIONAL: 3499, CAREER_ACCELERATOR: 4999 };
+  const listPriceZAR = settings.courseTierPricing?.[tier as 'STARTER' | 'PROFESSIONAL' | 'CAREER_ACCELERATOR']?.priceZAR ?? prices[tier];
+  const sale = settings.flashSale;
+  const discounted = Boolean(sale?.enabled && sale.discountPercent > 0 && sale.discountPercent < 100 && (!sale.targetTiers?.length || sale.targetTiers.includes(tier as any)));
+  const discountPercent = discounted ? sale!.discountPercent : 0;
+  const amountZAR = discounted ? Math.round(listPriceZAR * (1 - discountPercent / 100) * 100) / 100 : listPriceZAR;
+  return { amountZAR, listPriceZAR, discountZAR: Math.round((listPriceZAR - amountZAR) * 100) / 100, discountPercent };
+};
 const renderStoredTemplate = (db: Awaited<ReturnType<typeof getDatabase>>, templateId: string, variables: Record<string, unknown>) => {
   const template = db.emailTemplates.find(item => item.id === templateId && item.enabled);
   if (!template) return null;
@@ -551,7 +560,7 @@ app.get(['/api/student/documents/:type/:recordId?', '/api/admin/applications/:ap
   } else if (req.params.type === 'invoice') {
     if (!invoice) return res.status(404).json({ error: 'Invoice is not available yet' });
     const invoicePayments = db.payments.filter(item => item.invoiceId === invoice.id).sort((a, b) => a.submittedAt.localeCompare(b.submittedAt));
-    pdf = await generateInvoicePDF({ invoiceNumber: invoice.invoiceNumber, invoiceDate: invoice.invoiceDate || application.submissionDate, dueDate: invoice.dueDate, studentName: invoice.studentName, studentEmail: invoice.studentEmail, studentPhone: application.whatsapp, studentCity: application.city, amount: invoice.amountZAR, description: 'TechLabs Academy IT Support Bootcamp tuition', reference: invoice.invoiceNumber, ...branding, courseTier: invoice.courseTier, paidAmount: invoice.paidZAR ?? 0, balanceAmount: invoice.balanceZAR, bankName: db.academySettings.bankName, accountName: db.academySettings.accountName, accountNumber: db.academySettings.accountNumber, branchCode: db.academySettings.branchCode, paymentTerms: ['Use the invoice number as the EFT payment reference.', 'Upload the bank-generated POP in the student portal.', 'Payments are confirmed only after admissions verification.'], payments: invoicePayments.map(payment => ({ date: (payment.verifiedAt || payment.submittedAt).slice(0, 10), type: payment.type, amount: payment.amountZAR, reference: payment.eftReference, status: payment.status })) });
+    pdf = await generateInvoicePDF({ invoiceNumber: invoice.invoiceNumber, invoiceDate: invoice.invoiceDate || application.submissionDate, dueDate: invoice.dueDate, studentName: invoice.studentName, studentEmail: invoice.studentEmail, studentPhone: application.whatsapp, studentCity: application.city, amount: invoice.amountZAR, description: 'TechLabs Academy IT Support Bootcamp tuition', reference: invoice.invoiceNumber, ...branding, courseTier: invoice.courseTier, listPrice: invoice.listPriceZAR, discountAmount: invoice.discountZAR, discountPercent: invoice.discountPercent, paidAmount: invoice.paidZAR ?? 0, balanceAmount: invoice.balanceZAR, bankName: db.academySettings.bankName, accountName: db.academySettings.accountName, accountNumber: db.academySettings.accountNumber, branchCode: db.academySettings.branchCode, paymentTerms: ['Use the invoice number as the EFT payment reference.', 'Upload the bank-generated POP in the student portal.', 'Payments are confirmed only after admissions verification.'], installments: db.paymentInstallments.filter(item => item.invoiceId === invoice.id).sort((a, b) => a.sequence - b.sequence), payments: invoicePayments.map(payment => ({ date: (payment.verifiedAt || payment.submittedAt).slice(0, 10), type: payment.type, amount: payment.amountZAR, reference: payment.eftReference, status: payment.status })) });
     filename = `${invoice.invoiceNumber}.pdf`;
   } else if (req.params.type === 'admission') {
     if (application.status !== 'ENROLLED') return res.status(403).json({ error: 'Admission confirmation is available after enrollment' });
@@ -692,7 +701,8 @@ app.post('/api/applications', rateLimit('applications', 5, 60 * 60 * 1000), seri
   const selectedCohort = db.cohorts.find(item => item.id === normalizedCohortId);
   if (!selectedCohort || !['Open', 'Filling Fast'].includes(selectedCohort.status)) return res.status(409).json({ error: 'The selected cohort is no longer accepting applications. Please choose an open cohort.' });
   const selectedTier = String(data.selectedTier || ''); const paymentOption = String(data.paymentOption || '');
-  const tuitionAmount = calculateTuition(selectedTier, db.academySettings);
+  const tuition = calculateTuitionBreakdown(selectedTier, db.academySettings);
+  const tuitionAmount = tuition.amountZAR;
   if (!tuitionAmount || !['DEPOSIT', 'FULL'].includes(paymentOption)) return res.status(400).json({ error: 'A valid course tier and payment option are required' });
   if (db.applications.some(item => item.email.trim().toLowerCase() === normalizedEmail && item.cohortId.trim() === normalizedCohortId)) {
     return res.status(409).json({ error: 'This email address already has an application for the selected cohort. Sign in to the student portal or choose a different cohort.' });
@@ -702,7 +712,7 @@ app.post('/api/applications', rateLimit('applications', 5, 60 * 60 * 1000), seri
   const application = { ...safeApplicationData, selectedTier, paymentOption, id: makeId('app'), referenceNumber, email: normalizedEmail, cohortId: normalizedCohortId, submissionDate: new Date().toISOString().slice(0, 10), status: 'NEW' };
   const deposit = paymentOption === 'FULL' ? tuitionAmount : Math.min(1000, tuitionAmount);
   const lead = { id: makeId('lead'), name: `${data.firstName} ${data.lastName}`, email: application.email, whatsapp: data.whatsapp, source: 'Website', courseInterest: `Bootcamp (${data.selectedTier})`, status: 'APPLICATION_SUBMITTED', notes: [`Application submitted with ref ${referenceNumber}`], followUpDate: new Date(Date.now() + 172800000).toISOString().slice(0, 10), createdAt: new Date().toISOString().slice(0, 10) };
-  const invoice = { id: makeId('inv'), invoiceNumber: `INV-${referenceNumber}`, invoiceDate: new Date().toISOString().slice(0, 10), studentName: lead.name, studentEmail: application.email, courseTier: selectedTier, amountZAR: tuitionAmount, paidZAR: 0, depositZAR: deposit, balanceZAR: tuitionAmount, paymentOption, status: 'PENDING', dueDate: new Date(Date.now() + 432000000).toISOString().slice(0, 10), paymentMethod: 'EFT' };
+  const invoice = { id: makeId('inv'), invoiceNumber: `INV-${referenceNumber}`, invoiceDate: new Date().toISOString().slice(0, 10), studentName: lead.name, studentEmail: application.email, courseTier: selectedTier, amountZAR: tuitionAmount, listPriceZAR: tuition.listPriceZAR, discountZAR: tuition.discountZAR, discountPercent: tuition.discountPercent, paidZAR: 0, depositZAR: deposit, balanceZAR: tuitionAmount, paymentOption, status: 'PENDING', dueDate: new Date(Date.now() + 432000000).toISOString().slice(0, 10), paymentMethod: 'EFT' };
   db.applications = [application, ...db.applications] as any; db.leads = [lead, ...db.leads] as any; db.invoices = [invoice, ...db.invoices] as any;
   await saveDatabase(db);
   const submittedTemplate = renderStoredTemplate(db, 'tpl-app-submitted', { studentName: escapeHtml(`${application.firstName} ${application.lastName}`), cohortName: escapeHtml(selectedCohort.name), referenceNumber: escapeHtml(referenceNumber) });
@@ -962,7 +972,7 @@ app.post('/api/email/approval', authenticate, requireRole('ADMIN'), async (req, 
   const subject = rendered?.subject || 'Your TechLabs Academy application has been approved';
   const accountInstructions = `<h3>Step 1: Create your portal password</h3><p><a href="${escapeHtml(setupLink)}" style="display:inline-block;padding:12px 18px;background:#000;color:#fff;text-decoration:none;border-radius:8px">Create portal password</a></p><p>This private link verifies your email, expires in 24 hours, and can be used once.</p>`;
   const paymentInstructions = `<h3>Steps 2 and 3: Pay and upload your proof</h3><p><strong>Bank:</strong> ${escapeHtml(db.academySettings.bankName)}<br><strong>Account name:</strong> ${escapeHtml(db.academySettings.accountName)}<br><strong>Account number:</strong> ${escapeHtml(db.academySettings.accountNumber)}<br><strong>Branch code:</strong> ${escapeHtml(db.academySettings.branchCode)}<br><strong>EFT reference:</strong> ${escapeHtml(invoice.invoiceNumber)}</p><p>Pay the amount shown on the attached invoice by ${escapeHtml(invoice.dueDate)}. Then sign in to the portal and upload the bank-generated proof of payment as a PDF, JPG, or PNG. Your seat is secured only after admissions verifies the required payment; do not upload the same proof more than once while it is under review.</p>`;
-  const pdf = await generateInvoicePDF({ invoiceNumber: invoice.invoiceNumber, invoiceDate: invoice.invoiceDate || application.submissionDate, dueDate: invoice.dueDate, studentName: invoice.studentName, studentEmail: invoice.studentEmail, studentPhone: application.whatsapp, studentCity: application.city, amount: invoice.amountZAR, description: 'TechLabs Academy IT Support Bootcamp tuition', reference: invoice.invoiceNumber, companyName: db.academySettings.companyName || db.academySettings.academyName, academyName: db.academySettings.academyName, companyAddress: db.academySettings.campusAddress || db.academySettings.location, admissionsEmail: db.academySettings.admissionsEmail, courseTier: invoice.courseTier, paidAmount: invoice.paidZAR ?? 0, balanceAmount: invoice.balanceZAR, bankName: db.academySettings.bankName, accountName: db.academySettings.accountName, accountNumber: db.academySettings.accountNumber, branchCode: db.academySettings.branchCode, paymentTerms: [invoice.paymentOption === 'FULL' ? 'Full tuition is payable by the due date.' : `A seat deposit of R${invoice.depositZAR.toLocaleString('en-ZA')} is required.`, 'Use the invoice number as the EFT reference.', 'Payments are confirmed only after admissions verification.'], payments: [] });
+  const pdf = await generateInvoicePDF({ invoiceNumber: invoice.invoiceNumber, invoiceDate: invoice.invoiceDate || application.submissionDate, dueDate: invoice.dueDate, studentName: invoice.studentName, studentEmail: invoice.studentEmail, studentPhone: application.whatsapp, studentCity: application.city, amount: invoice.amountZAR, description: 'TechLabs Academy IT Support Bootcamp tuition', reference: invoice.invoiceNumber, companyName: db.academySettings.companyName || db.academySettings.academyName, academyName: db.academySettings.academyName, companyAddress: db.academySettings.campusAddress || db.academySettings.location, admissionsEmail: db.academySettings.admissionsEmail, courseTier: invoice.courseTier, listPrice: invoice.listPriceZAR, discountAmount: invoice.discountZAR, discountPercent: invoice.discountPercent, paidAmount: invoice.paidZAR ?? 0, balanceAmount: invoice.balanceZAR, bankName: db.academySettings.bankName, accountName: db.academySettings.accountName, accountNumber: db.academySettings.accountNumber, branchCode: db.academySettings.branchCode, paymentTerms: [invoice.paymentOption === 'FULL' ? 'Full tuition is payable by the due date.' : `A seat deposit of R${invoice.depositZAR.toLocaleString('en-ZA')} is required.`, 'Use the invoice number as the EFT reference.', 'Payments are confirmed only after admissions verification.'], installments: db.paymentInstallments.filter(item => item.invoiceId === invoice.id).sort((a, b) => a.sequence - b.sequence), payments: [] });
   const delivery = await sendEmail({
     to: application.email, subject,
     html: `${rendered?.html || `<h2>Hello ${escapeHtml(application.firstName)},</h2><p>Your application has been approved.</p>`}${accountInstructions}${paymentInstructions}<p>Regards,<br>TechLabs Academy</p>`,
@@ -997,7 +1007,8 @@ app.post('/api/invoices/:id/email', authenticate, requireRole('ADMIN'), async (r
   if (!invoice) return res.status(404).json({ error: 'Invoice not found' });
   const application = db.applications.find(item => item.email.toLowerCase() === invoice.studentEmail.toLowerCase());
   const paidZAR = invoice.paidZAR ?? Math.max(0, invoice.amountZAR - invoice.balanceZAR);
-  const nextAmount = paidZAR === 0 && invoice.paymentOption !== 'FULL' ? Math.min(1000, invoice.amountZAR) : invoice.balanceZAR;
+  const nextInstallment = db.paymentInstallments.filter(item => item.invoiceId === invoice.id && item.status !== 'PAID').sort((a, b) => a.sequence - b.sequence)[0];
+  const nextAmount = nextInstallment ? Math.min(invoice.balanceZAR, nextInstallment.amountZAR - (nextInstallment.paidZAR ?? 0)) : paidZAR === 0 && invoice.paymentOption !== 'FULL' ? Math.min(1000, invoice.amountZAR) : invoice.balanceZAR;
   const subject = `TechLabs invoice ${invoice.invoiceNumber}`;
   const invoicePayments = db.payments.filter(item => item.invoiceId === invoice.id).sort((a, b) => a.submittedAt.localeCompare(b.submittedAt));
   const invoiceDate = invoice.invoiceDate || application?.submissionDate || new Date().toISOString().slice(0, 10);
@@ -1017,6 +1028,9 @@ app.post('/api/invoices/:id/email', authenticate, requireRole('ADMIN'), async (r
     companyAddress: db.academySettings.campusAddress || db.academySettings.location || 'Cape Town, South Africa',
     admissionsEmail: db.academySettings.admissionsEmail,
     courseTier: invoice.courseTier,
+    listPrice: invoice.listPriceZAR,
+    discountAmount: invoice.discountZAR,
+    discountPercent: invoice.discountPercent,
     paidAmount: paidZAR,
     balanceAmount: invoice.balanceZAR,
     bankName: db.academySettings.bankName,
@@ -1029,6 +1043,7 @@ app.post('/api/invoices/:id/email', authenticate, requireRole('ADMIN'), async (r
       'Upload the bank-generated proof of payment in the student portal. Payments remain unconfirmed until verified by admissions.',
       invoice.paymentOption === 'DEPOSIT' ? 'The remaining tuition balance must be settled according to the agreed course payment schedule.' : 'Portal access is subject to payment verification.',
     ],
+    installments: db.paymentInstallments.filter(item => item.invoiceId === invoice.id).sort((a, b) => a.sequence - b.sequence),
     payments: invoicePayments.map(payment => ({ date: (payment.verifiedAt || payment.submittedAt).slice(0, 10), type: payment.type, amount: payment.amountZAR, reference: payment.eftReference, status: payment.status })),
   });
   const delivery = await sendEmail({

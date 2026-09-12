@@ -1,14 +1,15 @@
 import React, { useRef } from 'react';
-import { Invoice } from '../../types';
+import { Invoice, PaymentInstallment } from '../../types';
 import { Printer } from 'lucide-react';
 import { useApp } from '../../context/AppContext';
 
 interface PrintableInvoiceProps {
   invoice: Invoice;
+  installments?: PaymentInstallment[];
   allowPrint?: boolean;
 }
 
-export const PrintableInvoice: React.FC<PrintableInvoiceProps> = ({ invoice, allowPrint = true }) => {
+export const PrintableInvoice: React.FC<PrintableInvoiceProps> = ({ invoice, installments = [], allowPrint = true }) => {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const { settings, payments } = useApp();
 
@@ -165,6 +166,16 @@ export const PrintableInvoice: React.FC<PrintableInvoiceProps> = ({ invoice, all
               <span>Total Course Fee:</span>
               <span>R{invoice.amountZAR.toLocaleString(undefined, { minimumFractionDigits: 2 })}</span>
             </div>
+            {(invoice.discountZAR ?? 0) > 0 && <>
+              <div className="flex justify-between text-[#707070]">
+                <span>List price:</span>
+                <span className="line-through">R{(invoice.listPriceZAR ?? invoice.amountZAR).toLocaleString(undefined, { minimumFractionDigits: 2 })}</span>
+              </div>
+              <div className="flex justify-between text-[#008000]">
+                <span>Flash-sale discount ({invoice.discountPercent ?? 0}%):</span>
+                <span>-R{invoice.discountZAR.toLocaleString(undefined, { minimumFractionDigits: 2 })}</span>
+              </div>
+            </>}
             <div className="flex justify-between text-[#707070]">
               <span>Seat Deposit Required:</span>
               <span>R{invoice.depositZAR.toLocaleString(undefined, { minimumFractionDigits: 2 })}</span>
@@ -181,6 +192,13 @@ export const PrintableInvoice: React.FC<PrintableInvoiceProps> = ({ invoice, all
             </div>
           </div>
         </div>
+
+        {installments.length > 0 && <div className="space-y-3">
+          <div className="bg-[#F3F3F3] px-4 py-2 text-[10px] font-bold font-mono tracking-[0.18em] uppercase">Installment Schedule</div>
+          <div className="divide-y divide-[#E0E0E0] border-y border-[#E0E0E0]">
+            {installments.map(item => <div key={item.id} className="grid grid-cols-[1fr_auto_auto] gap-3 py-2.5 text-[10px] font-mono"><span>{item.sequence}. {item.label}</span><span>Due {item.dueDate}</span><strong>R{item.amountZAR.toLocaleString(undefined, { minimumFractionDigits: 2 })} · {item.status}</strong></div>)}
+          </div>
+        </div>}
 
         <div className="space-y-3">
           <div className="bg-[#F3F3F3] px-4 py-2 text-[10px] font-bold font-mono tracking-[0.18em] uppercase">Payment History</div>

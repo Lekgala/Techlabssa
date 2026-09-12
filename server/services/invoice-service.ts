@@ -161,6 +161,10 @@ export interface DetailedInvoicePDFOptions extends InvoiceGenerationOptions {
   branchCode: string;
   paymentTerms: string[];
   payments: Array<{ date: string; type: string; amount: number; reference: string; status: string }>;
+  listPrice?: number;
+  discountAmount?: number;
+  discountPercent?: number;
+  installments?: Array<{ sequence: number; label: string; amountZAR: number; paidZAR: number; dueDate: string; status: string }>;
 }
 
 const pdfText = (value: unknown) => String(value ?? '')
@@ -195,11 +199,13 @@ export const generateInvoicePDF = async (options: DetailedInvoicePDFOptions): Pr
     { text: `Application / EFT reference: ${options.reference || options.invoiceNumber}`, bold: true, gap: 14 },
     { text: 'COURSE FEES', bold: true, size: 10, section: true },
     { text: `${options.description} (${options.courseTier})` },
+    ...(options.discountAmount ? [{ text: `List price: ${money(options.listPrice ?? options.amount + options.discountAmount)}`, size: 9 }, { text: `Flash-sale discount (${options.discountPercent ?? 0}%): -${money(options.discountAmount)}`, size: 9 }] : []),
     { text: `Total tuition: ${money(options.amount)}` },
     { text: `Paid to date: ${money(options.paidAmount)}` },
     { text: `OUTSTANDING BALANCE: ${money(options.balanceAmount)}`, bold: true, size: 14, gap: 14 },
     { text: 'PAYMENT HISTORY', bold: true, size: 10, section: true },
     ...(options.payments.length ? options.payments.map(payment => ({ text: `${payment.date} | ${payment.type} | ${money(payment.amount)} | Ref: ${payment.reference} | ${payment.status}`, size: 9 })) : [{ text: 'No verified payments recorded.', size: 9 }]),
+    ...(options.installments?.length ? [{ text: 'INSTALLMENT SCHEDULE', bold: true, size: 10, section: true }, ...options.installments.map(item => ({ text: `${item.sequence}. ${item.label} | Due ${item.dueDate} | ${money(item.amountZAR)} | Paid ${money(item.paidZAR)} | ${item.status}`, size: 9 }))] : []),
     { text: '', gap: 8 },
     { text: 'EFT BANKING DETAILS', bold: true, size: 10, section: true },
     { text: `Bank: ${options.bankName}` },

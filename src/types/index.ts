@@ -366,6 +366,9 @@ export interface Invoice {
   studentEmail: string;
   courseTier: CourseTier;
   amountZAR: number;
+  listPriceZAR?: number;
+  discountZAR?: number;
+  discountPercent?: number;
   paidZAR?: number;
   depositZAR: number;
   balanceZAR: number;
