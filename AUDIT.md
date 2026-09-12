@@ -26,7 +26,7 @@ flowchart LR
 - [src/main.tsx](src/main.tsx) mounts the React application.
 - [src/App.tsx](src/App.tsx) implements client-side, hash-compatible path selection for public, student, and admin pages.
 - [src/context/AppContext.tsx](src/context/AppContext.tsx) coordinates client state and calls the API helpers in [src/lib/api.ts](src/lib/api.ts).
-- Browser session tokens are held in `localStorage` and sent as `Authorization: Bearer <token>` headers. This makes the frontend responsible for preventing script injection; a content-security policy and XSS review are important deployment controls.
+- Browser sessions use an `HttpOnly`, `Secure` production cookie with `SameSite=None` for the separate frontend/API origins. Mutating cookie-authenticated requests require a double-submit CSRF token. Bearer authentication remains accepted temporarily for compatibility, but the frontend no longer stores session tokens in `localStorage`.
 
 ### API And Services
 
@@ -93,7 +93,7 @@ Production configuration requires exact values for `APP_ORIGIN`, `ADMIN_EMAIL`, 
 
 1. **Plan a persistence migration before sustained growth.** The current store reads and writes every JSON collection for a logical update. WAL improves SQLite read/write behavior but does not remove this application-level full-dataset rewrite pattern. Introduce normalized tables and targeted updates, or migrate to a managed relational database, before concurrent administrative use becomes routine.
 2. **Set explicit file-storage controls.** Use storage quotas/monitoring, antivirus or malware scanning appropriate to the platform, encrypted persistent volumes, and non-guessable file paths. File-signature checks are useful but are not malware detection.
-3. **Harden browser token handling.** Because bearer credentials are in `localStorage`, set a restrictive Content-Security-Policy, protect against XSS, and avoid third-party scripts. Consider secure, `HttpOnly`, `SameSite` cookies if the deployment can support CSRF protections.
+3. **Harden browser token handling.** The application now uses secure `HttpOnly` cookies, CSRF validation, restrictive browser security headers, and no frontend token persistence. Keep `APP_ORIGIN` exact, set `NODE_ENV=production`, serve both origins over HTTPS, and remove bearer compatibility after all clients have migrated.
 4. **Make audit logs durable and queryable.** Audit entries are part of the same JSON collection and the admin route limits returned records. Define retention, export, pagination, and restricted operational access for investigations.
 5. **Add deployment health monitoring.** Monitor `/api/health`, database/file-volume capacity, failed email deliveries, failed proof writes, and application error rates. Alert on backup failures and a missing email webhook secret.
 

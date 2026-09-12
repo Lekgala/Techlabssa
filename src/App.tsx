@@ -4,6 +4,7 @@ import { Navbar } from './components/layout/Navbar';
 import { Footer } from './components/layout/Footer';
 import { WhatsAppButton } from './components/layout/WhatsAppButton';
 import { ToastContainer } from './components/layout/ToastContainer';
+import { CookieNotice } from './components/layout/CookieNotice';
 
 // Public Pages
 import { Home } from './pages/public/Home';
@@ -86,6 +87,7 @@ const AppContent: React.FC = () => {
       </main>
       {!isAdminRoute && <Footer />}
       {!isAdminRoute && <WhatsAppButton />}
+      {!isAdminRoute && <CookieNotice />}
       <ToastContainer />
     </div>
   );

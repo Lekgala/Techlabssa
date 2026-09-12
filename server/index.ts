@@ -21,6 +21,10 @@ type AuthedRequest = Request & { session?: Session; rawBody?: string };
 const app = express();
 forwardAsyncErrors(app);
 const PORT = Number(process.env.PORT || 4000);
+const appOrigin = process.env.APP_ORIGIN || 'http://localhost:3000';
+const isProduction = process.env.NODE_ENV === 'production';
+const sessionCookieName = 'techlabs_session';
+const csrfCookieName = 'techlabs_csrf';
 const requestWindows = new Map<string, { count: number; resetAt: number }>();
 const adminEmail = (process.env.ADMIN_EMAIL || 'admin@localhost').toLowerCase();
 const adminPassword = process.env.ADMIN_PASSWORD || '';
@@ -31,9 +35,41 @@ setInterval(() => {
 }, 10 * 60 * 1000).unref();
 
 app.disable('x-powered-by');
-app.use(cors({ origin: process.env.APP_ORIGIN || 'http://localhost:3000' }));
+app.use(cors({ origin: appOrigin, credentials: true, methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'], allowedHeaders: ['Content-Type', 'Authorization', 'X-CSRF-Token', 'X-File-Name'] }));
+app.use((_req, res, next) => {
+  res.setHeader('X-Content-Type-Options', 'nosniff');
+  res.setHeader('X-Frame-Options', 'DENY');
+  res.setHeader('Referrer-Policy', 'strict-origin-when-cross-origin');
+  res.setHeader('Permissions-Policy', 'camera=(), microphone=(), geolocation=()');
+  res.setHeader('Content-Security-Policy', "default-src 'self'; base-uri 'self'; frame-ancestors 'none'; object-src 'none'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https:; connect-src 'self' https:; font-src 'self' data:");
+  if (isProduction) res.setHeader('Strict-Transport-Security', 'max-age=31536000; includeSubDomains');
+  next();
+});
 app.post('/api/webhooks/yoco', ...yocoWebhook());
 app.use(express.json({ limit: '256kb', verify: (req: AuthedRequest, _res, buffer) => { req.rawBody = buffer.toString('utf8'); } }));
+
+const parseCookies = (header?: string) => Object.fromEntries((header || '').split(';').map(value => value.trim().split('=').filter(Boolean)).filter(parts => parts.length >= 2).map(([key, ...value]) => [key, decodeURIComponent(value.join('='))]));
+const setCookie = (res: Response, name: string, value: string, options: { httpOnly: boolean; maxAge: number }) => {
+  const attributes = [`${name}=${encodeURIComponent(value)}`, 'Path=/', `Max-Age=${Math.floor(options.maxAge / 1000)}`, `SameSite=${isProduction ? 'None' : 'Lax'}`];
+  if (options.httpOnly) attributes.push('HttpOnly');
+  if (isProduction) attributes.push('Secure');
+  res.append('Set-Cookie', attributes.join('; '));
+};
+const setSessionCookie = (res: Response, token: string) => setCookie(res, sessionCookieName, token, { httpOnly: true, maxAge: 8 * 60 * 60 * 1000 });
+const clearSessionCookie = (res: Response) => res.append('Set-Cookie', `${sessionCookieName}=; Path=/; Max-Age=0; SameSite=${isProduction ? 'None' : 'Lax'}${isProduction ? '; Secure' : ''}; HttpOnly`);
+const ensureCsrfCookie = (req: Request, res: Response) => {
+  const cookies = parseCookies(req.header('cookie'));
+  const token = cookies[csrfCookieName] || crypto.randomBytes(24).toString('base64url');
+  if (!cookies[csrfCookieName]) setCookie(res, csrfCookieName, token, { httpOnly: false, maxAge: 8 * 60 * 60 * 1000 });
+  return token;
+};
+app.use((req, res, next) => {
+  const csrf = ensureCsrfCookie(req, res);
+  if (['GET', 'HEAD', 'OPTIONS'].includes(req.method) || req.path === '/api/webhooks/yoco' || req.path === '/api/webhooks/resend') return next();
+  const cookies = parseCookies(req.header('cookie'));
+  if (cookies[sessionCookieName] && req.header('x-csrf-token') !== csrf) return res.status(403).json({ error: 'CSRF validation failed' });
+  next();
+});
 
 const safeEqual = (left: string, right: string) => {
   const a = Buffer.from(left); const b = Buffer.from(right);
@@ -114,11 +150,13 @@ const verifyResendWebhook = (req: AuthedRequest) => {
   } catch { return false; }
 };
 async function authenticate(req: AuthedRequest, res: Response, next: NextFunction) {
-  const token = req.header('authorization')?.replace(/^Bearer\s+/i, '');
+  const cookies = parseCookies(req.header('cookie'));
+  const token = req.header('authorization')?.replace(/^Bearer\s+/i, '') || cookies[sessionCookieName];
   const db = await getDatabase();
   const stored = token ? db.sessions.find(item => item.tokenHash === hashToken(token)) : undefined;
   if (!stored || new Date(stored.expiresAt).getTime() <= Date.now()) {
     if (stored) { db.sessions = db.sessions.filter(item => item.id !== stored.id); await saveDatabase(db); }
+    clearSessionCookie(res);
     return res.status(401).json({ error: 'Authentication required' });
   }
   req.session = { role: stored.role, userId: stored.userId, email: stored.email, expiresAt: new Date(stored.expiresAt).getTime() }; next();
@@ -194,10 +232,12 @@ app.post('/api/auth/admin', rateLimit('admin-login', 5, 15 * 60 * 1000), async (
   const staff = db.staffAccounts.find(item => item.email === email && item.active);
   if (staff && await verifyPassword(password, staff.passwordHash)) {
     const token = await issueSession({ role: staff.role, userId: staff.id, email });
+    setSessionCookie(res, token);
     return res.json({ token, user: { id: staff.id, name: staff.name, email, role: staff.role } });
   }
   if (!adminPassword || !safeEqual(email, adminEmail) || !safeEqual(password, adminPassword)) return res.status(401).json({ error: 'Invalid credentials' });
   const token = await issueSession({ role: 'ADMIN', userId: 'admin', email });
+  setSessionCookie(res, token);
   res.json({ token, user: { id: 'admin', name: 'TechLabs Administrator', email, role: 'ADMIN' } });
 });
 
@@ -210,6 +250,7 @@ app.post('/api/auth/student', rateLimit('student-login', 10, 15 * 60 * 1000), as
   if (!application || !credential?.passwordHash || !(await verifyPassword(password, credential.passwordHash))) return res.status(401).json({ error: 'Invalid email or password' });
   if (!credential.emailVerifiedAt) return res.status(403).json({ error: 'Verify your email before signing in' });
   const token = await issueSession({ role: 'STUDENT', userId: application.id, email });
+  setSessionCookie(res, token);
   res.json({ token, user: { id: application.id, name: `${application.firstName} ${application.lastName}`, email: application.email, role: 'STUDENT', whatsapp: application.whatsapp, cohortId: application.cohortId } });
 });
 
@@ -267,6 +308,7 @@ app.post('/api/auth/magic-login', rateLimit('magic-login', 10, 15 * 60 * 1000), 
   if (!application || !credential?.emailVerifiedAt) return res.status(403).json({ error: 'Account email is not verified' });
   record.usedAt = new Date().toISOString(); await saveDatabase(db);
   const token = await issueSession({ role: 'STUDENT', userId: application.id, email: application.email.toLowerCase() });
+  setSessionCookie(res, token);
   res.json({ token, user: { id: application.id, name: `${application.firstName} ${application.lastName}`, email: application.email, role: 'STUDENT', whatsapp: application.whatsapp, cohortId: application.cohortId } });
 });
 
@@ -281,7 +323,8 @@ app.post('/api/auth/verify-email', rateLimit('verify-email', 10, 15 * 60 * 1000)
 
 app.post('/api/auth/logout', authenticate, (req: AuthedRequest, res) => {
   const token = req.header('authorization')?.replace(/^Bearer\s+/i, '');
-  void (async () => { if (token) { const db = await getDatabase(); db.sessions = db.sessions.filter(item => item.tokenHash !== hashToken(token)); await saveDatabase(db); } })().finally(() => res.status(204).send());
+  const cookieToken = parseCookies(req.header('cookie'))[sessionCookieName];
+  void (async () => { if (token || cookieToken) { const db = await getDatabase(); db.sessions = db.sessions.filter(item => item.tokenHash !== hashToken(token || cookieToken)); await saveDatabase(db); } })().finally(() => { clearSessionCookie(res); res.status(204).send(); });
 });
 app.get('/api/session', authenticate, async (req: AuthedRequest, res) => {
   const session = req.session!;

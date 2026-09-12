@@ -1,14 +1,15 @@
 const apiBaseUrl = (import.meta.env.VITE_API_URL || '').replace(/\/$/, '');
 const apiUrl = (path: string) => `${apiBaseUrl}/api${path}`;
+const csrfToken = () => document.cookie.split('; ').find(value => value.startsWith('techlabs_csrf='))?.split('=').slice(1).join('=') || '';
 
 export async function apiRequest<T>(path: string, options: RequestInit = {}): Promise<T> {
-  const token = typeof window !== 'undefined' ? localStorage.getItem('techlabs_session') : null;
   const response = await fetch(apiUrl(path), {
     headers: {
       'Content-Type': 'application/json',
-      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      ...(!['GET', 'HEAD', 'OPTIONS'].includes(options.method?.toUpperCase() || 'GET') && csrfToken() ? { 'X-CSRF-Token': decodeURIComponent(csrfToken()) } : {}),
       ...(options.headers || {}),
     },
+    credentials: 'include',
     ...options,
   });
 
@@ -32,15 +33,14 @@ export async function apiRequest<T>(path: string, options: RequestInit = {}): Pr
 
 export function setApiSession(token?: string): void {
   if (typeof window === 'undefined') return;
-  if (token) localStorage.setItem('techlabs_session', token);
-  else localStorage.removeItem('techlabs_session');
+  localStorage.removeItem('techlabs_session');
 }
 
 export async function apiDownload(path: string, body: unknown, filename: string): Promise<void> {
-  const token = localStorage.getItem('techlabs_session');
   const response = await fetch(apiUrl(path), {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}) },
+    headers: { 'Content-Type': 'application/json', ...(csrfToken() ? { 'X-CSRF-Token': decodeURIComponent(csrfToken()) } : {}) },
+    credentials: 'include',
     body: JSON.stringify(body),
   });
   if (!response.ok) throw new Error(await response.text() || 'Download failed');
@@ -51,10 +51,10 @@ export async function apiDownload(path: string, body: unknown, filename: string)
 }
 
 export async function apiUpload<T>(path: string, file: File, extraHeaders: Record<string, string> = {}): Promise<T> {
-  const token = localStorage.getItem('techlabs_session');
   const response = await fetch(apiUrl(path), {
     method: 'POST',
-    headers: { 'Content-Type': file.type, 'X-File-Name': encodeURIComponent(file.name), ...(token ? { Authorization: `Bearer ${token}` } : {}), ...extraHeaders },
+    headers: { 'Content-Type': file.type, 'X-File-Name': encodeURIComponent(file.name), ...(csrfToken() ? { 'X-CSRF-Token': decodeURIComponent(csrfToken()) } : {}), ...extraHeaders },
+    credentials: 'include',
     body: file,
   });
   if (!response.ok) throw new Error(await response.text() || 'Upload failed');
@@ -62,8 +62,7 @@ export async function apiUpload<T>(path: string, file: File, extraHeaders: Recor
 }
 
 export async function apiOpenPrivate(path: string): Promise<void> {
-  const token = localStorage.getItem('techlabs_session');
-  const response = await fetch(apiUrl(path), { headers: token ? { Authorization: `Bearer ${token}` } : {} });
+  const response = await fetch(apiUrl(path), { credentials: 'include' });
   if (!response.ok) throw new Error(await response.text() || 'File could not be opened');
   const url = URL.createObjectURL(await response.blob());
   window.open(url, '_blank', 'noopener,noreferrer');
@@ -71,8 +70,7 @@ export async function apiOpenPrivate(path: string): Promise<void> {
 }
 
 export async function apiGetPrivateBlob(path: string): Promise<{ url: string; type: string }> {
-  const token = localStorage.getItem('techlabs_session');
-  const response = await fetch(apiUrl(path), { headers: token ? { Authorization: `Bearer ${token}` } : {} });
+  const response = await fetch(apiUrl(path), { credentials: 'include' });
   if (!response.ok) throw new Error(await response.text() || 'File could not be loaded');
   const blob = await response.blob();
   return { url: URL.createObjectURL(blob), type: blob.type };
