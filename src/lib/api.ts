@@ -84,5 +84,7 @@ export async function apiGetPrivateBlob(path: string): Promise<{ url: string; ty
   const response = await fetch(apiUrl(path), { headers: token ? { Authorization: `Bearer ${token}` } : {}, credentials: 'include' });
   if (!response.ok) throw new Error(await response.text() || 'File could not be loaded');
   const blob = await response.blob();
+  if (!['application/pdf', 'image/jpeg', 'image/png'].includes(blob.type)) throw new Error(`Unsupported proof preview response: ${blob.type || 'unknown content type'}`);
+  if (blob.size === 0) throw new Error('The proof preview response was empty');
   return { url: URL.createObjectURL(blob), type: blob.type };
 }

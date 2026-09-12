@@ -637,7 +637,10 @@ app.get('/api/payments/:id/proof', authenticate, async (req: AuthedRequest, res,
   const file = await proofStorage.get(payment.storageKey, payment.sha256);
   res.setHeader('Cache-Control', 'private, no-store');
   res.setHeader('X-Content-Type-Options', 'nosniff');
-  res.type(payment.mimeType).setHeader('Content-Disposition', `inline; filename="${payment.originalFileName.replace(/[^\x20-\x7E]|["\\]/g, '_')}"`).send(file);
+  res.setHeader('Content-Type', payment.mimeType);
+  res.setHeader('Content-Length', String(file.length));
+  res.setHeader('Cache-Control', 'private, no-store');
+  res.setHeader('Content-Disposition', `inline; filename="${payment.originalFileName.replace(/[^\x20-\x7E]|["\\]/g, '_')}"`).send(file);
   } catch (error) { if (proofNotFound(error)) return res.status(404).json({ error: 'Payment proof file not found' }); next(error); }
 });
 
