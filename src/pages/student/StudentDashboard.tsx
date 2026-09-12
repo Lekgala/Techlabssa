@@ -407,7 +407,7 @@ export const StudentDashboard: React.FC = () => {
                 Close Preview
               </button>
             </div>
-            <PrintableInvoice invoice={studentInvoice} allowPrint={true} />
+            <PrintableInvoice invoice={studentInvoice} installments={installments} allowPrint={true} />
           </div>
         </div>
       )}

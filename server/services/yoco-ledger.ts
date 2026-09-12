@@ -20,8 +20,8 @@ export function amountDue(db: TechlabsDatabase, invoiceId: string, studentId: st
   if (db.payments.some(p => p.invoiceId === invoiceId && p.status === 'SUBMITTED')) throw new YocoError(409, 'An EFT payment is awaiting review');
   const balance = Math.round((invoice.amountZAR - (invoice.paidZAR ?? 0)) * 100);
   const installment = db.paymentInstallments.filter(p => p.invoiceId === invoiceId && p.status !== 'PAID').sort((a, b) => a.sequence - b.sequence)[0];
-  const due = !(invoice.paidZAR ?? 0) && invoice.paymentOption !== 'FULL' ? Math.min(100000, balance)
-    : installment ? Math.min(balance, Math.round((installment.amountZAR - (installment.paidZAR ?? 0)) * 100)) : balance;
+  const due = installment ? Math.min(balance, Math.round((installment.amountZAR - (installment.paidZAR ?? 0)) * 100))
+    : !(invoice.paidZAR ?? 0) && invoice.paymentOption !== 'FULL' ? Math.min(100000, balance) : balance;
   if (!Number.isSafeInteger(due) || due <= 0) throw new YocoError(409, 'No payment is due');
   return due;
 }

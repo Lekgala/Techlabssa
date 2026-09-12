@@ -79,7 +79,9 @@ test('Yoco routes and atomic ledger with an isolated SQLite database', async t =
   await t.test('full cohort waitlists paid student; installments determine amount due', async () => {
     await mutateDatabase(db => {
       db.applications[0].status = 'APPROVED'; db.cohorts[0].capacity = 0;
-      db.paymentInstallments = [{ id: 'inst', invoiceId: 'invoice', sequence: 1, label: 'Balance', amountZAR: 999, paidZAR: 0, dueDate: '2030-01-01', status: 'PENDING', createdAt: new Date().toISOString() }];
+      db.paymentInstallments = [{ id: 'deposit', invoiceId: 'invoice', sequence: 1, label: 'Seat deposit', amountZAR: 1000, paidZAR: 0, dueDate: '2030-01-01', status: 'PENDING', createdAt: new Date().toISOString() }, { id: 'inst', invoiceId: 'invoice', sequence: 2, label: 'Balance', amountZAR: 999, paidZAR: 0, dueDate: '2030-02-01', status: 'PENDING', createdAt: new Date().toISOString() }];
+      assert.equal(amountDue(db, 'invoice', 'student'), 100000);
+      db.invoices[0].paidZAR = 1000; db.invoices[0].balanceZAR = 999; db.paymentInstallments[0].paidZAR = 1000; db.paymentInstallments[0].status = 'PAID';
       assert.equal(amountDue(db, 'invoice', 'student'), 99900);
       db.yocoCheckouts!.push({ ...db.yocoCheckouts![0], id: 'balance', mode: 'live', amountCents: 99900, status: 'PENDING', checkoutId: 'balance-checkout', eventId: undefined, paymentId: undefined });
     });
