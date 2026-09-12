@@ -706,9 +706,12 @@ export const AdminDashboard: React.FC = () => {
     issueCertificate({
       studentId: st.id,
       studentName: `${st.firstName} ${st.lastName}`,
+      courseName: 'IT Support & Enterprise Administration Bootcamp',
+      completionDate: new Date().toISOString().slice(0, 10),
+      instructorName: settings.leadInstructorName || 'TechLabs Instruction Team',
       cohortName: 'Cape Town Cohort Alpha (Oct 2026)',
       practicalGrade: certGrade,
-      competencies: [
+      skillsAcquired: [
         'Enterprise VMware Virtualization & Isolated VMnet2 Switching',
         'Windows Server 2022 & Active Directory Domain Services Forest Architecture',
         'Microsoft 365, Entra ID Cloud Connector & Conditional Access',
