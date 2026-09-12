@@ -946,6 +946,12 @@ for (const collection of ['cohorts','tickets','labs','invoices','assessments','c
   app.post(`/api/${collection}`, authenticate, requireRole('ADMIN'), async (req, res) => {
     const db = await getDatabase();
     const record = { ...req.body, id: req.body?.id || makeId(collection.slice(0, 3)) };
+    if (collection === 'certificates') {
+      const application = db.applications.find(item => item.id === record.studentId);
+      const finalAssessment = db.assessments.find(item => item.studentId === record.studentId && item.moduleNumber === 15);
+      if (!application || application.status !== 'COMPLETED') return res.status(409).json({ error: 'Student must be marked COMPLETED before a certificate can be issued' });
+      if (!finalAssessment || finalAssessment.status !== 'Graded' || (finalAssessment.studentScore ?? 0) < 80) return res.status(409).json({ error: 'Final assessment must be graded at 80% or higher before a certificate can be issued' });
+    }
     (db[collection] as any[]) = [record, ...(db[collection] as any[])];
     await saveDatabase(db);
     res.status(201).json(record);
