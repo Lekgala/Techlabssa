@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { useApp } from '../../context/AppContext';
 import { 
   Terminal, 
@@ -19,6 +19,24 @@ export const Navbar: React.FC = () => {
   const { currentPath, navigate, currentRole, logout, loginAsStudent, loginAsAdmin, settings } = useApp();
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [coursesDropdownOpen, setCoursesDropdownOpen] = useState(false);
+  const [countdown, setCountdown] = useState('');
+  const flashSale = settings?.flashSale;
+
+  useEffect(() => {
+    const updateCountdown = () => {
+      if (!flashSale?.enabled || !flashSale.showCountdown || !flashSale.endDate) { setCountdown(''); return; }
+      const remaining = new Date(`${flashSale.endDate}T23:59:59`).getTime() - Date.now();
+      if (!Number.isFinite(remaining) || remaining <= 0) { setCountdown(''); return; }
+      const days = Math.floor(remaining / 86400000);
+      const hours = Math.floor((remaining % 86400000) / 3600000);
+      const minutes = Math.floor((remaining % 3600000) / 60000);
+      const seconds = Math.floor((remaining % 60000) / 1000);
+      setCountdown(`${days}d ${String(hours).padStart(2, '0')}h ${String(minutes).padStart(2, '0')}m ${String(seconds).padStart(2, '0')}s`);
+    };
+    updateCountdown();
+    const timer = window.setInterval(updateCountdown, 1000);
+    return () => window.clearInterval(timer);
+  }, [flashSale?.enabled, flashSale?.showCountdown, flashSale?.endDate]);
 
   const handleNav = (path: string) => {
     navigate(path);
@@ -43,7 +61,7 @@ export const Navbar: React.FC = () => {
               Flash Sale
             </span>
             <span className="font-sans font-bold text-xs leading-tight sm:leading-normal">
-              {settings.flashSale.title} ({settings.flashSale.discountPercent}% OFF)
+              {settings.flashSale.title} ({settings.flashSale.discountPercent}% OFF){countdown && <span className="text-neutral-300"> · Ends in {countdown}</span>}
             </span>
           </div>
           <button

@@ -440,6 +440,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         title: '⚡ SPECIAL FLASH SALE: 20% OFF ALL COURSES & BOOTCAMP TIERS!',
         discountPercent: 20,
         endDate: new Date(Date.now() + 7 * 86400000).toISOString().split('T')[0],
+        showCountdown: false,
         targetTiers: ['STARTER', 'PROFESSIONAL', 'CAREER_ACCELERATOR']
       },
       courseTierPricing: {

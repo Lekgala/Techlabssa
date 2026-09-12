@@ -1893,6 +1893,7 @@ export const AdminDashboard: React.FC = () => {
                         title: settings.flashSale?.title || '⚡ SPECIAL FLASH SALE: 20% OFF ALL COURSES!',
                         discountPercent: settings.flashSale?.discountPercent || 20,
                         endDate: settings.flashSale?.endDate || new Date(Date.now() + 7 * 86400000).toISOString().split('T')[0],
+                        showCountdown: settings.flashSale?.showCountdown ?? false,
                         targetTiers: settings.flashSale?.targetTiers || ['STARTER', 'PROFESSIONAL', 'CAREER_ACCELERATOR'],
                         manuallySet: true
                       }
@@ -1919,6 +1920,8 @@ export const AdminDashboard: React.FC = () => {
                         className="w-full p-3 bg-white border border-[#E0E0E0] rounded-xl text-[#000000] focus:border-[#000000] focus:outline-none"
                       />
                     </div>
+
+                    <label className="flex items-center gap-2 text-xs font-bold uppercase tracking-wider"><input type="checkbox" checked={Boolean(settings.flashSale.showCountdown)} onChange={event => updateSettings({ flashSale: { ...settings.flashSale!, showCountdown: event.target.checked } })} className="accent-black" /> Show countdown on sale banner</label>
 
                     <div className="grid grid-cols-2 gap-2 font-mono">
                       <div className="space-y-1">
