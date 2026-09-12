@@ -35,7 +35,7 @@ setInterval(() => {
 }, 10 * 60 * 1000).unref();
 
 app.disable('x-powered-by');
-app.use(cors({ origin: appOrigin, credentials: true, methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'], allowedHeaders: ['Content-Type', 'Authorization', 'X-CSRF-Token', 'X-File-Name'] }));
+app.use(cors({ origin: appOrigin, credentials: true, methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'], allowedHeaders: ['Content-Type', 'Authorization', 'X-CSRF-Token', 'X-File-Name', 'X-EFT-Reference'] }));
 app.use((_req, res, next) => {
   res.setHeader('X-Content-Type-Options', 'nosniff');
   res.setHeader('X-Frame-Options', 'DENY');
