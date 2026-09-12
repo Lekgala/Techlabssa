@@ -220,6 +220,11 @@ export const Privacy: React.FC = () => (
         <h2 className="text-base font-bold text-[#000000]">3. Non-Disclosure & Security</h2>
         <p className="text-[#707070]">We do not sell, rent, or distribute student personal information to third-party marketing brokers. All data is processed using modern encryption protocols.</p>
       </section>
+
+      <section className="space-y-2">
+        <h2 className="text-base font-bold text-[#000000]">4. Essential Cookies</h2>
+        <p className="text-[#707070]">The student and staff portals use an essential HttpOnly session cookie to keep authenticated accounts signed in. A separate security cookie helps protect authenticated form submissions against cross-site request forgery. These cookies are required for the portal to function, are not used for advertising or analytics, and are removed or expire when the session ends.</p>
+      </section>
     </div>
   </div>
 );

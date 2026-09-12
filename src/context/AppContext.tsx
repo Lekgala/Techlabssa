@@ -209,7 +209,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       if (data.courseModules && data.courseModules.length > 0) setCourseModules(data.courseModules);
       if (data.settings) setSettings(current => ({ ...current, ...data.settings, flashSale: data.settings.flashSale ?? { ...current.flashSale!, enabled: false } }));
 
-      if (localStorage.getItem('techlabs_session')) {
+      {
         try {
           const restored = await apiRequest<{ user: User }>('/session');
           setCurrentUser(restored.user);
@@ -407,8 +407,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   const [settings, setSettings] = useState<AcademySettings>(() => {
     const defaults: AcademySettings = {
-      whatsappNumber: (import.meta as any).env?.VITE_WHATSAPP_NUMBER || '+27821234567',
-      studentSupportWhatsappNumber: (import.meta as any).env?.VITE_STUDENT_SUPPORT_WHATSAPP_NUMBER || (import.meta as any).env?.VITE_WHATSAPP_NUMBER || '+27821234567',
+      whatsappNumber: (import.meta as any).env?.VITE_WHATSAPP_NUMBER || '+27000000000',
+      studentSupportWhatsappNumber: (import.meta as any).env?.VITE_STUDENT_SUPPORT_WHATSAPP_NUMBER || (import.meta as any).env?.VITE_WHATSAPP_NUMBER || '+27000000000',
       admissionsEmail: (import.meta as any).env?.VITE_ACADEMY_EMAIL || 'admissions@techlabs.co.za',
       campusAddress: 'Cape Town, South Africa',
       bankName: 'Provided on your official invoice',
