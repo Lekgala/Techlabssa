@@ -9,6 +9,7 @@ interface CertificateViewProps {
 
 export const CertificateView: React.FC<CertificateViewProps> = ({ certificate, allowPrint = true }) => {
   const containerRef = React.useRef<HTMLDivElement | null>(null);
+  const skillsAcquired = Array.isArray(certificate?.skillsAcquired) ? certificate.skillsAcquired : [];
 
   if (!certificate) {
     return (
@@ -115,7 +116,7 @@ export const CertificateView: React.FC<CertificateViewProps> = ({ certificate, a
             Verified Practical Competencies & Lab Audit:
           </h4>
           <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-2 text-xs">
-            {certificate.skillsAcquired.map((skill, idx) => (
+            {skillsAcquired.map((skill, idx) => (
               <div key={idx} className="flex items-center gap-2 p-2 bg-[#FAFAFA] rounded-lg border border-[#E0E0E0]">
                 <CheckCircle className="w-3.5 h-3.5 text-[#000000] shrink-0" />
                 <span className="font-medium text-[#1A1A1A] text-[11px]">{skill}</span>

@@ -92,6 +92,7 @@ export const AdminDashboard: React.FC = () => {
     updateLeadFollowUp,
     invoices,
     payments,
+    assessments,
     courseModules,
     createCourseModule,
     saveCourseModule,
@@ -702,6 +703,16 @@ export const AdminDashboard: React.FC = () => {
     e.preventDefault();
     const st = students.find(s => s.id === certStudentId) || students[0];
     if (!st) return;
+    const application = applications.find(item => item.id === st.id);
+    const finalAssessment = assessments.find(item => item.studentId === st.id && item.moduleNumber === 15);
+    if (!application || application.status !== 'COMPLETED') {
+      showToast('error', 'Certificate Not Eligible', 'The student must have a COMPLETED application status before a certificate can be issued.');
+      return;
+    }
+    if (!finalAssessment || finalAssessment.status !== 'Graded' || (finalAssessment.studentScore ?? 0) < 80) {
+      showToast('error', 'Certificate Not Eligible', 'The final assessment must be graded at 80% or higher before a certificate can be issued.');
+      return;
+    }
 
     issueCertificate({
       studentId: st.id,
@@ -1599,7 +1610,7 @@ export const AdminDashboard: React.FC = () => {
                   onChange={(e) => setCertStudentId(e.target.value)}
                   className="w-full p-3 bg-[#FFFFFF] border border-[#E0E0E0] rounded-xl text-[#000000] font-bold focus:border-[#000000] focus:outline-none"
                 >
-                  {students.map((st) => (
+                  {students.filter(st => applications.some(application => application.id === st.id && application.status === 'COMPLETED' && assessments.some(assessment => assessment.studentId === st.id && assessment.moduleNumber === 15 && assessment.status === 'Graded' && (assessment.studentScore ?? 0) >= 80))).map((st) => (
                     <option key={st.id} value={st.id}>
                       {st.firstName} {st.lastName} ({st.email})
                     </option>
