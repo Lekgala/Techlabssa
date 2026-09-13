@@ -93,7 +93,7 @@ export const Navbar: React.FC = () => {
           {/* Brand Logo */}
           <div 
             onClick={() => handleNav('/')}
-            className="flex items-center gap-3 cursor-pointer group"
+            className="flex items-center gap-3 cursor-pointer group shrink-0"
           >
             <div className="w-6 h-6 bg-[#000000] rotate-45 flex items-center justify-center transition group-hover:rotate-90"></div>
             <div>
@@ -109,7 +109,7 @@ export const Navbar: React.FC = () => {
           </div>
 
           {/* Desktop Navigation Links */}
-          <nav className="hidden lg:flex items-center gap-8 text-[11px] font-bold uppercase tracking-[0.2em] text-[#A0A0A0]">
+          <nav className="hidden xl:flex items-center gap-6 2xl:gap-8 text-[11px] font-bold uppercase tracking-[0.18em] text-[#A0A0A0]">
             <button
               id="nav-home"
               onClick={() => handleNav('/')}
@@ -219,13 +219,13 @@ export const Navbar: React.FC = () => {
             </button>
           </nav>
 
-          {/* Right Action CTAs */}
-          <div className="hidden lg:flex items-center gap-4">
+          {/* Right Action CTAs (Desktop) */}
+          <div className="hidden xl:flex items-center gap-4 shrink-0">
             {currentRole === 'STUDENT' ? (
               <button
                 id="nav-portal-student-btn"
                 onClick={() => handleNav('/student')}
-                className="border border-[#000000] text-[#000000] hover:bg-[#000000] hover:text-white px-3.5 py-2 rounded-xl text-[10px] font-bold uppercase tracking-[0.2em] transition-colors"
+                className="border border-[#000000] text-[#000000] hover:bg-[#000000] hover:text-white px-3.5 py-2 rounded-xl text-[10px] font-bold uppercase tracking-[0.2em] transition-colors shrink-0"
               >
                 Student Portal
               </button>
@@ -233,7 +233,7 @@ export const Navbar: React.FC = () => {
               <button
                 id="nav-portal-admin-btn"
                 onClick={() => handleNav('/admin')}
-                className="border border-[#000000] text-[#000000] hover:bg-[#000000] hover:text-white px-3.5 py-2 rounded-xl text-[10px] font-bold uppercase tracking-[0.2em] transition-colors"
+                className="border border-[#000000] text-[#000000] hover:bg-[#000000] hover:text-white px-3.5 py-2 rounded-xl text-[10px] font-bold uppercase tracking-[0.2em] transition-colors shrink-0"
               >
                 Admin Console
               </button>
@@ -241,7 +241,7 @@ export const Navbar: React.FC = () => {
               <button
                 id="nav-student-login-link"
                 onClick={() => handleNav('/student/login')}
-                className="border border-[#000000] text-[#000000] hover:bg-[#000000] hover:text-white px-3.5 py-2 rounded-xl text-[10px] font-bold uppercase tracking-[0.2em] transition-colors"
+                className="border border-[#000000] text-[#000000] hover:bg-[#000000] hover:text-white px-3.5 py-2 rounded-xl text-[10px] font-bold uppercase tracking-[0.2em] transition-colors shrink-0"
               >
                 Student Portal
               </button>
@@ -250,20 +250,45 @@ export const Navbar: React.FC = () => {
             <button
               id="nav-apply-primary-cta"
               onClick={() => handleNav('/apply')}
-              className="px-5 py-2.5 bg-[#000000] text-white hover:bg-neutral-800 text-[10px] font-bold uppercase tracking-[0.2em] rounded-xl transition-colors shadow-sm"
+              className="px-5 py-2.5 bg-[#000000] text-white hover:bg-neutral-800 text-[10px] font-bold uppercase tracking-[0.2em] rounded-xl transition-colors shadow-sm shrink-0 whitespace-nowrap"
             >
               Apply Online
             </button>
           </div>
 
-          {/* Mobile Hamburger Button */}
-          <div className="flex items-center gap-2 lg:hidden">
+          {/* Mobile & Tablet Action Bar (iPad & Mobile) */}
+          <div className="flex items-center gap-2 sm:gap-3 xl:hidden">
+            {currentRole === 'STUDENT' ? (
+              <button
+                onClick={() => handleNav('/student')}
+                className="hidden sm:inline-flex border border-[#000000] text-[#000000] hover:bg-[#000000] hover:text-white px-3 py-1.5 rounded-xl text-[10px] font-bold uppercase tracking-wider transition-colors shrink-0"
+              >
+                Student Portal
+              </button>
+            ) : currentRole === 'ADMIN' || currentRole === 'INSTRUCTOR' ? (
+              <button
+                onClick={() => handleNav('/admin')}
+                className="hidden sm:inline-flex border border-[#000000] text-[#000000] hover:bg-[#000000] hover:text-white px-3 py-1.5 rounded-xl text-[10px] font-bold uppercase tracking-wider transition-colors shrink-0"
+              >
+                Admin Console
+              </button>
+            ) : (
+              <button
+                onClick={() => handleNav('/student/login')}
+                className="hidden sm:inline-flex border border-[#000000] text-[#000000] hover:bg-[#000000] hover:text-white px-3 py-1.5 rounded-xl text-[10px] font-bold uppercase tracking-wider transition-colors shrink-0"
+              >
+                Student Portal
+              </button>
+            )}
+
             <button
+              id="nav-mobile-apply-btn"
               onClick={() => handleNav('/apply')}
-              className="bg-[#000000] text-white text-[10px] font-bold uppercase tracking-wider px-3 py-1.5 rounded-lg"
+              className="bg-[#000000] hover:bg-neutral-800 text-white text-[10px] sm:text-[11px] font-bold uppercase tracking-wider px-3.5 py-1.5 sm:py-2 rounded-xl transition-colors shrink-0 shadow-sm whitespace-nowrap"
             >
-              Apply
+              Apply Now
             </button>
+
             <button
               id="mobile-menu-toggle"
               type="button"
@@ -281,7 +306,7 @@ export const Navbar: React.FC = () => {
 
       {/* Mobile Drawer */}
       {mobileMenuOpen && (
-        <div id="mobile-navigation" className="lg:hidden bg-[#FFFFFF] border-b border-[#F0F0F0] px-4 pt-2 pb-6 space-y-2 animate-in slide-in-from-top-4">
+        <div id="mobile-navigation" className="xl:hidden bg-[#FFFFFF] border-b border-[#F0F0F0] px-4 pt-2 pb-6 space-y-2 animate-in slide-in-from-top-4">
           {settings?.flashSale?.enabled && (
             <div 
               onClick={() => handleNav('/pricing')}
