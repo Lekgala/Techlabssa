@@ -298,7 +298,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       nextUrl.pathname = safePath === '/' ? '/' : safePath;
       nextUrl.hash = '';
       window.history[options?.replace ? 'replaceState' : 'pushState']({}, '', nextUrl.toString());
-      window.scrollTo({ top: 0, behavior: 'smooth' });
+      window.scrollTo(0, 0);
     }
   };
 
@@ -306,6 +306,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     const handlePopState = () => {
       const nextPath = normalizeRoute(window.location.pathname || '/');
       setCurrentPath((prev) => (prev === nextPath ? prev : nextPath));
+      window.scrollTo(0, 0);
     };
 
     window.addEventListener('popstate', handlePopState);

@@ -44,6 +44,10 @@ const AppContent: React.FC = () => {
     if (redirectPath) navigate(redirectPath, { replace: true });
   }, [navigate, redirectPath]);
 
+  useEffect(() => {
+    window.scrollTo(0, 0);
+  }, [path]);
+
   const renderPage = () => {
     if (isMaintenancePage) return <section className="max-w-2xl mx-auto px-4 py-24 text-center space-y-4"><p className="text-[10px] font-mono uppercase tracking-[0.2em] text-[#707070]">Temporarily unavailable</p><h1 className="text-4xl font-light">We are updating the academy site</h1><p className="text-sm text-[#707070]">Please check back shortly or contact admissions for assistance.</p></section>;
     if (!hasHydrated && (isStudentRoute || isAdminPortalRoute)) {

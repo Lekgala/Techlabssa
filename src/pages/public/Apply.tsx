@@ -33,6 +33,8 @@ export const Apply: React.FC = () => {
   const [submittedRef, setSubmittedRef] = useState<string | null>(null);
   const [submissionError, setSubmissionError] = useState('');
   const [submitting, setSubmitting] = useState(false);
+  const formRef = React.useRef<HTMLDivElement>(null);
+  const firstNameInputRef = React.useRef<HTMLInputElement>(null);
 
   // Form State
   const [formData, setFormData] = useState({
@@ -74,6 +76,21 @@ export const Apply: React.FC = () => {
       return { ...current, cohortId: availableCohorts[0]?.id || '' };
     });
   }, [availableCohorts]);
+
+  useEffect(() => {
+    window.scrollTo(0, 0);
+    const timer = setTimeout(() => {
+      firstNameInputRef.current?.focus({ preventScroll: true });
+    }, 100);
+    return () => clearTimeout(timer);
+  }, []);
+
+  useEffect(() => {
+    if (currentStep > 1 && formRef.current) {
+      const topOffset = formRef.current.getBoundingClientRect().top + window.scrollY - 80;
+      window.scrollTo({ top: Math.max(0, topOffset), behavior: 'smooth' });
+    }
+  }, [currentStep]);
 
   const availableTechs = [
     'Basic Computer Literacy',
@@ -269,7 +286,7 @@ export const Apply: React.FC = () => {
       </div>
 
       {/* Form Container */}
-      <div className="bg-[#FFFFFF] rounded-2xl border border-[#E0E0E0] shadow-sm p-6 sm:p-10">
+      <div ref={formRef} className="bg-[#FFFFFF] rounded-2xl border border-[#E0E0E0] shadow-sm p-6 sm:p-10">
         <form onSubmit={currentStep === 7 ? handleSubmit : (e) => { e.preventDefault(); setCurrentStep(prev => Math.min(7, prev + 1)); }}>
           {/* STEP 1: PERSONAL */}
           {currentStep === 1 && (
@@ -283,6 +300,7 @@ export const Apply: React.FC = () => {
                 <div className="space-y-1">
                   <label className="font-bold text-xs uppercase tracking-wider text-[#000000]">First Name *</label>
                   <input
+                    ref={firstNameInputRef}
                     type="text"
                     required
                     placeholder="e.g. Bongani"
