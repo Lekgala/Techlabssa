@@ -2,8 +2,12 @@ import React, { useEffect, useState } from 'react';
 import { apiRequest } from '../../lib/api';
 
 type Entry = { id: string; invoiceId?: string; paymentId?: string; status: string; mode: string; amountCents: number; createdAt: string };
-type Status = { enabled: boolean; mode?: string; reason: string; amountCents: number; history: Entry[] };
+type Status = { hidden?: boolean; enabled: boolean; mode?: string; reason: string; amountCents: number; history: Entry[] };
 export function YocoPayments({ invoiceId, admin = false }: { invoiceId?: string; admin?: boolean }) {
+  // Hosted builds omit the flow; local Vite development retains it.
+  return import.meta.env.DEV ? <LocalYocoPayments invoiceId={invoiceId} admin={admin} /> : null;
+}
+function LocalYocoPayments({ invoiceId, admin = false }: { invoiceId?: string; admin?: boolean }) {
   const [status, setStatus] = useState<Status>();
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
@@ -17,8 +21,8 @@ export function YocoPayments({ invoiceId, admin = false }: { invoiceId?: string;
     try {
       setError('');
       if (admin) {
-        const result = await apiRequest<{ checkouts: Entry[] }>('/admin/yoco/payments');
-        setStatus({ enabled: false, reason: '', amountCents: 0, history: result.checkouts });
+        const result = await apiRequest<{ hidden?: boolean; checkouts: Entry[] }>('/admin/yoco/payments');
+        setStatus({ hidden: result.hidden, enabled: false, reason: '', amountCents: 0, history: result.checkouts });
       } else setStatus(await apiRequest<Status>(path));
     } catch (error) { setError(error instanceof Error ? error.message : 'Could not load card payments'); }
   };
@@ -32,6 +36,7 @@ export function YocoPayments({ invoiceId, admin = false }: { invoiceId?: string;
       window.location.assign(url.href);
     } catch (error) { setError(error instanceof Error ? error.message : 'Could not start checkout'); setBusy(false); }
   };
+  if (status?.hidden) return null;
   return <section className="rounded-xl border border-neutral-200 bg-white p-5 space-y-3">
     <div className="flex justify-between items-center gap-4"><h4 className="font-bold">{admin ? 'Yoco payment activity' : 'Pay with Yoco'}</h4><button type="button" className="underline text-sm" onClick={() => void refresh()}>Refresh payments</button></div>
     {error && <p role="alert" className="text-red-700 text-sm">{error}</p>}

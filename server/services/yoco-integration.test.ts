@@ -45,6 +45,24 @@ test('Yoco routes and atomic ledger with an isolated SQLite database', async t =
     assert.equal((await fetch(`${base}/conflict-test`)).status, 500);
   });
   const checkout = (user = 'student') => fetch(`${base}/api/student/invoices/invoice/yoco`, { method: 'POST', headers: { Authorization: user } });
+  await t.test('hosted environments hide Yoco and reject checkout despite enabled credentials', async () => {
+    const originalRender = process.env.RENDER; const originalNodeEnv = process.env.NODE_ENV;
+    try {
+      for (const environment of [{ RENDER: 'true', NODE_ENV: 'development' }, { RENDER: 'false', NODE_ENV: 'production' }]) {
+        Object.assign(process.env, environment);
+        assert.equal((await checkout()).status, 503);
+        const status = await (await fetch(`${base}/api/student/invoices/invoice/yoco`, { headers: { Authorization: 'student' } })).json();
+        assert.equal(status.hidden, true); assert.equal(status.enabled, false); assert.deepEqual(status.history, []);
+        const admin = await (await fetch(`${base}/api/admin/yoco/payments`, { headers: { Authorization: 'admin' } })).json();
+        assert.equal(admin.hidden, true);
+      }
+      assert.equal(providerCalls, 0);
+      assert.equal((await getDatabase()).yocoCheckouts!.length, 0);
+    } finally {
+      if (originalRender === undefined) delete process.env.RENDER; else process.env.RENDER = originalRender;
+      if (originalNodeEnv === undefined) delete process.env.NODE_ENV; else process.env.NODE_ENV = originalNodeEnv;
+    }
+  });
   await t.test('auth and ownership gate checkout; pending checkout is reused', async () => {
     assert.equal((await fetch(`${base}/api/student/invoices/invoice/yoco`, { method: 'POST' })).status, 401);
     assert.equal((await checkout('another-student')).status, 404);
@@ -61,7 +79,13 @@ test('Yoco routes and atomic ledger with an isolated SQLite database', async t =
   await t.test('raw webhook signature and test mode settlement', async () => {
     const intent = (await getDatabase()).yocoCheckouts![0]; const event = eventFor(intent, 'test');
     assert.equal((await sendEvent(event, false)).status, 401);
-    assert.equal((await sendEvent(event)).status, 200);
+    const originalRender = process.env.RENDER;
+    try {
+      process.env.RENDER = 'true';
+      assert.equal((await sendEvent(event)).status, 200);
+    } finally {
+      if (originalRender === undefined) delete process.env.RENDER; else process.env.RENDER = originalRender;
+    }
     const db = await getDatabase(); assert.equal(db.invoices[0].paidZAR, 1000); assert.equal(db.invoices[0].balanceZAR, 999); assert.equal(db.payments.length, 1); assert.equal(db.payments[0].mode, 'test'); assert.equal(db.applications[0].status, 'ENROLLED'); assert.equal(db.yocoCheckouts![0].status, 'TEST_PAID');
   });
   await t.test('concurrent live webhook retries credit once and enroll', async () => {

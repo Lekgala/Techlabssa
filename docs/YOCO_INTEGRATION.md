@@ -2,8 +2,15 @@
 
 Implemented: student checkout, signed webhook receiver, persistent intents,
 invoice/installment/enrollment updates, receipts, and admin payment activity.
-Activation is pending: the API is local only, without a public HTTPS webhook
-address or signing secret. Keep YOCO_ENABLED=false.
+Yoco is temporarily restricted to local development while the flow is reviewed.
+Hosted frontend builds hide the checkout and activity panels. The API blocks new
+checkouts when `RENDER=true` or `NODE_ENV=production`, regardless of `YOCO_ENABLED`.
+EFT remains available. Existing records and signed webhook processing are retained
+to reconcile payments already in progress.
+
+For local testing, run `npm run dev` and `npm run dev:server`, leave `RENDER` unset,
+and use `NODE_ENV=development`. Enable `YOCO_ENABLED=true` only with configured test
+credentials and a working webhook receiver. Local production previews also hide Yoco.
 
 ## Configuration
 

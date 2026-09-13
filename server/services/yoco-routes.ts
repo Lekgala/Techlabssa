@@ -1,7 +1,7 @@
 import express, { type RequestHandler } from 'express';
 import { randomUUID } from 'node:crypto';
 import { getDatabase, mutateDatabase } from '../data/store.ts';
-import { createYocoCheckout, verifyYocoSignature, yocoConfig } from './yoco.ts';
+import { createYocoCheckout, verifyYocoSignature, yocoConfig, yocoCheckoutHidden } from './yoco.ts';
 import { amountDue, ownedInvoice, settleYoco, YocoError, type YocoIntent } from './yoco-ledger.ts';
 
 export function yocoWebhook(): RequestHandler[] {
@@ -23,12 +23,14 @@ export function yocoWebhook(): RequestHandler[] {
 export function yocoRouter(authenticate: RequestHandler, studentOnly: RequestHandler, adminOnly: RequestHandler, limit: RequestHandler, checkoutRequest = createYocoCheckout) {
   const router = express.Router();
   router.get('/admin/yoco/payments', authenticate, adminOnly, async (_req, res, next) => {
+    if (yocoCheckoutHidden()) return res.json({ hidden: true, checkouts: [] });
     try { res.json({ checkouts: (await getDatabase()).yocoCheckouts ?? [] }); } catch (error) { next(error); }
   });
   router.get('/student/invoices/:id/yoco', authenticate, studentOnly, async (req: any, res, next) => {
+    if (yocoCheckoutHidden()) return res.json({ hidden: true, enabled: false, reason: '', amountCents: 0, history: [] });
     try {
       const db = await getDatabase(); ownedInvoice(db, req.params.id, req.session.userId);
-      if (db.academySettings.onlinePaymentsEnabled === false) return res.json({ enabled: false, reason: 'Online payments are temporarily unavailable.' });
+      if (db.academySettings.onlinePaymentsEnabled === false) return res.json({ enabled: false, reason: 'Online payments are temporarily unavailable.', amountCents: 0, history: [] });
       let config = null;
       try { config = yocoConfig(); } catch { /* unconfigured checkout stays unavailable */ }
       let amountCents = 0; let reason = 'Online payment is not configured yet.';
@@ -39,6 +41,7 @@ export function yocoRouter(authenticate: RequestHandler, studentOnly: RequestHan
   });
   router.post('/student/invoices/:id/yoco', authenticate, studentOnly, limit, async (req: any, res, next) => {
     try {
+      if (yocoCheckoutHidden()) throw new YocoError(503, 'Card payments are temporarily unavailable. Please use EFT.');
       if ((await getDatabase()).academySettings.onlinePaymentsEnabled === false) throw new YocoError(503, 'Online payments are temporarily unavailable');
       const config = yocoConfig();
       if (!config) throw new YocoError(503, 'Online payments are disabled');

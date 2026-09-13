@@ -1,5 +1,10 @@
 import { createHmac, timingSafeEqual } from 'node:crypto';
 
+// Yoco is temporarily restricted to local development while the flow is reviewed.
+// Keep webhook verification separate so existing payments can still reconcile.
+export const yocoCheckoutHidden = (env: NodeJS.ProcessEnv = process.env) =>
+  env.RENDER === 'true' || env.NODE_ENV === 'production';
+
 /** Server-only adapter. Routes and transactional ledger wiring are deliberately separate. */
 export function yocoConfig(env: NodeJS.ProcessEnv = process.env) {
   if (env.YOCO_ENABLED !== 'true') return null;
