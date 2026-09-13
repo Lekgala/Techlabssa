@@ -1,3 +1,4 @@
+import { calculateTuitionBreakdown } from '../src/lib/pricing.ts';
 import cors from 'cors';
 import crypto from 'node:crypto';
 import 'dotenv/config';
@@ -34,6 +35,9 @@ setInterval(() => {
   for (const [key, value] of requestWindows) if (value.resetAt <= now) requestWindows.delete(key);
 }, 10 * 60 * 1000).unref();
 
+// Render's public ingress is one proxy hop; override for other deployment topologies.
+const trustProxy = process.env.TRUST_PROXY ?? (process.env.RENDER === 'true' ? '1' : '0');
+app.set('trust proxy', /^\d+$/.test(trustProxy) ? Number(trustProxy) : trustProxy.split(',').map(value => value.trim()));
 app.disable('x-powered-by');
 app.use(cors({ origin: appOrigin, credentials: true, methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'], allowedHeaders: ['Content-Type', 'Authorization', 'X-CSRF-Token', 'X-File-Name', 'X-EFT-Reference'] }));
 app.use((_req, res, next) => {
@@ -77,24 +81,6 @@ const safeEqual = (left: string, right: string) => {
 };
 const requiredText = (value: unknown, max = 200) => typeof value === 'string' && value.trim().length > 0 && value.length <= max;
 const validEmail = (value: unknown) => requiredText(value, 254) && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value as string);
-const calculateTuition = (tier: string, settings: Awaited<ReturnType<typeof getDatabase>>['academySettings']) => {
-  const prices: Record<string, number> = { STARTER: 1999, PROFESSIONAL: 3499, CAREER_ACCELERATOR: 4999 };
-  const configuredPrice = settings.courseTierPricing?.[tier as 'STARTER' | 'PROFESSIONAL' | 'CAREER_ACCELERATOR']?.priceZAR;
-  const base = configuredPrice ?? prices[tier];
-  if (!base) return undefined;
-  const sale = settings.flashSale;
-  const targeted = sale?.enabled && sale.discountPercent > 0 && sale.discountPercent < 100 && (!sale.targetTiers?.length || sale.targetTiers.includes(tier as any));
-  return targeted ? Math.round(base * (1 - sale.discountPercent / 100)) : base;
-};
-const calculateTuitionBreakdown = (tier: string, settings: Awaited<ReturnType<typeof getDatabase>>['academySettings']) => {
-  const prices: Record<string, number> = { STARTER: 1999, PROFESSIONAL: 3499, CAREER_ACCELERATOR: 4999 };
-  const listPriceZAR = settings.courseTierPricing?.[tier as 'STARTER' | 'PROFESSIONAL' | 'CAREER_ACCELERATOR']?.priceZAR ?? prices[tier];
-  const sale = settings.flashSale;
-  const discounted = Boolean(sale?.enabled && sale.discountPercent > 0 && sale.discountPercent < 100 && (!sale.targetTiers?.length || sale.targetTiers.includes(tier as any)));
-  const discountPercent = discounted ? sale!.discountPercent : 0;
-  const amountZAR = discounted ? Math.round(listPriceZAR * (1 - discountPercent / 100) * 100) / 100 : listPriceZAR;
-  return { amountZAR, listPriceZAR, discountZAR: Math.round((listPriceZAR - amountZAR) * 100) / 100, discountPercent };
-};
 const renderStoredTemplate = (db: Awaited<ReturnType<typeof getDatabase>>, templateId: string, variables: Record<string, unknown>) => {
   const template = db.emailTemplates.find(item => item.id === templateId && item.enabled);
   if (!template) return null;
@@ -909,6 +895,7 @@ for (const collection of adminCollections) {
     const before = { ...list[index] };
     const updates = { ...(req.body || {}) };
     if (collection === 'applications' && ['REJECTED', 'WAITLISTED', 'WITHDRAWN'].includes(String(updates.status || ''))) return res.status(400).json({ error: 'A decision reason is required. Use the application decision workflow.' });
+    if (collection === 'applications' && updates.status === 'APPROVED' && !['NEW', 'UNDER_REVIEW', 'WAITLISTED', 'APPROVED'].includes(before.status)) return res.status(409).json({ error: 'Application is not eligible for approval' });
     if (collection === 'applications' && updates.cohortId && updates.cohortId !== before.cohortId) return res.status(400).json({ error: 'Use the cohort transfer workflow to preserve capacity and history.' });
     if (collection === 'cohorts') {
       const enrolled = db.applications.filter(item => item.cohortId === req.params.id && ['ENROLLED', 'COMPLETED'].includes(item.status)).length;
@@ -961,16 +948,14 @@ for (const collection of ['cohorts','tickets','labs','invoices','assessments','c
   });
 }
 
-app.post('/api/email/approval', authenticate, requireRole('ADMIN'), async (req, res) => {
-  const { email, type, referenceNumber } = req.body || {};
-  if (!validEmail(email) || type !== 'APPROVED') return res.status(400).json({ error: 'A valid approved application is required' });
+const approveAndEmail = async (req: AuthedRequest, applicationId: string) => {
   const db = await getDatabase();
-  const application = db.applications.find(item => item.email.toLowerCase() === String(email).toLowerCase() && item.referenceNumber === referenceNumber);
-  if (!application) return res.status(404).json({ error: 'Application not found' });
-  if (!application.isLaptopCompliant) return res.status(409).json({ error: 'Hardware must be confirmed compliant before approval' });
+  const application = db.applications.find(item => item.id === applicationId);
+  if (!application || !['NEW', 'UNDER_REVIEW', 'WAITLISTED', 'APPROVED'].includes(application.status)) throw new YocoError(409, 'Application is not eligible for approval');
+  if (!application.isLaptopCompliant) throw new YocoError(409, 'Hardware must be confirmed compliant before approval');
   const invoice = db.invoices.find(item => item.studentEmail.toLowerCase() === application.email.toLowerCase());
   const cohort = db.cohorts.find(item => item.id === application.cohortId);
-  if (!invoice || !cohort) return res.status(409).json({ error: 'The linked invoice or cohort is missing' });
+  if (!invoice || !cohort) throw new YocoError(409, 'The linked invoice or cohort is missing');
   const previousStatus = application.status; application.status = 'APPROVED';
   const now = new Date().toISOString();
   if (!db.studentCredentials.some(item => item.applicationId === application.id)) db.studentCredentials.push({ applicationId: application.id, email: application.email.toLowerCase(), createdAt: now, updatedAt: now });
@@ -982,6 +967,7 @@ app.post('/api/email/approval', authenticate, requireRole('ADMIN'), async (req, 
   const accountInstructions = `<h3>Step 1: Create your portal password</h3><p><a href="${escapeHtml(setupLink)}" style="display:inline-block;padding:12px 18px;background:#000;color:#fff;text-decoration:none;border-radius:8px">Create portal password</a></p><p>This private link verifies your email, expires in 24 hours, and can be used once.</p>`;
   const paymentInstructions = `<h3>Steps 2 and 3: Pay and upload your proof</h3><p><strong>Bank:</strong> ${escapeHtml(db.academySettings.bankName)}<br><strong>Account name:</strong> ${escapeHtml(db.academySettings.accountName)}<br><strong>Account number:</strong> ${escapeHtml(db.academySettings.accountNumber)}<br><strong>Branch code:</strong> ${escapeHtml(db.academySettings.branchCode)}<br><strong>EFT reference:</strong> ${escapeHtml(invoice.invoiceNumber)}</p><p>Pay the amount shown on the attached invoice by ${escapeHtml(invoice.dueDate)}. Then sign in to the portal and upload the bank-generated proof of payment as a PDF, JPG, or PNG. Your seat is secured only after admissions verifies the required payment; do not upload the same proof more than once while it is under review.</p>`;
   const pdf = await generateInvoicePDF({ invoiceNumber: invoice.invoiceNumber, invoiceDate: invoice.invoiceDate || application.submissionDate, dueDate: invoice.dueDate, studentName: invoice.studentName, studentEmail: invoice.studentEmail, studentPhone: application.whatsapp, studentCity: application.city, amount: invoice.amountZAR, description: 'TechLabs Academy IT Support Bootcamp tuition', reference: invoice.invoiceNumber, companyName: db.academySettings.companyName || db.academySettings.academyName, academyName: db.academySettings.academyName, companyAddress: db.academySettings.campusAddress || db.academySettings.location, admissionsEmail: db.academySettings.admissionsEmail, courseTier: invoice.courseTier, listPrice: invoice.listPriceZAR, discountAmount: invoice.discountZAR, discountPercent: invoice.discountPercent, paidAmount: invoice.paidZAR ?? 0, balanceAmount: invoice.balanceZAR, bankName: db.academySettings.bankName, accountName: db.academySettings.accountName, accountNumber: db.academySettings.accountNumber, branchCode: db.academySettings.branchCode, paymentTerms: [invoice.paymentOption === 'FULL' ? 'Full tuition is payable by the due date.' : `A seat deposit of R${invoice.depositZAR.toLocaleString('en-ZA')} is required.`, 'Use the invoice number as the EFT reference.', 'Payments are confirmed only after admissions verification.'], installments: db.paymentInstallments.filter(item => item.invoiceId === invoice.id).sort((a, b) => a.sequence - b.sequence), payments: [] });
+  await saveDatabase(db); // Commit approval and setup token before delivering the link.
   const delivery = await sendEmail({
     to: application.email, subject,
     html: `${rendered?.html || `<h2>Hello ${escapeHtml(application.firstName)},</h2><p>Your application has been approved.</p>`}${accountInstructions}${paymentInstructions}<p>Regards,<br>TechLabs Academy</p>`,
@@ -990,7 +976,14 @@ app.post('/api/email/approval', authenticate, requireRole('ADMIN'), async (req, 
   db.emailDeliveries.unshift({ id: makeId('email'), providerId: delivery.id, recipient: application.email, subject, category: 'APPLICATION_STATUS', status: delivery.sent ? 'SENT' : 'FAILED', reason: delivery.reason, createdAt: now });
   addAudit(db, req, 'APPLICATION_APPROVED', 'application', application.id, `Application approved and invoice email ${delivery.sent ? 'submitted' : 'failed'} for ${application.referenceNumber}`, { status: { before: previousStatus, after: 'APPROVED' } });
   await saveDatabase(db);
-  res.json({ ok: delivery.sent, message: delivery.sent ? 'Approval and invoice email sent' : 'Application approved, but the email failed', application, invoice, emailDelivery: delivery });
+  return { ok: delivery.sent, message: delivery.sent ? 'Approval and invoice email sent' : 'Application approved, but the email failed', application, invoice, emailDelivery: delivery };
+};
+app.post('/api/email/approval', authenticate, requireRole('ADMIN'), serializeEnrollment, async (req: AuthedRequest, res) => {
+  const { email, type, referenceNumber } = req.body || {};
+  if (!validEmail(email) || type !== 'APPROVED') return res.status(400).json({ error: 'A valid approved application is required' });
+  const application = (await getDatabase()).applications.find(item => item.email.toLowerCase() === String(email).toLowerCase() && item.referenceNumber === referenceNumber);
+  if (!application) return res.status(404).json({ error: 'Application not found' });
+  res.json(await approveAndEmail(req, application.id));
 });
 
 app.patch('/api/student/tickets/:id', authenticate, requireRole('STUDENT'), async (req: AuthedRequest, res) => {
@@ -1090,19 +1083,30 @@ app.post('/api/bulk/export', authenticate, requireRole('ADMIN'), async (req, res
   const output = format === 'csv' ? bulkOperationsService.generateCSV(records) : bulkOperationsService.generateJSON(records);
   res.type(format === 'csv' ? 'text/csv' : 'application/json').setHeader('Content-Disposition', `attachment; filename="${targetType}-export.${format}"`).send(output);
 });
-app.post('/api/bulk/approve', authenticate, requireRole('ADMIN'), async (req: AuthedRequest, res) => {
+app.post('/api/bulk/approve', authenticate, requireRole('ADMIN'), serializeEnrollment, async (req: AuthedRequest, res) => {
   const ids = req.body?.applicationIds;
-  if (!Array.isArray(ids) || ids.length === 0 || ids.length > 100) return res.status(400).json({ error: 'Select between 1 and 100 applications' });
-  const db = await getDatabase();
-  let updated = 0;
-  db.applications = db.applications.map(item => {
-    if (!ids.includes(item.id)) return item;
-    updated += 1;
-    return { ...item, status: 'APPROVED', adminNotes: req.body?.notes ? `${item.adminNotes ? `${item.adminNotes} | ` : ''}${String(req.body.notes).slice(0, 1000)}` : item.adminNotes };
-  });
-  addAudit(db, req, 'APPLICATIONS_BULK_APPROVED', 'applications', `${updated}-records`, `${updated} applications approved in bulk`, { status: { before: 'MIXED', after: 'APPROVED' }, applicationIds: { before: [], after: ids.slice(0, 100) } });
-  await saveDatabase(db);
-  res.json({ updated, emailDelivery: { attempted: false, reason: req.body?.sendEmails ? 'Use bulk email after reviewing recipients' : undefined } });
+  if (!Array.isArray(ids) || ids.length === 0 || ids.length > 100 || ids.some(id => typeof id !== 'string')) return res.status(400).json({ error: 'Select between 1 and 100 applications' });
+  const results = [];
+  for (const id of new Set<string>(ids)) {
+    try {
+      if (req.body.sendEmails === true) {
+        const result = await approveAndEmail(req, id);
+        results.push({ id, approved: true, emailSent: result.ok, error: result.emailDelivery.reason });
+      } else {
+        const db = await getDatabase();
+        const application = db.applications.find(item => item.id === id);
+        if (!application || !['NEW', 'UNDER_REVIEW', 'WAITLISTED', 'APPROVED'].includes(application.status)) throw new Error('Application is not eligible for approval');
+        if (!application.isLaptopCompliant) throw new Error('Hardware must be confirmed compliant before approval');
+        const previousStatus = application.status;
+        application.status = 'APPROVED';
+        if (req.body.notes) application.adminNotes = [application.adminNotes, String(req.body.notes).slice(0, 1000)].filter(Boolean).join(' | ');
+        addAudit(db, req, 'APPLICATION_APPROVED', 'application', id, 'Application approved in bulk', { status: { before: previousStatus, after: 'APPROVED' } });
+        await saveDatabase(db);
+        results.push({ id, approved: true });
+      }
+    } catch (error) { results.push({ id, approved: false, error: error instanceof Error ? error.message : 'Approval failed' }); }
+  }
+  res.json({ updated: results.filter(item => item.approved).length, results });
 });
 app.post('/api/bulk/send-emails', authenticate, requireRole('ADMIN'), async (req, res) => {
   const ids = req.body?.recipientIds;

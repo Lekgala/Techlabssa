@@ -21,7 +21,7 @@ export interface BulkOperationState {
 
 interface BulkOperationsUIProps {
   items: any[];
-  onBulkApprove: (ids: string[], sendEmails: boolean) => Promise<void>;
+  onBulkApprove: (ids: string[], sendEmails: boolean) => Promise<NonNullable<BulkOperationState['result']> | void>;
   onBulkExport: (ids: string[], format: 'csv' | 'json') => Promise<void>;
   onBulkEmail: (ids: string[], templateId: string) => Promise<void>;
   itemType: 'applications' | 'leads';
@@ -60,9 +60,9 @@ export const BulkOperationsUI: React.FC<BulkOperationsUIProps> = ({
     if (selectedIds.length === 0) return;
     setIsLoading(true);
     try {
-      await onBulkApprove(selectedIds, sendEmails);
-      setResult({ succeeded: selectedIds.length, failed: 0, total: selectedIds.length });
-      setSelectedIds([]);
+      const outcome = await onBulkApprove(selectedIds, sendEmails);
+      setResult(outcome || { succeeded: selectedIds.length, failed: 0, total: selectedIds.length });
+      setSelectedIds(outcome ? outcome.errors.map(item => item.id) : []);
     } catch (err) {
       setResult({ succeeded: 0, failed: selectedIds.length, total: selectedIds.length });
     } finally {
@@ -120,6 +120,7 @@ export const BulkOperationsUI: React.FC<BulkOperationsUIProps> = ({
           <p className="text-sm font-bold text-[#000000]">
             {result.succeeded} succeeded, {result.failed} failed
           </p>
+          {result.errors?.map((item: { id: string; error: string }) => <p key={item.id} className="text-xs mt-1">{item.id}: {item.error}</p>)}
         </div>
       )}
 

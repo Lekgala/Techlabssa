@@ -1,5 +1,6 @@
+import { calculateTuitionBreakdown } from '../lib/pricing';
 import React, { createContext, useContext, useState, useEffect } from 'react';
-import { apiRequest, apiUpload, setApiSession } from '../lib/api';
+import { ApiError, apiRequest, apiUpload, setApiSession } from '../lib/api';
 import {
   User,
   Lead,
@@ -33,21 +34,8 @@ export const getTierPrice = (
   tier: CourseTier,
   settings?: Pick<AcademySettings, 'courseTierPricing' | 'flashSale'>
 ): { original: number; current: number; isDiscounted: boolean; discountPercent: number } => {
-  const basePrices: Record<CourseTier, number> = {
-    STARTER: 1999,
-    PROFESSIONAL: 3499,
-    CAREER_ACCELERATOR: 4999,
-  };
-  const original = settings?.courseTierPricing?.[tier]?.priceZAR || basePrices[tier];
-  const flashSale = settings?.flashSale;
-  if (isFlashSaleActive(flashSale)) {
-    const isTargeted = !flashSale!.targetTiers || flashSale!.targetTiers.length === 0 || flashSale!.targetTiers.includes(tier);
-    if (isTargeted) {
-      const current = Math.round(original * (1 - flashSale!.discountPercent / 100));
-      return { original, current, isDiscounted: true, discountPercent: flashSale!.discountPercent };
-    }
-  }
-  return { original, current: original, isDiscounted: false, discountPercent: 0 };
+  const price = calculateTuitionBreakdown(tier, settings || {});
+  return { original: price.listPriceZAR, current: price.amountZAR, isDiscounted: price.discountPercent > 0, discountPercent: price.discountPercent };
 };
 
 import { 
@@ -96,6 +84,7 @@ type StudentProfile = User & {
 interface AppContextType {
   // Navigation & Routing
   hasHydrated: boolean;
+  refreshData: () => Promise<void>;
   currentPath: string;
   navigate: (path: string, options?: { replace?: boolean }) => void;
   
@@ -268,7 +257,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         } catch (fetchError) {
           console.warn('Unable to load role-specific data:', fetchError);
         }
-      } else {
+      } else if (sessionResult.status === 'rejected' && sessionResult.reason instanceof ApiError && sessionResult.reason.status === 401) {
         setApiSession();
         setCurrentUser(null);
         setCurrentRole('VISITOR');
@@ -1116,6 +1105,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     <AppContext.Provider
       value={{
         hasHydrated,
+        refreshData: hydrateFromApi,
         currentPath,
         navigate,
         currentUser,

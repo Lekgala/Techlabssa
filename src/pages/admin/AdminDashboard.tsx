@@ -71,6 +71,7 @@ const SESSION_TRACKS: Record<CourseTier, { name: string; detail: string }> = {
 
 export const AdminDashboard: React.FC = () => {
   const {
+    refreshData,
     currentRole,
     adminLogin,
     logout,
@@ -2058,8 +2059,10 @@ export const AdminDashboard: React.FC = () => {
                 itemType="applications"
                 templates={emailTemplates}
                 onBulkApprove={async (ids, sendEmails) => {
-                  await apiRequest('/bulk/approve', { method: 'POST', body: JSON.stringify({ applicationIds: ids, sendEmails }) });
-                  ids.forEach(id => updateApplicationStatus(id, 'APPROVED'));
+                  const result = await apiRequest<{ results: Array<{ id: string; approved: boolean; emailSent?: boolean; error?: string }> }>('/bulk/approve', { method: 'POST', body: JSON.stringify({ applicationIds: ids, sendEmails }) });
+                  await refreshData();
+                  const errors = result.results.filter(item => !item.approved || (sendEmails && !item.emailSent)).map(item => ({ id: item.id, error: item.error || 'Approval email failed' }));
+                  return { succeeded: result.results.length - errors.length, failed: errors.length, total: result.results.length, errors };
                 }}
                 onBulkExport={async (ids, format) => {
                   await apiDownload('/bulk/export', { targetIds: ids, targetType: 'applications', format }, `applications.${format}`);

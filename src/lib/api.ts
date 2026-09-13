@@ -3,9 +3,14 @@ const apiUrl = (path: string) => `${apiBaseUrl}/api${path}`;
 const csrfToken = () => document.cookie.split('; ').find(value => value.startsWith('techlabs_csrf='))?.split('=').slice(1).join('=') || '';
 const getApiSession = () => typeof window !== 'undefined' ? sessionStorage.getItem('techlabs_session') || localStorage.getItem('techlabs_session') : null;
 
+export class ApiError extends Error {
+  constructor(message: string, public status: number) { super(message); this.name = 'ApiError'; }
+}
+
 export async function apiRequest<T>(path: string, options: RequestInit = {}): Promise<T> {
   const token = getApiSession();
   const response = await fetch(apiUrl(path), {
+    ...options,
     headers: {
       'Content-Type': 'application/json',
       ...(token ? { Authorization: `Bearer ${token}` } : {}),
@@ -13,18 +18,13 @@ export async function apiRequest<T>(path: string, options: RequestInit = {}): Pr
       ...(options.headers || {}),
     },
     credentials: 'include',
-    ...options,
   });
 
   if (!response.ok) {
     const errorText = await response.text();
-    try {
-      const parsed = JSON.parse(errorText) as { error?: string };
-      throw new Error(parsed.error || errorText || 'Request failed');
-    } catch (error) {
-      if (error instanceof Error && error.message !== 'Unexpected end of JSON input' && !error.message.startsWith('Unexpected token')) throw error;
-      throw new Error(errorText || 'Request failed');
-    }
+    let message = errorText || 'Request failed';
+    try { message = JSON.parse(errorText).error || message; } catch { /* Non-JSON response. */ }
+    throw new ApiError(message, response.status);
   }
 
   if (response.status === 204) {
