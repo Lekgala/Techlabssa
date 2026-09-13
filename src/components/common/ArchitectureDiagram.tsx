@@ -30,9 +30,9 @@ const NODES: Record<string, ArchitectureNode> = {
     id: 'dc01',
     name: 'DC01 (Domain Controller)',
     type: 'Server',
-    ipAddress: '10.0.10.10 /24 (Static)',
+    ipAddress: '10.10.10.10 /24 (Static)',
     os: 'Windows Server 2022 Datacenter',
-    roles: ['Active Directory Domain Services (ad.ubuntu-mfg.co.za)', 'Enterprise DNS Server', 'DHCP Scope Authority (10.0.10.50-200)', 'Group Policy Management (GPMC)', 'File & Storage Services'],
+    roles: ['Active Directory Domain Services (corp.ubuntumanufacturing.local)', 'Enterprise DNS Server', 'DHCP Scope Authority (10.10.10.100-200)', 'Group Policy Management (GPMC)', 'File & Storage Services'],
     description: 'The core identity and network services engine of our simulated enterprise (Ubuntu Manufacturing Pty Ltd).',
     labUsage: 'Promoted in Module 4, configured with OUs for Executive, Finance, HR, IT, and Sales. Deliberately broken in Module 5 and Module 13 to teach DNS SRV repair and disaster recovery.'
   },
@@ -40,7 +40,7 @@ const NODES: Record<string, ArchitectureNode> = {
     id: 'client01',
     name: 'CLIENT01 (Finance Workstation)',
     type: 'Client',
-    ipAddress: '10.0.10.21 (DHCP Reserved)',
+    ipAddress: '10.10.10.101 (DHCP Lease)',
     os: 'Windows 11 Enterprise (Build 22H2/23H2)',
     roles: ['Domain-Joined Client', 'Company Portal MDM Managed', 'BitLocker Enforced', 'Assigned User: Bongani Dlamini (Finance)'],
     description: 'A realistic end-user laptop subject to corporate Intune compliance, BitLocker encryption, and mapped finance share drives.',
@@ -50,7 +50,7 @@ const NODES: Record<string, ArchitectureNode> = {
     id: 'client02',
     name: 'CLIENT02 (HR Workstation)',
     type: 'Client',
-    ipAddress: '10.0.10.22 (DHCP Reserved)',
+    ipAddress: '10.10.10.102 (DHCP Lease)',
     os: 'Windows 11 Enterprise',
     roles: ['Domain-Joined Client', 'Hybrid M365 Apps', 'Assigned User: Thabo Mokoena (HR)'],
     description: 'Secondary client workstation used to simulate concurrent user issues, multi-client GPO testing, and credential conflicts.',
@@ -60,7 +60,7 @@ const NODES: Record<string, ArchitectureNode> = {
     id: 'admin01',
     name: 'ADMIN01 (IT Administration Station)',
     type: 'Admin',
-    ipAddress: '10.0.10.15 (Static)',
+    ipAddress: '10.10.10.15 (Static)',
     os: 'Windows 11 Enterprise',
     roles: ['RSAT (Remote Server Admin Tools)', 'PowerShell 7 + Microsoft Graph SDK', 'Wireshark Packet Analyzer', 'Windows Sysinternals Suite'],
     description: 'Your tier-1 IT technician battle station. You never log into the Domain Controller directly for daily tasks—you manage the domain remotely like a real sysadmin.',
@@ -122,7 +122,7 @@ export const ArchitectureDiagram: React.FC = () => {
             <div className="flex items-center justify-between text-xs text-[#707070]">
               <div className="flex items-center gap-2 font-mono font-bold text-[#000000]">
                 <Network className="w-4 h-4 text-[#000000]" />
-                <span>VMware Subnet: VMnet2 (10.0.10.0/24)</span>
+                <span>VMware Subnet: VMnet2 (10.10.10.0/24)</span>
               </div>
               <span className="text-[10px] bg-[#FFFFFF] border border-[#E0E0E0] px-2 py-0.5 rounded text-[#000000] font-mono font-bold uppercase">
                 Private Domain
@@ -145,7 +145,7 @@ export const ArchitectureDiagram: React.FC = () => {
                     <Server className="w-4 h-4" />
                   </div>
                   <span className="text-[10px] font-mono bg-[#FAFAFA] text-[#707070] px-1.5 py-0.5 rounded border border-[#E0E0E0]">
-                    10.0.10.10
+                    10.10.10.10
                   </span>
                 </div>
                 <h4 className="font-bold text-xs text-[#000000] mt-2">DC01 (Domain Controller)</h4>
@@ -166,7 +166,7 @@ export const ArchitectureDiagram: React.FC = () => {
                     <Terminal className="w-4 h-4" />
                   </div>
                   <span className="text-[10px] font-mono bg-[#FAFAFA] text-[#707070] px-1.5 py-0.5 rounded border border-[#E0E0E0]">
-                    10.0.10.15
+                    10.10.10.15
                   </span>
                 </div>
                 <h4 className="font-bold text-xs text-[#000000] mt-2">ADMIN01 (IT Admin Station)</h4>

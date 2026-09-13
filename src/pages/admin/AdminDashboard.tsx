@@ -293,7 +293,7 @@ export const AdminDashboard: React.FC = () => {
     severity: 'MEDIUM' as 'P1_CRITICAL' | 'P2_HIGH' | 'P3_MEDIUM' | 'P4_LOW',
     userImpact: '',
     symptoms: '',
-    vmEnvironment: 'DC01 (ad.ubuntu-mfg.co.za) & CLIENT01',
+    vmEnvironment: 'DC01 (corp.ubuntumanufacturing.local) & CLIENT01',
     brokenStateDetails: '',
     resolutionVerification: ''
   });
