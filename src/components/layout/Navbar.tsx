@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { useApp } from '../../context/AppContext';
+import { useApp, isFlashSaleActive } from '../../context/AppContext';
 import { 
   Terminal, 
   Menu, 
@@ -21,10 +21,11 @@ export const Navbar: React.FC = () => {
   const [coursesDropdownOpen, setCoursesDropdownOpen] = useState(false);
   const [countdown, setCountdown] = useState('');
   const flashSale = settings?.flashSale;
+  const isSaleActive = isFlashSaleActive(flashSale);
 
   useEffect(() => {
     const updateCountdown = () => {
-      if (!flashSale?.enabled || !flashSale.showCountdown || !flashSale.endDate) { setCountdown(''); return; }
+      if (!isSaleActive || !flashSale?.showCountdown || !flashSale?.endDate) { setCountdown(''); return; }
       const remaining = new Date(`${flashSale.endDate}T23:59:59`).getTime() - Date.now();
       if (!Number.isFinite(remaining) || remaining <= 0) { setCountdown(''); return; }
       const days = Math.floor(remaining / 86400000);
@@ -36,7 +37,7 @@ export const Navbar: React.FC = () => {
     updateCountdown();
     const timer = window.setInterval(updateCountdown, 1000);
     return () => window.clearInterval(timer);
-  }, [flashSale?.enabled, flashSale?.showCountdown, flashSale?.endDate]);
+  }, [isSaleActive, flashSale?.showCountdown, flashSale?.endDate]);
 
   const handleNav = (path: string) => {
     navigate(path);
@@ -53,7 +54,7 @@ export const Navbar: React.FC = () => {
   return (
     <header className="sticky top-0 z-50 bg-[#FFFFFF]/95 backdrop-blur-md border-b border-[#F0F0F0] text-[#1A1A1A]">
       {/* Flash Sale Banner if Active */}
-      {settings?.flashSale?.enabled && (
+      {isSaleActive && (
         <div className="bg-[#000000] text-white px-3 sm:px-4 py-2 text-center font-mono text-[11px] sm:text-xs flex flex-col sm:flex-row items-center justify-center gap-1.5 sm:gap-3 border-b border-[#333333]">
           <div className="flex items-center gap-2">
             <span className="bg-white text-black text-[9px] px-2 py-0.5 rounded-full font-bold uppercase tracking-wider flex items-center gap-1 shrink-0">
@@ -61,7 +62,7 @@ export const Navbar: React.FC = () => {
               Flash Sale
             </span>
             <span className="font-sans font-bold text-xs leading-tight sm:leading-normal">
-              {settings.flashSale.title} ({settings.flashSale.discountPercent}% OFF){countdown && <span className="text-neutral-300"> · Ends in {countdown}</span>}
+              {settings.flashSale?.title} ({settings.flashSale?.discountPercent}% OFF){countdown && <span className="text-neutral-300"> · Ends in {countdown}</span>}
             </span>
           </div>
           <button
@@ -307,7 +308,7 @@ export const Navbar: React.FC = () => {
       {/* Mobile Drawer */}
       {mobileMenuOpen && (
         <div id="mobile-navigation" className="xl:hidden bg-[#FFFFFF] border-b border-[#F0F0F0] px-4 pt-2 pb-6 space-y-2 animate-in slide-in-from-top-4">
-          {settings?.flashSale?.enabled && (
+          {isSaleActive && (
             <div 
               onClick={() => handleNav('/pricing')}
               className="bg-[#000000] text-white p-3 rounded-xl cursor-pointer flex items-center justify-between gap-2 shadow-sm font-mono text-xs"
@@ -318,7 +319,7 @@ export const Navbar: React.FC = () => {
                   Sale
                 </span>
                 <span className="font-sans font-bold text-[11px] leading-tight">
-                  {settings.flashSale.discountPercent}% OFF Flash Sale
+                  {settings.flashSale?.discountPercent}% OFF Flash Sale
                 </span>
               </div>
               <span className="text-[10px] uppercase underline font-bold tracking-wider shrink-0">Claim →</span>

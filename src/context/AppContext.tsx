@@ -22,6 +22,13 @@ import {
   ,PaymentRecord
 } from '../types';
 
+export const isFlashSaleActive = (flashSale?: FlashSaleConfig): boolean => {
+  if (!flashSale || !flashSale.enabled) return false;
+  const discount = Number(flashSale.discountPercent);
+  if (!Number.isFinite(discount) || discount <= 0 || discount >= 100) return false;
+  return true;
+};
+
 export const getTierPrice = (
   tier: CourseTier,
   settings?: Pick<AcademySettings, 'courseTierPricing' | 'flashSale'>
@@ -33,11 +40,11 @@ export const getTierPrice = (
   };
   const original = settings?.courseTierPricing?.[tier]?.priceZAR || basePrices[tier];
   const flashSale = settings?.flashSale;
-  if (flashSale && flashSale.enabled && flashSale.discountPercent > 0) {
-    const isTargeted = !flashSale.targetTiers || flashSale.targetTiers.length === 0 || flashSale.targetTiers.includes(tier);
+  if (isFlashSaleActive(flashSale)) {
+    const isTargeted = !flashSale!.targetTiers || flashSale!.targetTiers.length === 0 || flashSale!.targetTiers.includes(tier);
     if (isTargeted) {
-      const current = Math.round(original * (1 - flashSale.discountPercent / 100));
-      return { original, current, isDiscounted: true, discountPercent: flashSale.discountPercent };
+      const current = Math.round(original * (1 - flashSale!.discountPercent / 100));
+      return { original, current, isDiscounted: true, discountPercent: flashSale!.discountPercent };
     }
   }
   return { original, current: original, isDiscounted: false, discountPercent: 0 };
@@ -213,7 +220,21 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         if (data.certificates && data.certificates.length > 0) setCertificates(data.certificates);
         if (data.attendance && data.attendance.length > 0) setAttendance(data.attendance);
         if (data.courseModules && data.courseModules.length > 0) setCourseModules(data.courseModules);
-        if (data.settings) setSettings(current => ({ ...current, ...data.settings, flashSale: data.settings.flashSale ?? { ...current.flashSale!, enabled: false } }));
+        if (data.settings) {
+          setSettings(current => {
+            const next = {
+              ...current,
+              ...data.settings,
+              flashSale: data.settings.flashSale !== undefined
+                ? { ...current.flashSale, ...data.settings.flashSale }
+                : current.flashSale
+            };
+            try {
+              localStorage.setItem('techlabs_settings', JSON.stringify(next));
+            } catch {}
+            return next;
+          });
+        }
       }
 
       if (sessionResult.status === 'fulfilled' && sessionResult.value?.user) {
@@ -228,7 +249,15 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
             setAssessments(adminData.assessments || []); setCertificates(adminData.certificates || []);
             setAttendance(adminData.attendance || []); setCourseModules(adminData.courseModules || []);
             setPayments(adminData.payments || []);
-            if (adminData.academySettings) setSettings(adminData.academySettings);
+            if (adminData.academySettings) {
+              setSettings(current => {
+                const next = { ...current, ...adminData.academySettings };
+                try {
+                  localStorage.setItem('techlabs_settings', JSON.stringify(next));
+                } catch {}
+                return next;
+              });
+            }
           } else if (restored.user.role === 'STUDENT') {
             const studentData = await apiRequest<any>('/student/data', { signal: AbortSignal.timeout(10000) });
             setApplications(studentData.application ? [studentData.application] : []); setInvoices(studentData.invoices || []);
@@ -343,7 +372,15 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       const data = await apiRequest<any>('/admin/data', { signal: AbortSignal.timeout(15000) });
       setLeads(data.leads || []); setApplications(data.applications || []); setCohorts(data.cohorts || []); setTickets(data.tickets || []); setLabs(data.labs || []); setInvoices(data.invoices || []); setAssessments(data.assessments || []); setCertificates(data.certificates || []); setAttendance(data.attendance || []); setCourseModules(data.courseModules || []);
       setPayments(data.payments || []);
-      if (data.academySettings) setSettings(data.academySettings);
+      if (data.academySettings) {
+        setSettings(current => {
+          const next = { ...current, ...data.academySettings };
+          try {
+            localStorage.setItem('techlabs_settings', JSON.stringify(next));
+          } catch {}
+          return next;
+        });
+      }
       showToast('success', 'Admin Signed In', 'Welcome to the TechLabs admissions console.'); navigate('/admin'); return true;
     } catch (error) {
       const message = error instanceof Error && error.name === 'TimeoutError'
@@ -459,10 +496,31 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         CAREER_ACCELERATOR: { priceZAR: 4999, displayName: 'Career Accelerator', description: 'Everything in Professional plus dedicated 1-on-1 career coaching and mock interviews.', features: ['Everything in Professional Tier', 'Technical CV and portfolio review', 'LinkedIn profile optimization', '1-on-1 technical mock interview', 'Job application guidance', 'Priority placement assistance'], badgeLabel: 'Full Support' }
       }
     };
+    if (typeof window === 'undefined') return defaults;
+    try {
+      const saved = localStorage.getItem('techlabs_settings');
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        return {
+          ...defaults,
+          ...parsed,
+          flashSale: parsed.flashSale ? { ...defaults.flashSale, ...parsed.flashSale } : defaults.flashSale,
+          courseTierPricing: parsed.courseTierPricing ? { ...defaults.courseTierPricing, ...parsed.courseTierPricing } : defaults.courseTierPricing
+        };
+      }
+    } catch {
+      // Fallback to defaults
+    }
     return defaults;
   });
 
   const [toasts, setToasts] = useState<ToastMessage[]>([]);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem('techlabs_settings', JSON.stringify(settings));
+    } catch {}
+  }, [settings]);
 
   useEffect(() => {
     void hydrateFromApi();
@@ -1029,7 +1087,13 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   };
 
   const updateSettings = (newSettings: Partial<AcademySettings>) => {
-    setSettings(prev => ({ ...prev, ...newSettings }));
+    setSettings(prev => {
+      const next = { ...prev, ...newSettings };
+      try {
+        localStorage.setItem('techlabs_settings', JSON.stringify(next));
+      } catch {}
+      return next;
+    });
   };
 
   const saveSettings = async (): Promise<boolean> => {
@@ -1037,6 +1101,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     try {
       const saved = await apiRequest<AcademySettings>('/settings', { method: 'PUT', body: JSON.stringify(settings) });
       setSettings(saved);
+      try {
+        localStorage.setItem('techlabs_settings', JSON.stringify(saved));
+      } catch {}
       showToast('success', 'Settings Saved', 'All academy and banking settings were updated.');
       return true;
     } catch (error) {
