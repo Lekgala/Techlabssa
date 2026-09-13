@@ -25,15 +25,15 @@ export const CertificateView: React.FC<CertificateViewProps> = ({ certificate, a
       return;
     }
 
-    const originalBody = document.body.innerHTML;
     const printableNode = containerRef.current.cloneNode(true) as HTMLElement;
     printableNode.querySelectorAll('.no-print').forEach((node) => node.remove());
-
-    document.body.innerHTML = '';
+    printableNode.classList.add('certificate-print-root');
+    document.body.classList.add('printing-certificate');
     document.body.appendChild(printableNode);
 
     const restoreBody = () => {
-      document.body.innerHTML = originalBody;
+      printableNode.remove();
+      document.body.classList.remove('printing-certificate');
       window.removeEventListener('afterprint', restoreBody);
     };
 

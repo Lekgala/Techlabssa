@@ -279,6 +279,12 @@ export const AdminDashboard: React.FC = () => {
   };
   const openStudentDocument = async (applicationId: string, type: string, recordId?: string) => {
     try {
+      if (type === 'certificate') {
+        const certificate = certificates.find(item => item.studentId === applicationId && (!recordId || item.id === recordId));
+        if (!certificate) throw new Error('Certificate is not available yet');
+        setCertificatePreview(certificate);
+        return;
+      }
       await apiOpenPrivate(`/admin/applications/${encodeURIComponent(applicationId)}/documents/${encodeURIComponent(type)}${recordId ? `/${encodeURIComponent(recordId)}` : ''}`);
     } catch (error) {
       showToast('error', 'Document Unavailable', error instanceof Error ? error.message : 'The document could not be opened.');
@@ -300,6 +306,7 @@ export const AdminDashboard: React.FC = () => {
   });
 
   // Certificate Generator State
+  const [certificatePreview, setCertificatePreview] = useState<Certificate | null>(null);
   const [certStudentId, setCertStudentId] = useState(students[0]?.id || '');
   const [certGrade, setCertGrade] = useState('88% (Distinction)');
 
@@ -2298,6 +2305,17 @@ export const AdminDashboard: React.FC = () => {
       )}
 
       {/* Printable Invoice Modal for Admin */}
+      {certificatePreview && (
+        <div role="dialog" aria-modal="true" aria-label="Completion certificate" className="fixed inset-0 bg-black/60 backdrop-blur-sm z-[60] overflow-y-auto p-4">
+          <div className="bg-white rounded-2xl max-w-5xl mx-auto p-6 space-y-4">
+            <div className="flex items-center justify-between gap-4">
+              <h3 className="font-bold">Completion certificate</h3>
+              <button type="button" onClick={() => setCertificatePreview(null)} className="px-4 py-2 bg-black text-white rounded-xl text-sm">Close Preview</button>
+            </div>
+            <CertificateView certificate={certificatePreview} allowPrint={true} />
+          </div>
+        </div>
+      )}
       {selectedInvoiceForPdf && (
         <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4 animate-in fade-in">
           <div className="bg-white rounded-2xl max-w-4xl w-full max-h-[92vh] overflow-y-auto p-6 space-y-4">

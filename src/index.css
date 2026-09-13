@@ -70,7 +70,16 @@
 }
 
 /* Print utilities for Certificates & Invoices */
+.certificate-print-root {
+  display: none;
+}
 @media print {
+  body.printing-certificate > :not(.certificate-print-root) {
+    display: none !important;
+  }
+  body.printing-certificate > .certificate-print-root {
+    display: block !important;
+  }
   :root {
     --background: #ffffff;
     --foreground: #000000;

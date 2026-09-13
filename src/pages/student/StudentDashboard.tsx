@@ -561,7 +561,7 @@ export const StudentDashboard: React.FC = () => {
 
             <DocumentCard icon={CalendarDays} title="Course Schedule" detail={studentCohort?.scheduleFormat || 'Schedule pending'} available={Boolean(studentCohort)} actionLabel="Open PDF" onAction={() => void openDocument('/student/documents/schedule')} />
 
-            <DocumentCard icon={Award} title="Certificate" detail={studentCert ? `${studentCert.certificateNumber} • Issued ${studentCert.completionDate}` : 'Available after successful course completion'} available={Boolean(studentCert)} actionLabel="Open PDF" onAction={() => void openDocument('/student/documents/certificate')} />
+            <DocumentCard icon={Award} title="Certificate" detail={studentCert ? `${studentCert.certificateNumber} • Issued ${studentCert.completionDate}` : 'Available after successful course completion'} available={Boolean(studentCert)} actionLabel="View / Print Certificate" onAction={() => setActiveTab('CERTIFICATE')} />
           </div>
 
           <section className="space-y-3">
