@@ -134,9 +134,9 @@ export const Home: React.FC = () => {
                   <div>
                     <span className="text-neutral-400 font-bold">PS C:\TechLabs&gt;</span> <span className="text-white">Get-ADDomainController -Identity DC01</span>
                     <p className="text-neutral-400 text-[11px] mt-1 pl-3 border-l border-neutral-700">
-                      Domain: ad.ubuntu-mfg.co.za<br />
-                      Forest: ad.ubuntu-mfg.co.za<br />
-                      IPAddress: 10.0.10.10 (Static - Healthy)
+                      Domain: corp.ubuntumanufacturing.local<br />
+                      Forest: corp.ubuntumanufacturing.local<br />
+                      IPAddress: 10.10.10.10 (Static - Healthy)
                     </p>
                   </div>
 

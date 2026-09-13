@@ -145,7 +145,7 @@ export const COURSE_MODULES: CourseModule[] = [
     duration: 'Week 4',
     summary: 'Promoting the Domain Controller (DC01), forest functional levels, Organizational Unit (OU) structure, user lifecycle management, and security groups.',
     learningOutcomes: [
-      'Promote DC01 for the domain: ad.ubuntu-mfg.co.za',
+      'Promote DC01 for the domain: corp.ubuntumanufacturing.local',
       'Architect enterprise OU hierarchies (Executive, Finance, HR, Sales, IT, Tier-0 Admins)',
       'Create security vs distribution groups, nested group strategy (AGDLP)'
     ],
@@ -205,7 +205,7 @@ export const COURSE_MODULES: CourseModule[] = [
     duration: 'Week 7',
     summary: 'Client machine joining, local admin controls (LAPS), Event Viewer triage, Performance Monitor, Task Scheduler, registry keys, and remote desktop.',
     learningOutcomes: [
-      'Join CLIENT01 and CLIENT02 to ad.ubuntu-mfg.co.za with proper hostname conventions',
+      'Join CLIENT01 and CLIENT02 to corp.ubuntumanufacturing.local with proper hostname conventions',
       'Deploy Windows LAPS (Local Administrator Password Solution) for credential protection',
       'Analyze Event Viewer Windows Logs (System, Application, Security) for error IDs'
     ],
@@ -389,7 +389,7 @@ export const PRACTICAL_LABS: PracticalLab[] = [
     category: 'VMware',
     difficulty: 'Beginner',
     estimatedMinutes: 60,
-    architecture: 'Host Machine + VMnet2 Isolated Subnet (10.0.10.0/24)',
+    architecture: 'Host Machine + VMnet2 Isolated Subnet (10.10.10.0/24)',
     objectives: [
       'Create custom VMnet2 switch in VMware Network Editor',
       'Disable host DHCP on VMnet2 so our Windows Server will handle DHCP',
@@ -409,10 +409,10 @@ export const PRACTICAL_LABS: PracticalLab[] = [
     category: 'Active Directory',
     difficulty: 'Intermediate',
     estimatedMinutes: 75,
-    architecture: 'DC01 (Windows Server 2022) -> ad.ubuntu-mfg.co.za',
+    architecture: 'DC01 (Windows Server 2022) -> corp.ubuntumanufacturing.local',
     objectives: [
       'Install Active Directory Domain Services role on DC01',
-      'Promote server to root Domain Controller for ad.ubuntu-mfg.co.za',
+      'Promote server to root Domain Controller for corp.ubuntumanufacturing.local',
       'Create OU hierarchy: [Ubuntu-Manufacturing] -> [Departments] -> [Executive, Finance, HR, IT, Sales]'
     ],
     brokenScenario: 'DNS forwarders incorrectly configured causing domain promotion timeout.',
@@ -477,7 +477,7 @@ export const REAL_SUPPORT_TICKETS: SupportTicket[] = [
     description: 'Hi IT Support. I came into the Foreshore office this morning and opened Outlook and our SAP Financials portal. A red banner popped up saying "Your device does not meet the security requirements set by Ubuntu Manufacturing." I cannot approve today\'s supplier payment run. Please assist urgently!',
     systemEnvironment: 'Microsoft Intune / Microsoft Entra ID / Conditional Access / Windows 11 Enterprise',
     stepsToReproduce: [
-      'User logs in to FIN-LAPTOP-04 with corporate account (bdlamini@ubuntu-mfg.co.za)',
+      'User logs in to FIN-LAPTOP-04 with corporate account (bdlamini@corp.ubuntumanufacturing.local)',
       'Attempts to open Microsoft 365 Outlook or company SharePoint Finance hub',
       'Entra ID Conditional Access blocks sign-in with error "Device is marked Non-Compliant in Microsoft Intune"',
       'Company Portal app displays: "BitLocker Drive Encryption is turned off or not registered"'
@@ -609,19 +609,19 @@ export const REAL_SUPPORT_TICKETS: SupportTicket[] = [
     companyName: 'Ubuntu Manufacturing (Pty) Ltd',
     requestedBy: 'Sipho Sithole (Operations Supervisor)',
     device: 'OPS-WS-03 (Custom Desktop Workstation)',
-    issueTitle: 'Unable to join computer to domain - DNS resolution failure for ad.ubuntu-mfg.co.za',
-    description: 'We built a new workstation for the warehouse dispatch desk. When attempting to join domain ad.ubuntu-mfg.co.za, Windows returns error: "An Active Directory Domain Controller for the domain could not be contacted."',
+    issueTitle: 'Unable to join computer to domain - DNS resolution failure for corp.ubuntumanufacturing.local',
+    description: 'We built a new workstation for the warehouse dispatch desk. When attempting to join domain corp.ubuntumanufacturing.local, Windows returns error: "An Active Directory Domain Controller for the domain could not be contacted."',
     systemEnvironment: 'Windows Server 2022 DNS / IPv4 Configuration / Domain Join',
     stepsToReproduce: [
-      'System Properties -> Change Domain -> ad.ubuntu-mfg.co.za',
+      'System Properties -> Change Domain -> corp.ubuntumanufacturing.local',
       'Error popup: DNS name does not exist (Error code 0x0000232B RCODE_NAME_ERROR)'
     ],
     troubleshootingGuidance: [
       'Run ipconfig /all on client machine',
-      'Check Primary DNS server IP address (is it pointing to DC01 10.0.10.10 or 8.8.8.8?)',
-      'Configure IPv4 DNS to point to DC01, test nslookup ad.ubuntu-mfg.co.za and _ldap._tcp.dc._msdcs.ad.ubuntu-mfg.co.za'
+      'Check Primary DNS server IP address (is it pointing to DC01 10.10.10.10 or 8.8.8.8?)',
+      'Configure IPv4 DNS to point to DC01, test nslookup corp.ubuntumanufacturing.local and _ldap._tcp.dc._msdcs.corp.ubuntumanufacturing.local'
     ],
-    expectedFix: 'Point workstation primary DNS to DC01 IP address (10.0.10.10), verify SRV records resolve, successfully join domain, and reboot.',
+    expectedFix: 'Point workstation primary DNS to DC01 IP address (10.10.10.10), verify SRV records resolve, successfully join domain, and reboot.',
     status: 'OPEN'
   }
 ];
