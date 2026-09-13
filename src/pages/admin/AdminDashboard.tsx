@@ -127,6 +127,7 @@ export const AdminDashboard: React.FC = () => {
     status: 'Open' as 'Open' | 'Filling Fast' | 'Closed' | 'In Progress' | 'Completed'
   });
   const [adminForm, setAdminForm] = useState({ email: '', password: '' });
+  const [adminSigningIn, setAdminSigningIn] = useState(false);
   const [adminLoginError, setAdminLoginError] = useState('');
   const [emailingInvoiceId, setEmailingInvoiceId] = useState<string | null>(null);
   const [settingsSaving, setSettingsSaving] = useState(false);
@@ -374,12 +375,16 @@ export const AdminDashboard: React.FC = () => {
 
   const handleAdminSignIn = async (e: React.FormEvent) => {
     e.preventDefault();
-    const ok = await adminLogin(adminForm.email, adminForm.password);
-    if (!ok) {
-      setAdminLoginError('Sign-in could not be completed. See the notification for the reason, then try again.');
-      return;
-    }
+    setAdminSigningIn(true);
     setAdminLoginError('');
+    try {
+      const ok = await adminLogin(adminForm.email, adminForm.password);
+      if (!ok) {
+        setAdminLoginError('Sign-in could not be completed. See the notification for the reason, then try again.');
+      }
+    } finally {
+      setAdminSigningIn(false);
+    }
   };
 
   const handleApproveApplication = async (app: typeof applications[number]) => {
@@ -628,9 +633,11 @@ export const AdminDashboard: React.FC = () => {
 
             <button
               type="submit"
-              className="w-full py-3 bg-[#000000] hover:bg-neutral-800 text-white font-bold text-xs uppercase tracking-[0.2em] rounded-xl"
+              disabled={adminSigningIn}
+              className="w-full py-3 bg-[#000000] hover:bg-neutral-800 disabled:bg-[#A0A0A0] text-white font-bold text-xs uppercase tracking-[0.2em] rounded-xl flex items-center justify-center gap-2 transition-colors"
             >
-              Sign In
+              {adminSigningIn && <div className="w-3.5 h-3.5 border-2 border-white border-t-transparent rounded-full animate-spin" />}
+              {adminSigningIn ? 'Signing In…' : 'Sign In'}
             </button>
           </form>
 
