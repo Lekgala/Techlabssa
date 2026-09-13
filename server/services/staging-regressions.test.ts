@@ -53,6 +53,31 @@ test('staging approval and proxy regressions with isolated storage and mock emai
   });
   const login = await call('/auth/admin', { email: 'audit@example.test', password: 'AuditTestPassword123' });
   assert.equal(login.status, 200); const token = login.body.token;
+  await t.test('settings can be saved with the optional announcement empty', async () => {
+    const settings = (await call('/admin/data', undefined, token)).body.academySettings;
+    const response = await fetch(base + '/settings', {
+      method: 'PUT', headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + token },
+      body: JSON.stringify({ ...settings, publicAnnouncement: '', academyName: 'Updated Academy' }),
+    });
+    const saved = await response.json();
+    assert.equal(response.status, 200, JSON.stringify(saved));
+    assert.equal(saved.academyName, 'Updated Academy');
+    assert.equal(saved.publicAnnouncement, '');
+    assert.equal((await call('/data')).body.settings.academyName, 'Updated Academy');
+  });
+  await t.test('invalid settings identify the field and do not overwrite saved values', async () => {
+    for (const [field, value] of [['academyName', ''], ['publicAnnouncement', 'x'.repeat(501)], ['publicAnnouncement', null]] as const) {
+      const response = await fetch(base + '/settings', {
+        method: 'PUT', headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + token },
+        body: JSON.stringify({ [field]: value }),
+      });
+      assert.equal(response.status, 400);
+      assert.equal((await response.json()).field, field);
+    }
+    const settings = (await call('/data')).body.settings;
+    assert.equal(settings.academyName, 'Updated Academy');
+    assert.equal(settings.publicAnnouncement, '');
+  });
   const catalog = (await call('/data')).body;
   const cohort = catalog.cohorts.find((item: any) => ['Open', 'Filling Fast'].includes(item.status));
   const create = async (suffix: string) => {

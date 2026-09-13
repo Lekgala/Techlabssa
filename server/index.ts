@@ -501,7 +501,14 @@ app.put('/api/settings', authenticate, requireRole('ADMIN'), async (req: AuthedR
   const allowedKeys = ['academyName','companyName','location','campusAddress','whatsappNumber','studentSupportWhatsappNumber','admissionsEmail','leadInstructorName','studentWelcomeMessage','studentSupportMessage','admissionsAcknowledgement','paymentInstructions','whatsappGreeting','applicationsEnabled','onlinePaymentsEnabled','showPricing','showUpcomingCohorts','maintenanceMode','publicAnnouncement','defaultLandingPage','privacyContactEmail','informationOfficerContact','privacyPolicyVersion','termsVersion','consentTextVersion','dataRetentionDays','cookieNoticeVersion','bankName','accountName','accountNumber','branchCode','referenceFormat','flashSale','courseTierPricing'];
   const safeUpdates = Object.fromEntries(Object.entries(updates).filter(([key]) => allowedKeys.includes(key)));
   const textLimits: Record<string, number> = { academyName: 120, companyName: 160, location: 160, campusAddress: 240, whatsappNumber: 40, studentSupportWhatsappNumber: 40, admissionsEmail: 254, leadInstructorName: 120, studentWelcomeMessage: 500, studentSupportMessage: 800, admissionsAcknowledgement: 800, paymentInstructions: 1200, whatsappGreeting: 500, publicAnnouncement: 500, defaultLandingPage: 80, privacyContactEmail: 254, informationOfficerContact: 240, privacyPolicyVersion: 40, termsVersion: 40, consentTextVersion: 40, cookieNoticeVersion: 40, bankName: 120, accountName: 160, accountNumber: 80, branchCode: 40, referenceFormat: 120 };
-  if (Object.entries(textLimits).some(([key, limit]) => safeUpdates[key] !== undefined && !requiredText(safeUpdates[key], limit))) return res.status(400).json({ error: 'One or more text settings are invalid' });
+  for (const [key, limit] of Object.entries(textLimits)) {
+    const value = safeUpdates[key];
+    if (value === undefined) continue;
+    const optional = key === 'publicAnnouncement';
+    if (typeof value !== 'string' || value.length > limit || (!optional && !value.trim())) {
+      return res.status(400).json({ error: `${key.replace(/([A-Z])/g, ' $1')}: ${optional ? 'enter text' : 'enter non-empty text'} of at most ${limit} characters`, field: key });
+    }
+  }
   const booleanKeys = ['applicationsEnabled', 'onlinePaymentsEnabled', 'showPricing', 'showUpcomingCohorts', 'maintenanceMode'];
   if (booleanKeys.some(key => safeUpdates[key] !== undefined && typeof safeUpdates[key] !== 'boolean')) return res.status(400).json({ error: 'Website control settings must be true or false' });
   const retentionDays = safeUpdates.dataRetentionDays === undefined ? undefined : Number(safeUpdates.dataRetentionDays);
