@@ -181,7 +181,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   const hydrateFromApi = async () => {
     try {
-      const data = await apiRequest<{
+      const dataPromise = apiRequest<{
         currentUser?: User | null;
         currentRole?: Role;
         leads?: Lead[];
@@ -195,27 +195,34 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         attendance?: AttendanceRecord[];
         courseModules?: CourseModule[];
         settings?: Partial<AcademySettings>;
-      }>('/data');
+      }>('/data', { signal: AbortSignal.timeout(8000) });
 
-      if (data.leads && data.leads.length > 0) setLeads(data.leads);
-      if (data.applications && data.applications.length > 0) setApplications(data.applications);
-      if (data.cohorts && data.cohorts.length > 0) setCohorts(data.cohorts.map((c: any) => ({ ...c, deliveryMode: c.deliveryMode === 'Cape Town On-Campus' ? '100% Virtual Learning' : c.deliveryMode })));
-      if (data.tickets && data.tickets.length > 0) setTickets(data.tickets);
-      if (data.labs && data.labs.length > 0) setLabs(data.labs);
-      if (data.invoices && data.invoices.length > 0) setInvoices(data.invoices);
-      if (data.assessments && data.assessments.length > 0) setAssessments(data.assessments);
-      if (data.certificates && data.certificates.length > 0) setCertificates(data.certificates);
-      if (data.attendance && data.attendance.length > 0) setAttendance(data.attendance);
-      if (data.courseModules && data.courseModules.length > 0) setCourseModules(data.courseModules);
-      if (data.settings) setSettings(current => ({ ...current, ...data.settings, flashSale: data.settings.flashSale ?? { ...current.flashSale!, enabled: false } }));
+      const sessionPromise = apiRequest<{ user: User }>('/session', { signal: AbortSignal.timeout(8000) });
 
-      {
+      const [dataResult, sessionResult] = await Promise.allSettled([dataPromise, sessionPromise]);
+
+      if (dataResult.status === 'fulfilled' && dataResult.value) {
+        const data = dataResult.value;
+        if (data.leads && data.leads.length > 0) setLeads(data.leads);
+        if (data.applications && data.applications.length > 0) setApplications(data.applications);
+        if (data.cohorts && data.cohorts.length > 0) setCohorts(data.cohorts.map((c: any) => ({ ...c, deliveryMode: c.deliveryMode === 'Cape Town On-Campus' ? '100% Virtual Learning' : c.deliveryMode })));
+        if (data.tickets && data.tickets.length > 0) setTickets(data.tickets);
+        if (data.labs && data.labs.length > 0) setLabs(data.labs);
+        if (data.invoices && data.invoices.length > 0) setInvoices(data.invoices);
+        if (data.assessments && data.assessments.length > 0) setAssessments(data.assessments);
+        if (data.certificates && data.certificates.length > 0) setCertificates(data.certificates);
+        if (data.attendance && data.attendance.length > 0) setAttendance(data.attendance);
+        if (data.courseModules && data.courseModules.length > 0) setCourseModules(data.courseModules);
+        if (data.settings) setSettings(current => ({ ...current, ...data.settings, flashSale: data.settings.flashSale ?? { ...current.flashSale!, enabled: false } }));
+      }
+
+      if (sessionResult.status === 'fulfilled' && sessionResult.value?.user) {
+        const restored = sessionResult.value;
+        setCurrentUser(restored.user);
+        setCurrentRole(restored.user.role);
         try {
-          const restored = await apiRequest<{ user: User }>('/session');
-          setCurrentUser(restored.user);
-          setCurrentRole(restored.user.role);
           if (restored.user.role === 'ADMIN' || restored.user.role === 'INSTRUCTOR') {
-            const adminData = await apiRequest<any>('/admin/data');
+            const adminData = await apiRequest<any>('/admin/data', { signal: AbortSignal.timeout(10000) });
             setLeads(adminData.leads || []); setApplications(adminData.applications || []); setCohorts(adminData.cohorts || []);
             setTickets(adminData.tickets || []); setLabs(adminData.labs || []); setInvoices(adminData.invoices || []);
             setAssessments(adminData.assessments || []); setCertificates(adminData.certificates || []);
@@ -223,17 +230,19 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
             setPayments(adminData.payments || []);
             if (adminData.academySettings) setSettings(adminData.academySettings);
           } else if (restored.user.role === 'STUDENT') {
-            const studentData = await apiRequest<any>('/student/data');
+            const studentData = await apiRequest<any>('/student/data', { signal: AbortSignal.timeout(10000) });
             setApplications(studentData.application ? [studentData.application] : []); setInvoices(studentData.invoices || []);
             setTickets(studentData.tickets || []); setAttendance(studentData.attendance || []);
             setAssessments(studentData.assessments || []); setCertificates(studentData.certificates || []);
             setPayments(studentData.payments || []); setPaymentSettings(studentData.paymentSettings);
           }
-        } catch {
-          setApiSession();
-          setCurrentUser(null);
-          setCurrentRole('VISITOR');
+        } catch (fetchError) {
+          console.warn('Unable to load role-specific data:', fetchError);
         }
+      } else {
+        setApiSession();
+        setCurrentUser(null);
+        setCurrentRole('VISITOR');
       }
     } catch (error) {
       console.warn('Falling back to localStorage data because the backend is unavailable:', error);

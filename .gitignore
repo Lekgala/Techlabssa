@@ -10,3 +10,5 @@ server/data/payment-proofs/
 !.env.example
 .neon
 server/data/lab-pilot/
+tmp/
+output/

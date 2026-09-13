@@ -46,7 +46,14 @@ const AppContent: React.FC = () => {
 
   const renderPage = () => {
     if (isMaintenancePage) return <section className="max-w-2xl mx-auto px-4 py-24 text-center space-y-4"><p className="text-[10px] font-mono uppercase tracking-[0.2em] text-[#707070]">Temporarily unavailable</p><h1 className="text-4xl font-light">We are updating the academy site</h1><p className="text-sm text-[#707070]">Please check back shortly or contact admissions for assistance.</p></section>;
-    if (!hasHydrated && (isStudentRoute || isAdminPortalRoute)) return null;
+    if (!hasHydrated && (isStudentRoute || isAdminPortalRoute)) {
+      return (
+        <section className="w-full min-h-[60vh] flex flex-col items-center justify-center space-y-4 px-4 py-24">
+          <div className="w-8 h-8 border-2 border-black border-t-transparent rounded-full animate-spin" />
+          <p className="text-[11px] font-mono uppercase tracking-[0.2em] text-[#707070]">Initializing secure portal…</p>
+        </section>
+      );
+    }
     if (redirectPath) return null;
 
     if (path === '/' || path === '') return <Home />;

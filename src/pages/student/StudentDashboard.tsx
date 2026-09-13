@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
+import { YocoPayments } from '../../components/common/YocoPayments';
 import { useApp } from '../../context/AppContext';
 import { COURSE_MODULES } from '../../data/mockData';
 import { TicketCard } from '../../components/common/TicketCard';
@@ -68,7 +69,7 @@ export const StudentDashboard: React.FC = () => {
     navigate 
   } = useApp();
 
-  const [activeTab, setActiveTab] = useState<'OVERVIEW' | 'CALENDAR' | 'MODULES' | 'PAYMENTS' | 'DOCUMENTS' | 'TICKETS' | 'CERTIFICATE'>('OVERVIEW');
+  const [activeTab, setActiveTab] = useState<'OVERVIEW' | 'CALENDAR' | 'MODULES' | 'PAYMENTS' | 'DOCUMENTS' | 'TICKETS' | 'CERTIFICATE'>(() => new URLSearchParams(window.location.search).has('yoco') ? 'PAYMENTS' : 'OVERVIEW');
   const [selectedTicketId, setSelectedTicketId] = useState<string | null>(null);
   const [showInvoiceModal, setShowInvoiceModal] = useState(false);
   const [documentError, setDocumentError] = useState('');
@@ -290,6 +291,7 @@ export const StudentDashboard: React.FC = () => {
       {/* Tuition & Installment Payment Banner */}
       {activeTab === 'PAYMENTS' && studentInvoice && (
         <div className="bg-[#FFFFFF] border border-[#E0E0E0] p-6 rounded-2xl shadow-sm space-y-4 font-mono text-xs">
+          <YocoPayments invoiceId={studentInvoice.id} />
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-[#E0E0E0] pb-3">
             <div>
               <span className="text-[10px] uppercase font-bold text-[#707070]">Your payments</span>
@@ -574,7 +576,7 @@ export const StudentDashboard: React.FC = () => {
 
           <section className="space-y-3">
             <h4 className="font-bold text-sm text-[#000000]">Submitted proofs of payment</h4>
-            {studentPayments.length ? <div className="divide-y divide-[#E0E0E0] border border-[#E0E0E0] rounded-xl overflow-hidden">{studentPayments.map(payment => (
+            {studentPayments.filter(payment => payment.provider !== 'YOCO').length ? <div className="divide-y divide-[#E0E0E0] border border-[#E0E0E0] rounded-xl overflow-hidden">{studentPayments.filter(payment => payment.provider !== 'YOCO').map(payment => (
               <div key={payment.id} className="p-4 bg-white flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs">
                 <div><strong className="block text-[#000000]">{payment.originalFileName}</strong><span className="text-[#707070]">Uploaded {new Date(payment.submittedAt).toLocaleString('en-ZA')} • <span className="font-bold">{payment.status}</span></span></div>
                 <button onClick={() => void openDocument(`/student/documents/pop/${encodeURIComponent(payment.id)}`)} className="px-4 py-2 border border-[#000000] text-[#000000] font-bold rounded-lg uppercase tracking-wider">Open PDF</button>
