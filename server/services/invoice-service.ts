@@ -229,8 +229,7 @@ export const generateInvoicePDF = async (options: DetailedInvoicePDFOptions): Pr
     commands.push(
       '0 g 50 785 m 60 795 l 70 785 l 60 775 l h f',
       `BT /F2 18 Tf 0 g 82 780 Td (${pdfText('TECHLABS')}) Tj ET`,
-      '0.6 G 0.8 w 177 777 24 14 re S 0 G',
-      `BT /F2 7 Tf 0.35 g 183 782 Td (${pdfText('SA')}) Tj ET`,
+      `BT /F2 7 Tf 0.35 g 188 782 Td (${pdfText('SA')}) Tj ET`,
       `BT /F2 24 Tf 0 g 430 780 Td (${pdfText('INVOICE')}) Tj ET`,
       `BT /F1 8 Tf 0.4 g 430 763 Td (${pdfText(`# ${options.invoiceNumber}`)}) Tj ET`,
       '0 g 50 748 495 2 re f',
@@ -300,8 +299,7 @@ export const generateBrandedDocumentPDF = (options: BrandedDocumentPDFOptions): 
   const commands: string[] = [
     '0 g 50 785 m 60 795 l 70 785 l 60 775 l h f',
     `BT /F2 18 Tf 0 g 82 780 Td (${pdfText('TECHLABS')}) Tj ET`,
-    '0.6 G 0.8 w 177 777 24 14 re S 0 G',
-    `BT /F2 7 Tf 0.35 g 183 782 Td (${pdfText('SA')}) Tj ET`,
+    `BT /F2 7 Tf 0.35 g 188 782 Td (${pdfText('SA')}) Tj ET`,
     `BT /F2 14 Tf 0 g 320 780 Td (${pdfText(options.documentTitle.toUpperCase())}) Tj ET`,
     `BT /F1 8 Tf 0.4 g 430 763 Td (${pdfText(`# ${options.documentNumber}`)}) Tj ET`,
     '0 g 50 748 495 2 re f',
