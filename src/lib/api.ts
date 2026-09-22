@@ -31,6 +31,10 @@ export async function apiRequest<T>(path: string, options: RequestInit = {}): Pr
     return undefined as T;
   }
 
+  if (!response.headers.get('content-type')?.toLowerCase().includes('application/json')) {
+    throw new ApiError('The Academy API returned a page instead of data. Check the API URL configured for this site.', response.status);
+  }
+
   return response.json() as Promise<T>;
 }
 

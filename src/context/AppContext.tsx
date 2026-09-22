@@ -347,8 +347,12 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       setAttendance(data.attendance || []); setAssessments(data.assessments || []); setCertificates(data.certificates || []);
       setPayments(data.payments || []); setPaymentSettings(data.paymentSettings);
       showToast('success', 'Signed In', `Welcome back, ${response.user.name.split(' ')[0]}!`); navigate('/student'); return true;
-    } catch {
-      showToast('error', 'Sign In Failed', 'Check your email and password, or use the recovery options below.'); return false;
+    } catch (error) {
+      const message = error instanceof ApiError && error.status === 401
+        ? 'Check your email and password, or use the recovery options below.'
+        : error instanceof TypeError ? 'Could not reach the Academy API. Check the server connection.'
+        : error instanceof Error ? error.message : 'Sign-in could not be completed. Please try again.';
+      showToast('error', 'Sign In Failed', message); return false;
     }
   };
 

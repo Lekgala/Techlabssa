@@ -39,6 +39,7 @@ Run `npm run lint` for TypeScript validation and `npm run build` for the product
 ## Production checklist
 
 - Set `APP_ORIGIN` to the exact frontend origin and serve everything over HTTPS.
+- When the frontend and API have different origins, set `VITE_API_URL` on the frontend host to the API origin and rebuild the frontend. Without it, `/api` requests go to the frontend host; this repository's Vercel SPA rewrite returns `index.html` for those requests, so sign-in cannot work. The API host must allow the exact frontend origin through `APP_ORIGIN`.
 - Keep secrets in the hosting platform's secret manager; never use `VITE_` variables for secrets.
 - Rate-limit login, application, inquiry, and certificate endpoints.
 - Use Redis or another shared session store when horizontally scaling.
