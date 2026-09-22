@@ -1,4 +1,4 @@
-import React, { useEffect } from 'react';
+import React, { useEffect, useRef } from 'react';
 import { AppProvider, useApp } from './context/AppContext';
 import { Navbar } from './components/layout/Navbar';
 import { Footer } from './components/layout/Footer';
@@ -21,7 +21,8 @@ import { StudentLogin } from './pages/student/StudentLogin';
 import { AdminDashboard } from './pages/admin/AdminDashboard';
 
 const AppContent: React.FC = () => {
-  const { currentPath, currentRole, hasHydrated, navigate, settings } = useApp();
+  const { currentPath, currentRole, hasHydrated, navigate, settings, showToast } = useApp();
+  const yocoCallbackHandled = useRef(false);
   const isAdminRoute = currentPath === '/admin' || currentPath === '/admin/login' || currentPath.startsWith('/admin/');
   const path = (currentPath || '/')
     .replace(/^#/, '')
@@ -50,11 +51,21 @@ const AppContent: React.FC = () => {
   }, [path]);
 
   useEffect(() => {
+    if (yocoCallbackHandled.current) return;
     const url = new URL(window.location.href);
-    if (!url.searchParams.has('yoco')) return;
+    const status = url.searchParams.get('yoco');
+    if (!status) return;
+    yocoCallbackHandled.current = true;
+    const messages: Record<string, { type: 'success' | 'info' | 'error'; title: string; message: string }> = {
+      returned: { type: 'info', title: 'Payment returned', message: 'Refresh payment status to check whether Yoco confirmed your payment.' },
+      cancelled: { type: 'info', title: 'Payment cancelled', message: 'No payment was confirmed. You can return to checkout when you are ready.' },
+      failed: { type: 'error', title: 'Payment failed', message: 'Yoco could not complete the payment. Please try again or use EFT.' },
+    };
+    const callback = messages[status];
+    if (callback) showToast(callback.type, callback.title, callback.message);
     url.searchParams.delete('yoco');
     window.history.replaceState({}, '', url.toString());
-  }, []);
+  }, [showToast]);
 
   const renderPage = () => {
     if (isMaintenancePage) return <section className="max-w-2xl mx-auto px-4 py-24 text-center space-y-4"><p className="text-[10px] font-mono uppercase tracking-[0.2em] text-[#707070]">Temporarily unavailable</p><h1 className="text-4xl font-light">We are updating the academy site</h1><p className="text-sm text-[#707070]">Please check back shortly or contact admissions for assistance.</p></section>;

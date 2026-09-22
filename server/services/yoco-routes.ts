@@ -1,8 +1,29 @@
 import express, { type RequestHandler } from 'express';
 import { randomUUID } from 'node:crypto';
 import { getDatabase, mutateDatabase } from '../data/store.ts';
+import { escapeHtml, sendEmail } from './email-service.ts';
 import { createYocoCheckout, verifyYocoSignature, yocoConfig, yocoCheckoutHidden } from './yoco.ts';
 import { amountDue, ownedInvoice, settleYoco, YocoError, type YocoIntent } from './yoco-ledger.ts';
+
+async function sendYocoConfirmationEmail(intentId: string): Promise<void> {
+  const db = await getDatabase();
+  const intent = (db.yocoCheckouts ?? []).find(item => item.id === intentId);
+  if (!intent || !['PAID', 'TEST_PAID'].includes(intent.status)) return;
+  if (db.auditLogs.some(item => item.id === `yoco-email-${intent.id}`)) return;
+  const invoice = db.invoices.find(item => item.id === intent.invoiceId);
+  const student = db.applications.find(item => item.id === intent.studentId);
+  if (!invoice || !student) return;
+  const subject = `${intent.mode === 'test' ? 'Test payment' : 'Payment'} confirmed - ${invoice.invoiceNumber}`;
+  const delivery = await sendEmail({
+    to: student.email,
+    subject,
+    html: `<h2>Payment confirmed</h2><p>Hello ${escapeHtml(student.firstName)},</p><p>We received your ${intent.mode === 'test' ? 'test ' : ''}Yoco payment of <strong>R${(intent.amountCents / 100).toLocaleString('en-ZA', { minimumFractionDigits: 2 })}</strong>.</p><p><strong>Invoice:</strong> ${escapeHtml(invoice.invoiceNumber)}<br><strong>Reference:</strong> ${escapeHtml(intent.paymentId || intent.id)}</p><p>Your student portal has been updated with the payment status.</p>`,
+  });
+  await mutateDatabase(nextDb => {
+    nextDb.emailDeliveries.unshift({ id: `email-${randomUUID()}`, providerId: delivery.id, recipient: student.email, subject, category: 'APPLICATION_STATUS', status: delivery.sent ? 'SENT' : 'FAILED', reason: delivery.reason, createdAt: new Date().toISOString() });
+    if (delivery.sent) nextDb.auditLogs.unshift({ id: `yoco-email-${intent.id}`, action: 'YOCO_PAYMENT_EMAIL_SENT', actorEmail: 'yoco-webhook', entityType: 'invoice', entityId: invoice.id, summary: `${intent.mode === 'test' ? 'Test payment' : 'Payment'} confirmation emailed for ${invoice.invoiceNumber}`, createdAt: new Date().toISOString() });
+  });
+}
 
 export function yocoWebhook(): RequestHandler[] {
   return [express.raw({ type: 'application/json', limit: '64kb' }), async (req, res, next) => {
@@ -15,6 +36,12 @@ export function yocoWebhook(): RequestHandler[] {
       let event: unknown;
       try { event = JSON.parse(req.body.toString('utf8')); } catch { res.status(400).json({ error: 'Invalid event' }); return; }
       const result = await mutateDatabase(db => settleYoco(db, event));
+      if (result === 'paid' || result === 'test') {
+        const db = await getDatabase();
+        const checkoutId = (event as any)?.payload?.metadata?.checkoutId;
+        const intent = (db.yocoCheckouts ?? []).find(item => item.checkoutId === checkoutId);
+        if (intent) await sendYocoConfirmationEmail(intent.id);
+      }
       res.json({ received: true, result });
     } catch (error) { next(error); }
   }];
