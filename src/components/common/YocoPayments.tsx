@@ -50,7 +50,7 @@ function YocoPaymentPanel({ invoiceId, admin = false, onPendingChange }: { invoi
     </div>
     {error && <p role="alert" className="text-red-700 text-sm">{error}</p>}
     {!admin && status && <>
-      {status.mode === 'live' && latestLive?.status === 'PENDING' && <div role="status" className="rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-950"><strong className="block font-semibold">Card payment awaiting confirmation</strong><p className="mt-1">If you completed checkout, please do not pay again. Check the status shortly. If it remains pending, contact admissions with your invoice number.</p></div>}
+      {status.mode === 'live' && latestLive?.status === 'PENDING' && <div role="status" className="rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-950"><strong className="block font-semibold">Card payment not confirmed yet</strong><p className="mt-1">Left before paying? Select <strong>Return to checkout</strong> to reopen the same payment link. If you completed payment, select <strong>Check payment status</strong> instead. If the link no longer works or the status stays pending, contact admissions with your invoice number.</p></div>}
       {status.mode === 'live' && latestLive?.status === 'REVIEW' && <div role="alert" className="rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-950"><strong className="block font-semibold">Payment needs review</strong><p className="mt-1">Please contact admissions before making another payment.</p></div>}
       {status.mode === 'live' && latestLive?.status === 'PAID' && <div role="status" className="rounded-xl border border-emerald-200 bg-emerald-50 p-4 text-sm text-emerald-950"><strong className="block font-semibold">Card payment confirmed</strong><p className="mt-1">Your payment is recorded. Your updated invoice and receipt are available in your portal.</p></div>}
       {testConfirmed && <div role="status" className="rounded-lg border border-green-200 bg-green-50 p-4 text-green-900 space-y-1">
@@ -65,7 +65,7 @@ function YocoPaymentPanel({ invoiceId, admin = false, onPendingChange }: { invoi
       {status.enabled && status.amountCents > 0 &&
       <button type="button" disabled={busy || status.history.some(i => i.status === 'REVIEW')}
         onClick={() => void pay()} className="w-full rounded-xl bg-black px-5 py-3.5 text-sm font-bold text-white hover:bg-neutral-800 disabled:opacity-40 sm:w-auto">
-        {busy ? 'Opening checkout…' : latestLive?.status === 'PENDING' ? 'Continue secure checkout' : `${status.mode === 'test' ? 'Test payment' : 'Pay by card'} · R${(status.amountCents / 100).toLocaleString('en-ZA', { minimumFractionDigits: 2 })}`}
+        {busy ? 'Opening checkout…' : latestLive?.status === 'PENDING' ? 'Return to checkout' : `${status.mode === 'test' ? 'Test payment' : 'Pay by card'} · R${(status.amountCents / 100).toLocaleString('en-ZA', { minimumFractionDigits: 2 })}`}
       </button>}
       <p className="text-xs text-neutral-500">Card payments are confirmed automatically. No proof of payment is needed.</p>
       </>}
