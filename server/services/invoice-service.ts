@@ -25,6 +25,8 @@ export const generateInvoiceHTML = (options: InvoiceGenerationOptions): string =
     .container { max-width: 900px; margin: 0 auto; padding: 40px 20px; background: white; }
     .header { display: flex; justify-content: space-between; align-items: start; border-bottom: 3px solid #000000; padding-bottom: 30px; margin-bottom: 40px; }
     .logo { font-size: 28px; font-weight: bold; letter-spacing: 2px; }
+    .logo-mark { display: inline-flex; align-items: baseline; gap: 8px; }
+    .logo-country { font-size: 10px; color: #707070; letter-spacing: 1.5px; }
     .logo-sub { font-size: 11px; color: #707070; letter-spacing: 1px; margin-top: 5px; }
     .invoice-title { text-align: right; }
     .invoice-title h1 { font-size: 32px; font-weight: 300; margin-bottom: 10px; }
@@ -61,7 +63,7 @@ export const generateInvoiceHTML = (options: InvoiceGenerationOptions): string =
   <div class="container">
     <div class="header">
       <div>
-        <div class="logo">TECHLABS</div>
+        <div class="logo-mark"><div class="logo">TECHLABS</div><div class="logo-country">SA</div></div>
         <div class="logo-sub">ACADEMY SA</div>
       </div>
       <div class="invoice-title">

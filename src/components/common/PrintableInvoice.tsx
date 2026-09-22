@@ -70,7 +70,7 @@ export const PrintableInvoice: React.FC<PrintableInvoiceProps> = ({ invoice, ins
             <div className="flex items-center gap-3">
               <span className="w-6 h-6 bg-black rotate-45 inline-block shrink-0" />
               <span className="font-bold text-2xl tracking-tighter uppercase text-[#000000]">TechLabs</span>
-              <span className="text-[10px] font-bold font-mono uppercase tracking-[0.2em] text-[#000000] border border-[#000000] px-2 py-0.5 rounded">SA</span>
+              <span className="self-end pb-0.5 text-[9px] font-bold font-mono uppercase tracking-[0.16em] text-[#707070]">SA</span>
             </div>
             <p className="text-xs font-bold text-[#707070] uppercase mt-1 tracking-wider">
               {settings?.companyName || 'Madilotane Design (Pty) Ltd'} trading as TechLabs Academy SA
