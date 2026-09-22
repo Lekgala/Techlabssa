@@ -83,6 +83,7 @@ export const StudentDashboard: React.FC = () => {
   const [popError, setPopError] = useState('');
   const [bankDetailsCopied, setBankDetailsCopied] = useState(false);
   const [cardPaymentPending, setCardPaymentPending] = useState(false);
+  const [cardPaymentAvailable, setCardPaymentAvailable] = useState<boolean | undefined>(undefined);
 
   // Resolution modal state
   const [resolutionText, setResolutionText] = useState('');
@@ -338,10 +339,10 @@ export const StudentDashboard: React.FC = () => {
             </div>
           </div>
           </section>
-          <YocoPayments invoiceId={studentInvoice.id} onPendingChange={setCardPaymentPending} />
+          <YocoPayments invoiceId={studentInvoice.id} onPendingChange={setCardPaymentPending} onAvailabilityChange={setCardPaymentAvailable} />
           {studentInvoice.paymentOption !== 'FULL' && installments.length > 0 && <section className="space-y-3 rounded-2xl border border-[#E0E0E0] bg-white p-5 sm:p-6"><div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between"><h4 className="text-base font-bold">Payment schedule</h4><span className="text-xs text-[#707070]">Payments apply to the oldest installment first</span></div>{installments.map(item => <div key={item.id} className={`flex flex-col gap-2 rounded-xl border p-4 sm:flex-row sm:items-center sm:justify-between ${item.status === 'OVERDUE' ? 'border-[#CC0000] bg-[#FFF5F5]' : 'border-[#E0E0E0] bg-[#FAFAFA]'}`}><div><strong className="block text-sm text-[#000000]">{item.sequence}. {item.label}</strong><span className="text-xs text-[#707070]">Due {item.dueDate} · R{item.paidZAR.toLocaleString()} of R{item.amountZAR.toLocaleString()} paid</span></div><strong className={`text-xs uppercase tracking-wider ${item.status === 'OVERDUE' ? 'text-[#CC0000]' : item.status === 'PAID' ? 'text-[#008000]' : 'text-[#444444]'}`}>{displayStatus(item.status)}</strong></div>)}</section>}
 
-          {canSubmitPayment && paymentSettings && <section id="student-payment-upload" className="rounded-2xl border border-[#E0E0E0] bg-white p-5 shadow-sm sm:p-6 space-y-4">
+          {cardPaymentAvailable === false && paymentSettings && studentInvoice.balanceZAR > 0 && ['APPROVED', 'PAYMENT_REQUIRED', 'ENROLLED'].includes(studentApp?.status || '') && <section id="student-payment-upload" className="rounded-2xl border border-[#E0E0E0] bg-white p-5 shadow-sm sm:p-6 space-y-4">
             <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
               <div><span className="text-[11px] font-bold uppercase tracking-[0.16em] text-[#707070]">Bank transfer</span><h4 className="mt-1 font-sans font-bold text-lg text-[#000000] flex items-center gap-2"><Building2 className="w-5 h-5" /> Pay by EFT</h4><p className="mt-1 font-sans text-sm text-[#707070]">{settings.paymentInstructions || 'Use the invoice number as your reference, then upload your bank-generated proof of payment.'}</p></div>
               <button type="button" onClick={() => void copyBankDetails()} className="shrink-0 inline-flex items-center justify-center gap-1.5 px-3 py-2 border border-[#E0E0E0] rounded-lg bg-white hover:bg-[#FAFAFA] font-sans text-[10px] font-bold uppercase tracking-wider"><Copy className="w-3.5 h-3.5" />{bankDetailsCopied ? 'Copied' : 'Copy details'}</button>
@@ -353,6 +354,7 @@ export const StudentDashboard: React.FC = () => {
               <div><dt className="text-[#707070]">Branch code</dt><dd className="mt-0.5 font-bold text-[#000000]">{paymentSettings.branchCode}</dd></div>
               <div className="sm:col-span-2 pt-2 border-t border-[#E0E0E0]"><dt className="text-[#707070]">EFT reference</dt><dd className="mt-0.5 font-bold text-[#000000]">{studentInvoice.invoiceNumber}</dd></div>
             </dl>
+            {canSubmitPayment ? <>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <label className="min-w-0 space-y-1"><span className="block font-sans text-[10px] font-bold uppercase tracking-wider text-[#000000]">EFT payment reference</span><input maxLength={100} value={eftReference} onChange={event => setEftReference(event.target.value)} className="w-full px-3 py-2.5 bg-white border border-[#E0E0E0] rounded-lg text-[#000000] focus:border-black" /><span className="block text-[10px] text-[#707070]">Pre-filled from your invoice. Change it if your bank payment used a different reference.</span></label>
               <label className="block min-w-0 cursor-pointer space-y-1"><span className="block font-sans text-[10px] font-bold uppercase tracking-wider text-[#000000]">Proof of payment</span><input type="file" accept="application/pdf,image/jpeg,image/png" onChange={event => selectPopFile(event.target.files?.[0])} className="peer sr-only" /><span className="flex min-h-11 min-w-0 items-center gap-3 rounded-lg border border-[#A0A0A0] bg-white px-2 peer-focus:ring-2 peer-focus:ring-black"><span className="shrink-0 rounded-md bg-black px-3 py-2 font-sans text-[11px] font-bold text-white">Choose file</span><span className="min-w-0 truncate font-sans text-[11px] text-[#333333]">{selectedPopFile?.name || 'No file selected'}</span></span></label>
@@ -361,6 +363,7 @@ export const StudentDashboard: React.FC = () => {
             {selectedPopFile && <p className="text-[11px] font-bold text-[#000000]">Selected: {selectedPopFile.name}</p>}
             {popError && <p className="text-[11px] font-bold text-[#CC0000]" role="alert">{popError}</p>}
             <button type="button" disabled={!selectedPopFile || !eftReference.trim() || uploadingPop} onClick={() => void submitPop()} className="w-full py-3 bg-[#000000] hover:bg-neutral-800 disabled:bg-[#E0E0E0] disabled:text-[#707070] text-white font-sans font-bold text-xs uppercase tracking-wider rounded-lg transition">{uploadingPop ? 'Uploading proof securely...' : 'Submit proof for verification'}</button>
+            </> : null}
           </section>}
 
           {paymentAwaitingReview && <p className="rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-950">Your EFT proof is awaiting verification. You do not need to upload it again.</p>}

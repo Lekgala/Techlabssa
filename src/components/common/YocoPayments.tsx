@@ -3,10 +3,10 @@ import { apiRequest } from '../../lib/api';
 
 type Entry = { id: string; invoiceId?: string; paymentId?: string; status: string; mode: string; amountCents: number; createdAt: string };
 type Status = { hidden?: boolean; enabled: boolean; mode?: string; reason: string; amountCents: number; history: Entry[] };
-export function YocoPayments({ invoiceId, admin = false, onPendingChange }: { invoiceId?: string; admin?: boolean; onPendingChange?: (pending: boolean) => void }) {
-  return <YocoPaymentPanel invoiceId={invoiceId} admin={admin} onPendingChange={onPendingChange} />;
+export function YocoPayments({ invoiceId, admin = false, onPendingChange, onAvailabilityChange }: { invoiceId?: string; admin?: boolean; onPendingChange?: (pending: boolean) => void; onAvailabilityChange?: (available: boolean | undefined) => void }) {
+  return <YocoPaymentPanel invoiceId={invoiceId} admin={admin} onPendingChange={onPendingChange} onAvailabilityChange={onAvailabilityChange} />;
 }
-function YocoPaymentPanel({ invoiceId, admin = false, onPendingChange }: { invoiceId?: string; admin?: boolean; onPendingChange?: (pending: boolean) => void }) {
+function YocoPaymentPanel({ invoiceId, admin = false, onPendingChange, onAvailabilityChange }: { invoiceId?: string; admin?: boolean; onPendingChange?: (pending: boolean) => void; onAvailabilityChange?: (available: boolean | undefined) => void }) {
   const [status, setStatus] = useState<Status>();
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
@@ -28,11 +28,12 @@ function YocoPaymentPanel({ invoiceId, admin = false, onPendingChange }: { invoi
       } else {
         const result = await apiRequest<Status>(path);
         setStatus(result);
+        onAvailabilityChange?.(!result.hidden && result.enabled);
         if (reloadConfirmed && result.history.some(entry => entry.mode === 'live' && entry.status === 'PAID')) window.location.reload();
       }
-    } catch (error) { setError(error instanceof Error ? error.message : 'Could not load card payments'); }
+    } catch (error) { onAvailabilityChange?.(false); setError(error instanceof Error ? error.message : 'Could not load card payments'); }
   };
-  useEffect(() => { setStatus(undefined); setRepeatTest(false); void refresh(); }, [invoiceId, admin]);
+  useEffect(() => { setStatus(undefined); setRepeatTest(false); onAvailabilityChange?.(undefined); void refresh(); }, [invoiceId, admin]);
   const pay = async () => {
     setBusy(true); setError('');
     try {
