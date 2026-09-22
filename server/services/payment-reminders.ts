@@ -52,7 +52,7 @@ export async function runPaymentReminders(db: TechlabsDatabase, now = new Date()
     const delivery = await sendEmail({
       to: application.email,
       subject,
-      html: `<h2>${escapeHtml(subject)}</h2><p>Hello ${escapeHtml(application.firstName)},</p><p>${escapeHtml(message)}</p><h3>What to do now</h3><ol><li>Open <a href="${escapeHtml(portalUrl)}">your student portal</a> and review your invoice or installment schedule.</li><li>Pay using the invoice number as the EFT reference.</li><li>Upload one bank-generated proof of payment as a PDF, JPG, or PNG.</li></ol><p>If you have already uploaded a proof, do not upload it again while it is under review. Wait for the portal status or email update. Reply only if the payment plan or amount shown in the portal is incorrect.</p><p>Regards,<br>TechLabs Academy</p>`,
+      html: `<h2>${escapeHtml(subject)}</h2><p>Hello ${escapeHtml(application.firstName)},</p><p>${escapeHtml(message)}</p><h3>What to do next</h3><ol><li>Open <a href="${escapeHtml(portalUrl)}">your student portal</a> and review your invoice or installment schedule.</li><li>Pay using the invoice number as the EFT reference.</li><li>Upload one bank-generated proof of payment as a PDF, JPG, or PNG.</li></ol><p>If you have already uploaded a proof, please wait for its review before submitting another. If the amount or payment plan in your portal looks incorrect, reply to this email and we will help.</p><p>Regards,<br>TechLabs Academy</p>`,
     });
     const createdAt = new Date().toISOString();
     db.emailDeliveries.unshift({ id: `email-${crypto.randomUUID()}`, providerId: delivery.id, recipient: application.email, subject, category: 'APPLICATION_STATUS', status: delivery.sent ? 'SENT' : 'FAILED', reason: delivery.reason, createdAt });

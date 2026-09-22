@@ -14,7 +14,7 @@ export async function notifyAdmissions(application: Submission, cohortName: stri
     try {
       const link = new URL('/admin', env.APP_ORIGIN);
       link.searchParams.set('application', application.id);
-      delivery = await send({ to: recipient, subject, html: `<h2>New application received</h2><p><strong>Applicant:</strong> ${escapeHtml(application.firstName)} ${escapeHtml(application.lastName)}<br><strong>Reference:</strong> ${escapeHtml(application.referenceNumber)}<br><strong>Cohort:</strong> ${escapeHtml(cohortName)}<br><strong>Course tier:</strong> ${escapeHtml(application.selectedTier)}</p><p>Please review the application and hardware readiness on the site.</p><p><a href="${escapeHtml(link.href)}">Review application</a></p><p>Sign in with your staff account to view the application.</p>` });
+      delivery = await send({ to: recipient, subject, html: `<h2>New application to review</h2><p>A new application is ready for admissions review.</p><p><strong>Applicant:</strong> ${escapeHtml(application.firstName)} ${escapeHtml(application.lastName)}<br><strong>Reference:</strong> ${escapeHtml(application.referenceNumber)}<br><strong>Cohort:</strong> ${escapeHtml(cohortName)}<br><strong>Course tier:</strong> ${escapeHtml(application.selectedTier)}</p><p>Review the application and confirm the applicant's hardware readiness in the admin console.</p><p><a href="${escapeHtml(link.href)}" style="display:inline-block;padding:12px 18px;background:#111827;color:#ffffff;text-decoration:none;border-radius:8px">Review application</a></p><p>Sign in with your staff account to open the record.</p>` });
     } catch {
       delivery = { sent: false, reason: 'Application notification could not be sent; check email and APP_ORIGIN configuration' };
     }
