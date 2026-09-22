@@ -13,13 +13,13 @@ import {
 } from 'lucide-react';
 
 export const Footer: React.FC = () => {
-  const { navigate, settings } = useApp();
+  const { currentRole, navigate, settings } = useApp();
 
   return (
     <footer className="bg-[#FAFAFA] text-[#707070] pt-16 pb-12 border-t border-[#F0F0F0]">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         {/* Top Callout Box */}
-        <div className="bg-[#FFFFFF] p-8 sm:p-10 rounded-2xl border border-[#F0F0F0] mb-16 flex flex-col md:flex-row items-center justify-between gap-8">
+        {currentRole !== 'STUDENT' && <div className="bg-[#FFFFFF] p-8 sm:p-10 rounded-2xl border border-[#F0F0F0] mb-16 flex flex-col md:flex-row items-center justify-between gap-8">
           <div className="space-y-2 text-center md:text-left">
             <span className="text-[10px] font-bold text-[#A0A0A0] uppercase tracking-[0.2em] block">
               Practical South African IT Training
@@ -48,7 +48,7 @@ export const Footer: React.FC = () => {
               <span>WhatsApp Us</span>
             </a>
           </div>
-        </div>
+        </div>}
 
         {/* 4-Column Grid */}
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-10 pb-12 border-b border-[#F0F0F0]">
