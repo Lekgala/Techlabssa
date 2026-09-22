@@ -80,6 +80,7 @@ export const StudentDashboard: React.FC = () => {
   const [uploadingPop, setUploadingPop] = useState(false);
   const [popError, setPopError] = useState('');
   const [bankDetailsCopied, setBankDetailsCopied] = useState(false);
+  const [cardPaymentPending, setCardPaymentPending] = useState(false);
 
   // Resolution modal state
   const [resolutionText, setResolutionText] = useState('');
@@ -106,7 +107,7 @@ export const StudentDashboard: React.FC = () => {
   const studentPayments = (payments || []).filter(payment => payment.studentId === currentStudent?.id);
   const verifiedPayments = studentPayments.filter(payment => payment.status === 'VERIFIED');
   const paymentAwaitingReview = studentPayments.some(payment => payment.status === 'SUBMITTED');
-  const canSubmitPayment = Boolean(studentInvoice?.balanceZAR && ['APPROVED', 'PAYMENT_REQUIRED', 'ENROLLED'].includes(studentApp?.status || '') && !paymentAwaitingReview);
+  const canSubmitPayment = Boolean(studentInvoice?.balanceZAR && ['APPROVED', 'PAYMENT_REQUIRED', 'ENROLLED'].includes(studentApp?.status || '') && !paymentAwaitingReview && !cardPaymentPending);
   const nextStep = useMemo(() => {
     const status = studentApp?.status;
     if (!studentApp) return { title: 'Contact admissions', detail: 'We could not match an application to this account.', action: 'Contact admissions', kind: 'contact' as const };
@@ -114,7 +115,7 @@ export const StudentDashboard: React.FC = () => {
     if (status === 'WAITLISTED') return { title: 'You are on the cohort waitlist', detail: 'No further payment is required right now. Admissions will contact you when a suitable seat becomes available.', action: 'View documents', kind: 'documents' as const };
     if (status === 'NEW' || status === 'UNDER_REVIEW') return { title: 'Admissions is reviewing your application', detail: 'No action is required unless admissions asks for more information. We will email you after the hardware review.', action: 'View application documents', kind: 'documents' as const };
     if (paymentAwaitingReview) return { title: 'Your proof of payment is under review', detail: 'Admissions will compare it with the bank statement. Do not upload the same POP again while verification is pending.', action: 'View submitted POP', kind: 'documents' as const };
-    if ((status === 'APPROVED' || status === 'PAYMENT_REQUIRED') && studentInvoice?.balanceZAR) return { title: 'Secure your seat', detail: 'View the banking details, pay the required amount, and upload your proof of payment for verification.', action: 'View banking details', kind: 'payment' as const };
+    if ((status === 'APPROVED' || status === 'PAYMENT_REQUIRED') && studentInvoice?.balanceZAR) return { title: 'Secure your seat', detail: 'Pay securely by card or use the EFT details in your Payments page.', action: 'View payment options', kind: 'payment' as const };
     if (status === 'COMPLETED') return { title: 'Course completed', detail: 'Your course records remain available. Open the document centre for your certificate and payment records.', action: 'View completion documents', kind: 'documents' as const };
     if (status === 'ENROLLED' && studentInvoice?.balanceZAR) return { title: 'Continue learning and manage your balance', detail: `Your seat is secured. R${studentInvoice.balanceZAR.toLocaleString('en-ZA')} remains payable according to your payment plan.`, action: 'Pay balance', kind: 'payment' as const };
     return { title: 'Continue your course', detail: 'Your seat is active and your learning resources are available below.', action: 'Open modules', kind: 'modules' as const };
@@ -291,62 +292,56 @@ export const StudentDashboard: React.FC = () => {
 
       {/* Tuition & Installment Payment Banner */}
       {activeTab === 'PAYMENTS' && studentInvoice && (
-        <div className="bg-[#FFFFFF] border border-[#E0E0E0] p-6 rounded-2xl shadow-sm space-y-4 font-mono text-xs">
-          <YocoPayments invoiceId={studentInvoice.id} />
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-[#E0E0E0] pb-3">
+        <div className="space-y-5 font-sans">
+          <section className="rounded-2xl border border-[#E0E0E0] bg-white p-5 shadow-sm sm:p-6 space-y-5">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-[#E0E0E0] pb-4">
             <div>
-              <span className="text-[10px] uppercase font-bold text-[#707070]">Your payments</span>
-              <h3 className="text-base font-bold text-[#000000] font-sans">
+              <span className="text-xs uppercase font-bold tracking-widest text-[#707070]">Payments</span>
+              <h3 className="mt-1 text-xl font-bold text-[#000000]">
                 {studentInvoice.balanceZAR === 0 
-                  ? '✔ Fully Paid & Settled (R0 Outstanding Balance)' 
-                  : studentInvoice.status === 'VERIFIED' 
-                  ? 'Seat Deposit Verified • Balance Payment Due Soon' 
-                  : 'Tuition Payment Pending'}
+                  ? 'Tuition paid in full'
+                  : studentInvoice.paidZAR
+                  ? 'Remaining tuition balance'
+                  : 'Choose how to pay'}
               </h3>
             </div>
-            <div className="flex items-center gap-2">
+            <div className="flex flex-wrap items-center gap-2">
               <span className="px-3 py-1 bg-[#FAFAFA] border border-[#E0E0E0] text-[#000000] font-bold rounded-full uppercase tracking-wider text-[10px]">
                 {studentInvoice.invoiceNumber}
               </span>
-              <span className={`px-3 py-1 rounded-full uppercase tracking-wider text-[10px] font-bold ${
-                studentInvoice.balanceZAR === 0 
-                  ? 'bg-[#000000] text-white' 
-                  : studentInvoice.status === 'VERIFIED' 
-                  ? 'bg-[#E0E0E0] text-[#000000]' 
-                  : 'bg-[#FAFAFA] border border-[#E0E0E0] text-[#707070]'
-              }`}>
-                {studentInvoice.balanceZAR === 0 ? 'PAID IN FULL' : studentInvoice.status}
-              </span>
+              <button type="button" onClick={() => setShowInvoiceModal(true)} className="rounded-full border border-[#D0D0D0] px-3 py-1 text-[10px] font-bold uppercase tracking-wider hover:bg-[#FAFAFA]">View invoice</button>
             </div>
           </div>
 
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 bg-[#FAFAFA] p-4 rounded-xl border border-[#E0E0E0]">
+          <div className="grid grid-cols-2 gap-3 rounded-xl border border-[#E0E0E0] bg-[#FAFAFA] p-4 sm:grid-cols-4">
             <div>
-              <span className="text-[#707070] text-[9px] uppercase block">Course Tier</span>
-              <strong className="text-[#000000] font-sans text-sm">{studentInvoice.courseTier}</strong>
+              <span className="text-[#707070] text-[11px] block">Course</span>
+              <strong className="text-[#000000] text-sm">{studentInvoice.courseTier}</strong>
             </div>
             <div>
-              <span className="text-[#707070] text-[9px] uppercase block">Total Tuition</span>
-              <strong className="text-[#000000]">R{studentInvoice.amountZAR.toLocaleString()}</strong>
+              <span className="text-[#707070] text-[11px] block">Total tuition</span>
+              <strong className="text-[#000000] text-base">R{studentInvoice.amountZAR.toLocaleString()}</strong>
             </div>
             <div>
-              <span className="text-[#707070] text-[9px] uppercase block">Paid to Date</span>
-              <strong className="text-[#008000]">
+              <span className="text-[#707070] text-[11px] block">Paid so far</span>
+              <strong className="text-[#008000] text-base">
                 R{(studentInvoice.paidZAR ?? 0).toLocaleString()}
               </strong>
             </div>
             <div>
-              <span className="text-[#707070] text-[9px] uppercase block">Remaining Balance</span>
-              <strong className={studentInvoice.balanceZAR > 0 ? 'text-[#CC0000] text-sm font-bold' : 'text-[#008000] text-sm font-bold'}>
+              <span className="text-[#707070] text-[11px] block">Still to pay</span>
+              <strong className={studentInvoice.balanceZAR > 0 ? 'text-[#000000] text-xl font-bold' : 'text-[#008000] text-xl font-bold'}>
                 R{studentInvoice.balanceZAR.toLocaleString()}
               </strong>
             </div>
           </div>
-          {studentInvoice.paymentOption !== 'FULL' && installments.length > 0 && <div className="space-y-2"><div className="flex items-center justify-between"><strong className="text-[10px] uppercase tracking-wider">Your installment schedule</strong><span className="text-[9px] text-[#707070]">Payments apply oldest first</span></div>{installments.map(item => <div key={item.id} className={`grid grid-cols-[1fr_auto] gap-3 p-3 rounded-xl border ${item.status === 'OVERDUE' ? 'border-[#CC0000] bg-[#FFF5F5]' : 'border-[#E0E0E0] bg-[#FAFAFA]'}`}><div><strong className="block text-[#000000]">{item.sequence}. {item.label}</strong><span className="text-[10px] text-[#707070]">Due {item.dueDate} · R{item.paidZAR.toLocaleString()} of R{item.amountZAR.toLocaleString()} paid</span></div><strong className={item.status === 'OVERDUE' ? 'text-[#CC0000]' : item.status === 'PAID' ? 'text-[#008000]' : ''}>{item.status}</strong></div>)}</div>}
+          </section>
+          <YocoPayments invoiceId={studentInvoice.id} onPendingChange={setCardPaymentPending} />
+          {studentInvoice.paymentOption !== 'FULL' && installments.length > 0 && <section className="space-y-3 rounded-2xl border border-[#E0E0E0] bg-white p-5 sm:p-6"><div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between"><h4 className="text-base font-bold">Payment schedule</h4><span className="text-xs text-[#707070]">Payments apply to the oldest installment first</span></div>{installments.map(item => <div key={item.id} className={`flex flex-col gap-2 rounded-xl border p-4 sm:flex-row sm:items-center sm:justify-between ${item.status === 'OVERDUE' ? 'border-[#CC0000] bg-[#FFF5F5]' : 'border-[#E0E0E0] bg-[#FAFAFA]'}`}><div><strong className="block text-sm text-[#000000]">{item.sequence}. {item.label}</strong><span className="text-xs text-[#707070]">Due {item.dueDate} · R{item.paidZAR.toLocaleString()} of R{item.amountZAR.toLocaleString()} paid</span></div><strong className={`text-xs uppercase tracking-wider ${item.status === 'OVERDUE' ? 'text-[#CC0000]' : item.status === 'PAID' ? 'text-[#008000]' : 'text-[#444444]'}`}>{displayStatus(item.status)}</strong></div>)}</section>}
 
-          {canSubmitPayment && paymentSettings && <section id="student-payment-upload" className="border-t border-[#E0E0E0] pt-5 space-y-4">
+          {canSubmitPayment && paymentSettings && <section id="student-payment-upload" className="rounded-2xl border border-[#E0E0E0] bg-white p-5 shadow-sm sm:p-6 space-y-4">
             <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
-              <div><h4 className="font-sans font-bold text-sm text-[#000000] flex items-center gap-2"><Building2 className="w-4 h-4" /> EFT payment details</h4><p className="mt-1 font-sans text-[11px] text-[#707070]">{settings.paymentInstructions || 'Pay the required amount, use the invoice number as the reference, then upload one bank-generated proof.'}</p></div>
+              <div><span className="text-[11px] font-bold uppercase tracking-[0.16em] text-[#707070]">Bank transfer</span><h4 className="mt-1 font-sans font-bold text-lg text-[#000000] flex items-center gap-2"><Building2 className="w-5 h-5" /> Pay by EFT</h4><p className="mt-1 font-sans text-sm text-[#707070]">{settings.paymentInstructions || 'Use the invoice number as your reference, then upload your bank-generated proof of payment.'}</p></div>
               <button type="button" onClick={() => void copyBankDetails()} className="shrink-0 inline-flex items-center justify-center gap-1.5 px-3 py-2 border border-[#E0E0E0] rounded-lg bg-white hover:bg-[#FAFAFA] font-sans text-[10px] font-bold uppercase tracking-wider"><Copy className="w-3.5 h-3.5" />{bankDetailsCopied ? 'Copied' : 'Copy details'}</button>
             </div>
             <dl className="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-2 p-4 bg-[#FAFAFA] border border-[#E0E0E0] rounded-xl text-[11px]">
@@ -366,32 +361,7 @@ export const StudentDashboard: React.FC = () => {
             <button type="button" disabled={!selectedPopFile || !eftReference.trim() || uploadingPop} onClick={() => void submitPop()} className="w-full py-3 bg-[#000000] hover:bg-neutral-800 disabled:bg-[#E0E0E0] disabled:text-[#707070] text-white font-sans font-bold text-xs uppercase tracking-wider rounded-lg transition">{uploadingPop ? 'Uploading proof securely...' : 'Submit proof for verification'}</button>
           </section>}
 
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pt-1">
-            <p className="text-[11px] text-[#707070] font-sans">
-              {studentInvoice.balanceZAR > 0 ? (
-                <>As per your chosen payment plan, your remaining installment balance of <strong className="text-[#000000]">R{studentInvoice.balanceZAR.toLocaleString()}</strong> can be settled before Week 4.</>
-              ) : (
-                <>Thank you! Your tuition balance is completely settled in full. You have 100% unrestricted access to all labs and certificates.</>
-              )}
-            </p>
-            <div className="flex items-center gap-2 shrink-0">
-              <button
-                onClick={() => setShowInvoiceModal(true)}
-                className="px-4 py-2.5 bg-[#FAFAFA] hover:bg-[#E0E0E0] text-[#000000] font-bold text-xs uppercase tracking-wider rounded-xl border border-[#E0E0E0] transition font-sans"
-              >
-                View invoice
-              </button>
-              {canSubmitPayment && (
-                <button
-                  onClick={() => document.getElementById('student-payment-upload')?.scrollIntoView({ behavior: 'smooth', block: 'start' })}
-                  className="px-5 py-2.5 bg-[#000000] hover:bg-neutral-800 text-white font-bold text-xs uppercase tracking-wider rounded-xl shadow transition font-sans"
-                >
-                  Pay or upload POP
-                </button>
-              )}
-              {paymentAwaitingReview && <span className="px-4 py-2.5 bg-[#FFF8EE] border border-[#E08A00] text-[#8A5200] rounded-xl text-[10px] font-bold uppercase font-sans">POP awaiting verification</span>}
-            </div>
-          </div>
+          {paymentAwaitingReview && <p className="rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-950">Your EFT proof is awaiting verification. You do not need to upload it again.</p>}
         </div>
       )}
 
@@ -569,7 +539,7 @@ export const StudentDashboard: React.FC = () => {
             <h4 className="font-bold text-sm text-[#000000]">Payment receipts</h4>
             {verifiedPayments.length ? <div className="divide-y divide-[#E0E0E0] border border-[#E0E0E0] rounded-xl overflow-hidden">{verifiedPayments.map(payment => (
               <div key={payment.id} className="p-4 bg-white flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs">
-                <div><strong className="block text-[#000000]">{payment.type === 'DEPOSIT' ? 'Seat deposit receipt' : 'Balance payment receipt'} • R{payment.amountZAR.toLocaleString()}</strong><span className="text-[#707070]">Verified {payment.verifiedAt ? new Date(payment.verifiedAt).toLocaleString('en-ZA') : ''} • EFT ref {payment.eftReference}</span></div>
+                <div><strong className="block text-[#000000]">{payment.type === 'DEPOSIT' ? 'Seat deposit receipt' : 'Balance payment receipt'} • R{payment.amountZAR.toLocaleString()}</strong><span className="text-[#707070]">Verified {payment.verifiedAt ? new Date(payment.verifiedAt).toLocaleString('en-ZA') : ''} • {payment.provider === 'YOCO' ? 'Yoco card payment' : `EFT ref ${payment.eftReference}`}</span></div>
                 <button onClick={() => void openDocument(`/student/documents/receipt/${encodeURIComponent(payment.id)}`)} className="px-4 py-2 bg-[#000000] text-white font-bold rounded-lg uppercase tracking-wider">Open PDF</button>
               </div>
             ))}</div> : <p className="p-4 bg-[#FAFAFA] border border-[#E0E0E0] rounded-xl text-xs text-[#707070]">Receipts appear here after admissions verifies a payment.</p>}
