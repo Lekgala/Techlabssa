@@ -4,10 +4,9 @@ import { apiRequest } from '../../lib/api';
 type Entry = { id: string; invoiceId?: string; paymentId?: string; status: string; mode: string; amountCents: number; createdAt: string };
 type Status = { hidden?: boolean; enabled: boolean; mode?: string; reason: string; amountCents: number; history: Entry[] };
 export function YocoPayments({ invoiceId, admin = false }: { invoiceId?: string; admin?: boolean }) {
-  // Hosted builds omit the flow; local Vite development retains it.
-  return import.meta.env.DEV ? <LocalYocoPayments invoiceId={invoiceId} admin={admin} /> : null;
+  return <YocoPaymentPanel invoiceId={invoiceId} admin={admin} />;
 }
-function LocalYocoPayments({ invoiceId, admin = false }: { invoiceId?: string; admin?: boolean }) {
+function YocoPaymentPanel({ invoiceId, admin = false }: { invoiceId?: string; admin?: boolean }) {
   const [status, setStatus] = useState<Status>();
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
@@ -36,7 +35,7 @@ function LocalYocoPayments({ invoiceId, admin = false }: { invoiceId?: string; a
       window.location.assign(url.href);
     } catch (error) { setError(error instanceof Error ? error.message : 'Could not start checkout'); setBusy(false); }
   };
-  if (status?.hidden) return null;
+  if (status?.hidden || (!status && !error)) return null;
   return <section className="rounded-xl border border-neutral-200 bg-white p-5 space-y-3">
     <div className="flex justify-between items-center gap-4"><h4 className="font-bold">{admin ? 'Yoco payment activity' : 'Pay with Yoco'}</h4><button type="button" className="underline text-sm" onClick={() => void refresh()}>Refresh payments</button></div>
     {error && <p role="alert" className="text-red-700 text-sm">{error}</p>}

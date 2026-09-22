@@ -63,6 +63,25 @@ test('Yoco routes and atomic ledger with an isolated SQLite database', async t =
       if (originalNodeEnv === undefined) delete process.env.NODE_ENV; else process.env.NODE_ENV = originalNodeEnv;
     }
   });
+  await t.test('hosted live mode exposes checkout with valid live configuration', async () => {
+    const keys = ['RENDER', 'NODE_ENV', 'YOCO_MODE', 'YOCO_SECRET_KEY', 'APP_ORIGIN'] as const;
+    const original = Object.fromEntries(keys.map(key => [key, process.env[key]]));
+    try {
+      Object.assign(process.env, { RENDER: 'true', NODE_ENV: 'production', YOCO_MODE: 'live', YOCO_SECRET_KEY: 'sk_live_fake', APP_ORIGIN: 'https://academy.example.test' });
+      const status = await (await fetch(`${base}/api/student/invoices/invoice/yoco`, { headers: { Authorization: 'student' } })).json();
+      assert.equal(status.hidden, undefined);
+      assert.equal(status.enabled, true);
+      assert.equal(status.mode, 'live');
+      assert.equal((await checkout()).status, 200);
+      assert.equal((await getDatabase()).yocoCheckouts![0].mode, 'live');
+    } finally {
+      await mutateDatabase(db => { db.yocoCheckouts = []; });
+      providerCalls = 0;
+      for (const key of keys) {
+        if (original[key] === undefined) delete process.env[key]; else process.env[key] = original[key];
+      }
+    }
+  });
   await t.test('auth and ownership gate checkout; pending checkout is reused', async () => {
     assert.equal((await fetch(`${base}/api/student/invoices/invoice/yoco`, { method: 'POST' })).status, 401);
     assert.equal((await checkout('another-student')).status, 404);
@@ -93,6 +112,16 @@ test('Yoco routes and atomic ledger with an isolated SQLite database', async t =
     const intent = (await getDatabase()).yocoCheckouts!.find(i => i.id === 'live'); const event = eventFor(intent, 'live');
     await Promise.all([mutateDatabase(db => settleYoco(db, event)), mutateDatabase(db => settleYoco(db, event))]);
     const db = await getDatabase(); assert.equal(db.payments.length, 1); assert.equal(db.invoices[0].paidZAR, 1000); assert.equal(db.invoices[0].balanceZAR, 999); assert.equal(db.applications[0].status, 'ENROLLED');
+  });
+  await t.test('signed refund events require review without silently changing the balance', async () => {
+    const event = { id: 'refund-live', type: 'refund.succeeded', payload: { type: 'refund', status: 'succeeded', currency: 'ZAR', mode: 'live', amount: 50000, metadata: { checkoutId: 'live-checkout' } } };
+    assert.equal((await sendEvent(event)).status, 200);
+    assert.equal((await sendEvent(event)).status, 200);
+    const db = await getDatabase();
+    assert.equal(db.yocoCheckouts!.find(i => i.id === 'live')?.status, 'REVIEW');
+    assert.equal(db.auditLogs.filter(item => item.id === 'yoco-refund-refund-live').length, 1);
+    assert.equal(db.invoices[0].paidZAR, 1000);
+    assert.equal(db.invoices[0].balanceZAR, 999);
   });
   await t.test('overpayment is retained for review without changing balance', async () => {
     await mutateDatabase(db => db.yocoCheckouts!.push({ ...db.yocoCheckouts![0], id: 'over', mode: 'live', status: 'PENDING', checkoutId: 'over-checkout', eventId: undefined, paymentId: undefined }));

@@ -2,11 +2,10 @@
 
 Implemented: student checkout, signed webhook receiver, persistent intents,
 invoice/installment/enrollment updates, receipts, and admin payment activity.
-Yoco is temporarily restricted to local development while the flow is reviewed.
-Hosted frontend builds hide the checkout and activity panels. The API blocks new
-checkouts when `RENDER=true` or `NODE_ENV=production`, regardless of `YOCO_ENABLED`.
-EFT remains available. Existing records and signed webhook processing are retained
-to reconcile payments already in progress.
+Hosted checkout is available only when `YOCO_ENABLED=true` and `YOCO_MODE=live`.
+Otherwise, the hosted API hides checkout and activity panels. EFT remains
+available. Existing signed webhook processing stays active for payments already
+in progress.
 
 For local testing, run `npm run dev` and `npm run dev:server`, leave `RENDER` unset,
 and use `NODE_ENV=development`. Enable `YOCO_ENABLED=true` only with configured test
@@ -44,8 +43,9 @@ with sk_test_. The separate webhook secret is returned when registering a receiv
 4. Sign in as an approved student and open Payments. Use Yoco test card details.
    The server determines the deposit, installment or balance from the invoice.
 5. After returning, select Refresh payments. Test confirmed means the signed event
-   arrived. Test payments NEVER reduce tuition or enroll students. Admin → Invoices
-   shows the same payment activity. Reload the page after live confirmation to
+   arrived. Test payments update the connected test database's tuition and enrollment
+   records. Use an isolated database or Neon branch for testing. Admin → Invoices
+   shows the same payment activity. Reload the page after confirmation to
    refresh invoice balances.
 
 ## Payment behavior
@@ -64,21 +64,34 @@ with sk_test_. The separate webhook secret is returned when registering a receiv
   Available seats enroll eligible students; full cohorts waitlist them. Existing
   completed status is preserved. Card records have no uploaded proof file.
 - Overpayments, EFT review conflicts or invalid admission links are marked REVIEW
-  without changing balances. Admin payment activity retains the provider IDs for
-  operator reconciliation. No automated review resolution, cancellation or refund
-  button is implemented. Academy email receipts are not automatically sent.
+  without changing balances. Signed refund notifications also mark the checkout
+  REVIEW and leave balances unchanged until staff reconciles the refund. Admin
+  payment activity retains the provider IDs. No automated review resolution,
+  cancellation or refund button is implemented. Academy email receipts are not
+  automatically sent.
 - EFT and R2 proofs remain supported. Pending live card payments block new EFT
   uploads. Disabling checkout still permits signed notifications for payments
   already in flight; retain the configured signing secret.
 
-## Before live use
+## Live activation
 
-Verify your domain with Yoco and use HTTPS APP_ORIGIN and live credentials.
-Test on an isolated database/Neon branch before enabling real charges. Do not
-switch credentials, mode or origin with unresolved intents; reconcile them first.
-Validation here used mocked Yoco and isolated SQLite, not the current Neon database
-or real Yoco transactions. PostgreSQL deployment validation and end-to-end Yoco
-webhook delivery remain required before production.
+1. Verify the merchant account and domain with Yoco. Keep the public frontend on
+   HTTPS and set the API server's `APP_ORIGIN` to that exact frontend origin.
+2. On the hosted API, set `YOCO_ENABLED=true`, `YOCO_MODE=live`, and the merchant's
+   `sk_live_` secret as `YOCO_SECRET_KEY`. Keep these values server-side only.
+3. Register one **live** Yoco webhook pointing to the permanent API URL at
+   `https://YOUR-API/api/webhooks/yoco`. Save its newly issued `whsec_` value as
+   `YOCO_WEBHOOK_SECRET` on the API server. A test webhook or temporary tunnel URL
+   is not sufficient for live payments.
+4. Check and reconcile all pending test or live intents before switching mode or
+   origin. Reconcile any test payments already credited to the production database;
+   test-mode charges do not represent money received. Validate the flow on an
+   isolated database or Neon branch, then verify
+   one low-value live transaction against the Yoco dashboard, invoice balance,
+   student portal and admin payment activity.
+
+The repository does not contain live Yoco credentials. Code checks and mocked
+webhook tests cannot establish that a real merchant account or webhook is ready.
 
 ## Offline checks
 

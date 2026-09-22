@@ -28,6 +28,20 @@ export function amountDue(db: TechlabsDatabase, invoiceId: string, studentId: st
 
 /** Runs within mutateDatabase: checkout status, payment, invoice and enrollment commit together. */
 export function settleYoco(db: TechlabsDatabase, event: any) {
+  if (event?.type === 'refund.succeeded') {
+    const intent = (db.yocoCheckouts ?? []).find(i => i.checkoutId === event.payload?.metadata?.checkoutId && i.checkoutId);
+    if (!intent) throw new YocoError(409, 'Refund checkout not recorded');
+    const refund = event.payload;
+    if (typeof event.id !== 'string' || !event.id || refund?.type !== 'refund' || refund.status !== 'succeeded'
+      || refund.currency !== 'ZAR' || refund.mode !== intent.mode || !Number.isSafeInteger(refund.amount)
+      || refund.amount <= 0 || refund.amount > intent.amountCents) throw new YocoError(409, 'Refund does not match the stored checkout');
+    const auditId = `yoco-refund-${event.id}`;
+    if (db.auditLogs.some(item => item.id === auditId)) return 'duplicate';
+    intent.status = 'REVIEW';
+    db.auditLogs.unshift({ id: auditId, action: 'YOCO_REFUND_REVIEW_REQUIRED', actorEmail: 'yoco-webhook', entityType: 'invoice', entityId: intent.invoiceId,
+      summary: `Yoco refund of R${refund.amount / 100} received; reconcile invoice and enrollment manually`, createdAt: new Date().toISOString() });
+    return 'review';
+  }
   if (event?.type !== 'payment.succeeded') return 'ignored';
   const intents = db.yocoCheckouts ?? [];
   const intent = intents.find(i => i.checkoutId === event.payload?.metadata?.checkoutId && i.checkoutId);

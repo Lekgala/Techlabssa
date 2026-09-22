@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { createHmac } from 'node:crypto';
-import { yocoConfig, createYocoCheckout, verifyYocoSignature, matchYocoPayment } from './yoco';
+import { yocoConfig, yocoCheckoutHidden, createYocoCheckout, verifyYocoSignature, matchYocoPayment } from './yoco';
 
 const secret = `whsec_${Buffer.from('unit-test-signing-secret').toString('base64')}`;
 const env = { YOCO_ENABLED: 'true', YOCO_MODE: 'test', YOCO_SECRET_KEY: 'sk_test_example', YOCO_WEBHOOK_SECRET: secret, APP_ORIGIN: 'http://localhost:3001' };
@@ -10,6 +10,12 @@ test('disabled by default; rejects wrong mode credentials and insecure live orig
   assert.throws(() => yocoConfig({ ...env, YOCO_MODE: 'live' }));
   assert.throws(() => yocoConfig({ ...env, YOCO_MODE: 'live', YOCO_SECRET_KEY: 'sk_live_example' }));
   assert.equal(yocoConfig(env)?.mode, 'test');
+});
+test('hosted checkout requires explicit live mode', () => {
+  assert.equal(yocoCheckoutHidden({ RENDER: 'true', YOCO_ENABLED: 'true', YOCO_MODE: 'test' }), true);
+  assert.equal(yocoCheckoutHidden({ NODE_ENV: 'production', YOCO_ENABLED: 'false', YOCO_MODE: 'live' }), true);
+  assert.equal(yocoCheckoutHidden({ RENDER: 'true', YOCO_ENABLED: 'true', YOCO_MODE: 'live' }), false);
+  assert.equal(yocoCheckoutHidden({ NODE_ENV: 'production', YOCO_ENABLED: 'true', YOCO_MODE: 'live' }), false);
 });
 test('checkout sends cents, invoice metadata and stable idempotency key', async () => {
   let calls = 0;
