@@ -287,7 +287,7 @@ export const Apply: React.FC = () => {
 
       {/* Form Container */}
       <div ref={formRef} className="bg-[#FFFFFF] rounded-2xl border border-[#E0E0E0] shadow-sm p-6 sm:p-10">
-        <form onSubmit={currentStep === 7 ? handleSubmit : (e) => { e.preventDefault(); setCurrentStep(prev => Math.min(7, prev + 1)); }}>
+        <form className="application-form" onSubmit={currentStep === 7 ? handleSubmit : (e) => { e.preventDefault(); setCurrentStep(prev => Math.min(7, prev + 1)); }}>
           {/* STEP 1: PERSONAL */}
           {currentStep === 1 && (
             <div className="space-y-6 animate-in fade-in duration-200">
