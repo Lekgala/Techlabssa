@@ -314,6 +314,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     if (typeof window !== 'undefined') {
       const nextUrl = new URL(window.location.href);
       nextUrl.pathname = safePath === '/' ? '/' : safePath;
+      nextUrl.searchParams.delete('yoco');
       nextUrl.hash = '';
       window.history[options?.replace ? 'replaceState' : 'pushState']({}, '', nextUrl.toString());
       window.scrollTo(0, 0);
