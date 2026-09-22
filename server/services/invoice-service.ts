@@ -153,6 +153,7 @@ export interface DetailedInvoicePDFOptions extends InvoiceGenerationOptions {
   companyAddress: string;
   admissionsEmail: string;
   courseTier: string;
+  paymentMethod?: 'EFT' | 'Yoco' | 'PayFast' | 'Card';
   studentPhone?: string;
   studentCity?: string;
   paidAmount: number;
@@ -209,12 +210,18 @@ export const generateInvoicePDF = async (options: DetailedInvoicePDFOptions): Pr
     ...(options.payments.length ? options.payments.map(payment => ({ text: `${payment.date} | ${payment.type} | ${money(payment.amount)} | Ref: ${payment.reference} | ${payment.status}`, size: 9 })) : [{ text: 'No verified payments recorded.', size: 9 }]),
     ...(options.installments?.length ? [{ text: 'INSTALLMENT SCHEDULE', bold: true, size: 10, section: true }, ...options.installments.map(item => ({ text: `${item.sequence}. ${item.label} | Due ${item.dueDate} | ${money(item.amountZAR)} | Paid ${money(item.paidZAR)} | ${item.status}`, size: 9 }))] : []),
     { text: '', gap: 8 },
-    { text: 'EFT BANKING DETAILS', bold: true, size: 10, section: true },
-    { text: `Bank: ${options.bankName}` },
-    { text: `Account name: ${options.accountName}` },
-    { text: `Account number: ${options.accountNumber}` },
-    { text: `Branch code: ${options.branchCode}` },
-    { text: `Payment reference: ${options.reference || options.invoiceNumber}`, bold: true, gap: 14 },
+    ...(options.paymentMethod === 'EFT' ? [
+      { text: 'EFT BANKING DETAILS', bold: true, size: 10, section: true },
+      { text: `Bank: ${options.bankName}` },
+      { text: `Account name: ${options.accountName}` },
+      { text: `Account number: ${options.accountNumber}` },
+      { text: `Branch code: ${options.branchCode}` },
+      { text: `Payment reference: ${options.reference || options.invoiceNumber}`, bold: true, gap: 14 },
+    ] : [
+      { text: 'ONLINE PAYMENT', bold: true, size: 10, section: true },
+      { text: 'Pay securely by card through the student portal.' },
+      { text: 'Your invoice updates automatically after Yoco confirms the payment.', gap: 14 },
+    ]),
     { text: 'PAYMENT TERMS', bold: true, size: 10, section: true },
     ...options.paymentTerms.map((term, index) => ({ text: `${index + 1}. ${term}`, size: 9 })),
     { text: '', gap: 12 },

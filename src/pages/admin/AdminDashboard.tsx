@@ -2167,7 +2167,7 @@ export const AdminDashboard: React.FC = () => {
                 paymentOption: option,
                 status: 'PENDING',
                 dueDate: params.dueDate || new Date(Date.now() + 86400000 * 5).toISOString().split('T')[0],
-                paymentMethod: 'EFT'
+                    paymentMethod: 'Yoco'
               };
 
               setInvoices(prev => [newInvoice, ...prev]);

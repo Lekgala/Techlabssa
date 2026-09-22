@@ -116,7 +116,7 @@ export const PrintableInvoice: React.FC<PrintableInvoiceProps> = ({ invoice, ins
             </div>
             <div>
               <span className="text-[10px] font-mono uppercase text-[#A0A0A0] font-bold block">Payment Method:</span>
-              <span className="text-xs font-mono font-bold text-[#000000]">{invoice.paymentMethod || 'EFT'}</span>
+              <span className="text-xs font-mono font-bold text-[#000000]">{invoice.paymentMethod || 'Yoco'}</span>
             </div>
           </div>
         </div>
@@ -150,7 +150,7 @@ export const PrintableInvoice: React.FC<PrintableInvoiceProps> = ({ invoice, ins
 
         {/* Financial Summary & Balance Realtime Breakdown */}
         <div className="flex flex-col sm:flex-row justify-between items-start gap-6 border-t border-[#E0E0E0] pt-6 font-mono">
-          <div className="bg-[#FAFAFA] p-4 rounded-xl border border-[#E0E0E0] text-xs space-y-2 max-w-sm">
+          {invoice.paymentMethod === 'EFT' ? <div className="bg-[#FAFAFA] p-4 rounded-xl border border-[#E0E0E0] text-xs space-y-2 max-w-sm">
             <strong className="text-[#000000] block font-bold text-[11px] uppercase tracking-wider">Bank Details for EFT:</strong>
             <p className="text-[11px] text-[#707070]">
               Bank: <strong>{settings?.bankName || 'First National Bank (FNB)'}</strong><br />
@@ -159,7 +159,10 @@ export const PrintableInvoice: React.FC<PrintableInvoiceProps> = ({ invoice, ins
               Branch Code: <strong>{settings?.branchCode || '250655'}</strong><br />
               Reference: <strong className="text-[#000000]">{invoice.invoiceNumber}</strong>
             </p>
-          </div>
+          </div> : <div className="bg-[#FAFAFA] p-4 rounded-xl border border-[#E0E0E0] text-xs space-y-2 max-w-sm">
+            <strong className="text-[#000000] block font-bold text-[11px] uppercase tracking-wider">Pay securely with Yoco</strong>
+            <p className="text-[11px] text-[#707070]">Use the Pay by card option in your student portal. Your invoice updates automatically after Yoco confirms the payment.</p>
+          </div>}
 
           <div className="w-full sm:w-72 space-y-2 text-xs">
             <div className="flex justify-between text-[#707070]">
