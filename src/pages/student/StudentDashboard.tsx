@@ -93,6 +93,7 @@ export const StudentDashboard: React.FC = () => {
   const studentInvoice = (invoices || []).find(
     i => i.studentEmail.trim().toLowerCase() === (currentStudent?.email || '').trim().toLowerCase()
   );
+  useEffect(() => { setEftReference(studentInvoice?.invoiceNumber || ''); }, [studentInvoice?.id, studentInvoice?.invoiceNumber]);
   useEffect(() => { if (studentInvoice) void apiRequest<PaymentInstallment[]>('/student/payment-plan').then(setInstallments).catch(() => setInstallments([])); else setInstallments([]); }, [studentInvoice?.id, studentInvoice?.paidZAR]);
 
   const isFullyEnrolled = studentApp?.status === 'ENROLLED' || studentApp?.status === 'COMPLETED';
@@ -163,7 +164,7 @@ export const StudentDashboard: React.FC = () => {
     const uploaded = await uploadProofOfPayment(studentInvoice.id, selectedPopFile, eftReference.trim());
     if (uploaded) {
       setSelectedPopFile(null);
-      setEftReference('');
+      setEftReference(studentInvoice.invoiceNumber);
     }
     setUploadingPop(false);
   };
@@ -356,7 +357,7 @@ export const StudentDashboard: React.FC = () => {
               <div className="sm:col-span-2 pt-2 border-t border-[#E0E0E0]"><dt className="text-[#707070]">EFT reference</dt><dd className="mt-0.5 font-bold text-[#000000]">{studentInvoice.invoiceNumber}</dd></div>
             </dl>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-              <label className="min-w-0 space-y-1"><span className="block font-sans text-[10px] font-bold uppercase tracking-wider text-[#000000]">EFT payment reference</span><input maxLength={100} value={eftReference} onChange={event => setEftReference(event.target.value)} placeholder={studentInvoice.invoiceNumber} className="w-full px-3 py-2.5 bg-white border border-[#E0E0E0] rounded-lg text-[#000000] focus:border-black" /></label>
+              <label className="min-w-0 space-y-1"><span className="block font-sans text-[10px] font-bold uppercase tracking-wider text-[#000000]">EFT payment reference</span><input maxLength={100} value={eftReference} onChange={event => setEftReference(event.target.value)} className="w-full px-3 py-2.5 bg-white border border-[#E0E0E0] rounded-lg text-[#000000] focus:border-black" /><span className="block text-[10px] text-[#707070]">Pre-filled from your invoice. Change it if your bank payment used a different reference.</span></label>
               <label className="block min-w-0 cursor-pointer space-y-1"><span className="block font-sans text-[10px] font-bold uppercase tracking-wider text-[#000000]">Proof of payment</span><input type="file" accept="application/pdf,image/jpeg,image/png" onChange={event => selectPopFile(event.target.files?.[0])} className="peer sr-only" /><span className="flex min-h-11 min-w-0 items-center gap-3 rounded-lg border border-[#A0A0A0] bg-white px-2 peer-focus:ring-2 peer-focus:ring-black"><span className="shrink-0 rounded-md bg-black px-3 py-2 font-sans text-[11px] font-bold text-white">Choose file</span><span className="min-w-0 truncate font-sans text-[11px] text-[#333333]">{selectedPopFile?.name || 'No file selected'}</span></span></label>
             </div>
             <p className="text-[10px] text-[#707070]">Accepted: PDF, JPG, or PNG up to 5 MB. Upload only one clear, bank-generated proof. Do not submit another while admissions is reviewing it.</p>
