@@ -78,8 +78,8 @@ export const DEFAULT_EMAIL_TEMPLATES: EmailTemplate[] = [
 <ol>
   <li>Open the secure portal link below this message and create your password. The link expires after 24 hours and can be used once.</li>
   <li>Review the attached invoice. Your total tuition is <strong>R{invoiceAmount}</strong>.</li>
-  <li>Make the EFT payment due by <strong>{dueDate}</strong>, using the invoice number as the payment reference.</li>
-  <li>Sign in to the student portal and upload the bank-generated proof of payment as a PDF, JPG, or PNG.</li>
+  <li>Open the student portal and pay the amount due securely with Yoco by <strong>{dueDate}</strong>.</li>
+  <li>After Yoco confirms the payment, your invoice and enrollment status update automatically.</li>
 </ol>
 <p>After upload, your proof is marked for admissions review. Do not upload it again while it is awaiting review. We will email you when the payment is verified or if a correction is needed.</p>
 <p>Use the portal for payment and document actions. Reply to this email only for a problem the portal cannot resolve.</p>
@@ -103,7 +103,7 @@ export const DEFAULT_EMAIL_TEMPLATES: EmailTemplate[] = [
   <li>Open Learning before your first session and complete the lab setup instructions shown there.</li>
   <li>Use the Support section for a course or technical issue after checking the relevant portal instructions.</li>
 </ol>
-<p>Your portal shows any remaining balance and due dates. Pay only according to that payment plan, using your invoice number as the EFT reference.</p>
+<p>Your portal shows any remaining balance and due dates. Pay securely through Yoco using the payment option shown in your portal.</p>
 <p>Regards,<br/>TechLabs Academy</p>
     `,
     enabled: true,

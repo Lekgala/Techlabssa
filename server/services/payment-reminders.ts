@@ -32,27 +32,30 @@ export async function runPaymentReminders(db: TechlabsDatabase, now = new Date()
     const nextInstallment = installments.find(item => item.status !== 'PAID');
     if (nextInstallment && today > dateValue(nextInstallment.dueDate)) {
       type = 'INSTALLMENT_OVERDUE'; installmentId = nextInstallment.id; subject = `Installment overdue - ${invoice.invoiceNumber}`;
-      message = `${nextInstallment.label} has R${(nextInstallment.amountZAR - nextInstallment.paidZAR).toLocaleString('en-ZA')} outstanding and was due on ${nextInstallment.dueDate}. Use ${invoice.invoiceNumber} as the EFT reference and upload your POP.`;
+      message = invoice.paymentMethod === 'EFT' ? `${nextInstallment.label} has R${(nextInstallment.amountZAR - nextInstallment.paidZAR).toLocaleString('en-ZA')} outstanding and was due on ${nextInstallment.dueDate}. Use ${invoice.invoiceNumber} as the EFT reference and upload your POP.` : `${nextInstallment.label} has R${(nextInstallment.amountZAR - nextInstallment.paidZAR).toLocaleString('en-ZA')} outstanding and was due on ${nextInstallment.dueDate}. Pay securely through Yoco in your student portal.`;
     } else if (nextInstallment && today >= dateValue(nextInstallment.dueDate) - (3 * DAY)) {
       type = 'INSTALLMENT_DUE_SOON'; installmentId = nextInstallment.id; subject = `Installment due soon - ${invoice.invoiceNumber}`;
-      message = `${nextInstallment.label} of R${(nextInstallment.amountZAR - nextInstallment.paidZAR).toLocaleString('en-ZA')} is due on ${nextInstallment.dueDate}. Use ${invoice.invoiceNumber} as the EFT reference and upload your POP.`;
+      message = invoice.paymentMethod === 'EFT' ? `${nextInstallment.label} of R${(nextInstallment.amountZAR - nextInstallment.paidZAR).toLocaleString('en-ZA')} is due on ${nextInstallment.dueDate}. Use ${invoice.invoiceNumber} as the EFT reference and upload your POP.` : `${nextInstallment.label} of R${(nextInstallment.amountZAR - nextInstallment.paidZAR).toLocaleString('en-ZA')} is due on ${nextInstallment.dueDate}. Pay securely through Yoco in your student portal.`;
     } else if (paid === 0 && invoice.paymentOption !== 'FULL' && today > due) {
       type = 'DEPOSIT_OVERDUE'; subject = `Deposit overdue - ${invoice.invoiceNumber}`;
-      message = `Your required seat deposit of R${invoice.depositZAR.toLocaleString('en-ZA')} was due on ${invoice.dueDate}. Please pay using invoice reference ${invoice.invoiceNumber} and upload your bank-generated POP in the portal.`;
+      message = invoice.paymentMethod === 'EFT' ? `Your required seat deposit of R${invoice.depositZAR.toLocaleString('en-ZA')} was due on ${invoice.dueDate}. Please pay using invoice reference ${invoice.invoiceNumber} and upload your bank-generated POP in the portal.` : `Your required seat deposit of R${invoice.depositZAR.toLocaleString('en-ZA')} was due on ${invoice.dueDate}. Please pay securely through Yoco in your student portal.`;
     } else if (paid === 0 && invoice.paymentOption !== 'FULL' && today >= due - (3 * DAY) && today <= due) {
       type = 'DEPOSIT_DUE_SOON'; subject = `Deposit due soon - ${invoice.invoiceNumber}`;
-      message = `Your seat deposit of R${invoice.depositZAR.toLocaleString('en-ZA')} is due on ${invoice.dueDate}. Use ${invoice.invoiceNumber} as the EFT reference and upload your POP in the portal after paying.`;
+      message = invoice.paymentMethod === 'EFT' ? `Your seat deposit of R${invoice.depositZAR.toLocaleString('en-ZA')} is due on ${invoice.dueDate}. Use ${invoice.invoiceNumber} as the EFT reference and upload your POP in the portal after paying.` : `Your seat deposit of R${invoice.depositZAR.toLocaleString('en-ZA')} is due on ${invoice.dueDate}. Pay securely through Yoco in your student portal.`;
     } else if (paid > 0 && invoice.balanceZAR > 0 && today >= weekFourReminderDate) {
       type = 'BALANCE_BEFORE_WEEK_4'; subject = `Tuition balance reminder - ${invoice.invoiceNumber}`;
-      message = `Your remaining tuition balance is R${invoice.balanceZAR.toLocaleString('en-ZA')}. Please settle it before Week 4 using ${invoice.invoiceNumber} as the EFT reference, then upload your POP in the portal.`;
+      message = invoice.paymentMethod === 'EFT' ? `Your remaining tuition balance is R${invoice.balanceZAR.toLocaleString('en-ZA')}. Please settle it before Week 4 using ${invoice.invoiceNumber} as the EFT reference, then upload your POP in the portal.` : `Your remaining tuition balance is R${invoice.balanceZAR.toLocaleString('en-ZA')}. Please settle it before Week 4 through Yoco in your student portal.`;
     }
 
     if (!type || db.paymentReminders.some(item => item.invoiceId === invoice.id && item.type === type && item.installmentId === installmentId)) continue;
     const portalUrl = `${process.env.APP_ORIGIN || 'http://localhost:3000'}/student`;
+    const paymentSteps = invoice.paymentMethod === 'EFT'
+      ? '<li>Pay using the invoice number as the EFT reference.</li><li>Upload one bank-generated proof of payment as a PDF, JPG, or PNG.</li>'
+      : '<li>Pay securely with Yoco in the student portal.</li><li>Your invoice updates automatically after Yoco confirms payment.</li>';
     const delivery = await sendEmail({
       to: application.email,
       subject,
-      html: `<h2>${escapeHtml(subject)}</h2><p>Hello ${escapeHtml(application.firstName)},</p><p>${escapeHtml(message)}</p><h3>What to do next</h3><ol><li>Open <a href="${escapeHtml(portalUrl)}">your student portal</a> and review your invoice or installment schedule.</li><li>Pay using the invoice number as the EFT reference.</li><li>Upload one bank-generated proof of payment as a PDF, JPG, or PNG.</li></ol><p>If you have already uploaded a proof, please wait for its review before submitting another. If the amount or payment plan in your portal looks incorrect, reply to this email and we will help.</p><p>Regards,<br>TechLabs Academy</p>`,
+      html: `<h2>${escapeHtml(subject)}</h2><p>Hello ${escapeHtml(application.firstName)},</p><p>${escapeHtml(message)}</p><h3>What to do next</h3><ol><li>Open <a href="${escapeHtml(portalUrl)}">your student portal</a> and review your invoice or installment schedule.</li>${paymentSteps}</ol><p>If you have already paid, please wait for confirmation before trying again. If the amount or payment plan in your portal looks incorrect, reply to this email and we will help.</p><p>Regards,<br>TechLabs Academy</p>`,
     });
     const createdAt = new Date().toISOString();
     db.emailDeliveries.unshift({ id: `email-${crypto.randomUUID()}`, providerId: delivery.id, recipient: application.email, subject, category: 'APPLICATION_STATUS', status: delivery.sent ? 'SENT' : 'FAILED', reason: delivery.reason, createdAt });
