@@ -31,22 +31,25 @@ export const formatEmailHtml = (html: string): string => {
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <style>
-    h1, h2, h3 { color: #111827; line-height: 1.3; margin: 0 0 16px; }
-    h2 { font-size: 24px; } h3 { font-size: 17px; margin-top: 28px; }
-    p { margin: 0 0 16px; } ol, ul { margin: 0 0 20px; padding-left: 22px; }
-    li { margin-bottom: 8px; } a { color: #111827; } strong { color: #111827; }
+    h1, h2, h3 { color: #151515; line-height: 1.25; margin: 0 0 16px; font-family: Arial, Helvetica, sans-serif; }
+    h1, h2 { font-size: 26px; letter-spacing: -0.5px; } h3 { font-size: 17px; margin-top: 28px; }
+    p { margin: 0 0 17px; } ol, ul { margin: 0 0 20px; padding-left: 22px; }
+    li { margin-bottom: 10px; } a { color: #151515; } strong { color: #151515; }
+    .email-content a[style*="display:inline-block"] { border-radius: 8px; }
     table { max-width: 100%; } td { vertical-align: top; }
-    @media (max-width: 600px) { .email-content { padding: 28px 22px !important; } }
+    @media (max-width: 600px) { .email-content { padding: 28px 22px !important; } .email-shell { border-radius: 0 !important; } }
   </style>
 </head>
-<body style="margin:0;padding:0;background:#f4f5f7;color:#374151;font-family:Arial,Helvetica,sans-serif;font-size:15px;line-height:1.6">
-  <table role="presentation" cellpadding="0" cellspacing="0" style="width:100%;border-collapse:collapse;background:#f4f5f7">
-    <tr><td align="center" style="padding:32px 16px">
-      <table role="presentation" cellpadding="0" cellspacing="0" style="width:100%;max-width:640px;border-collapse:collapse;background:#ffffff;border:1px solid #e5e7eb;border-radius:12px">
-        <tr><td style="padding:24px 32px;border-bottom:1px solid #e5e7eb;color:#111827;font-size:16px;font-weight:700;letter-spacing:1px">TECHLABS ACADEMY <span style="color:#6b7280;font-size:11px">SA</span></td></tr>
-        <tr><td class="email-content" style="padding:36px 32px">${html}</td></tr>
-        <tr><td style="padding:20px 32px;border-top:1px solid #e5e7eb;color:#6b7280;font-size:12px">TechLabs Academy SA · Practical IT training in South Africa</td></tr>
+<body style="margin:0;padding:0;background:#f3f4f4;color:#3d4349;font-family:Arial,Helvetica,sans-serif;font-size:15px;line-height:1.65">
+  <table role="presentation" cellpadding="0" cellspacing="0" style="width:100%;border-collapse:collapse;background:#f3f4f4">
+    <tr><td align="center" style="padding:32px 12px">
+      <table role="presentation" cellpadding="0" cellspacing="0" class="email-shell" style="width:100%;max-width:620px;border-collapse:separate;background:#ffffff;border:1px solid #e2e4e5;border-radius:14px;overflow:hidden">
+        <tr><td style="padding:25px 32px;background:#111111;color:#ffffff;font-size:19px;font-weight:700;letter-spacing:-0.3px">techlabs<span style="color:#80cdf0">.</span> <span style="font-size:12px;font-weight:400;letter-spacing:1.7px;color:#d7d7d7">ACADEMY SA</span></td></tr>
+        <tr><td style="height:4px;background:#80cdf0;font-size:1px;line-height:1px">&nbsp;</td></tr>
+        <tr><td class="email-content" style="padding:36px 32px 30px">${html}</td></tr>
+        <tr><td style="padding:20px 32px;border-top:1px solid #e9eaeb;color:#697077;font-size:12px;line-height:1.6">TechLabs Academy SA<br>Practical IT training in South Africa</td></tr>
       </table>
+      <p style="margin:16px 0 0;color:#858b90;font-size:11px">This email was sent by TechLabs Academy SA.</p>
     </td></tr>
   </table>
 </body>

@@ -18,7 +18,7 @@ test('transactional email fragments receive the branded layout and keep their ac
     const result = await sendEmail({ to: 'student@example.invalid', subject: 'Set up your account', html: '<h2>Welcome</h2><p><a href="https://example.invalid/setup">Create password</a></p>' });
     assert.equal(result.sent, true);
     assert.match(String(payload?.html), /<html lang="en">/);
-    assert.match(String(payload?.html), /TECHLABS ACADEMY/);
+    assert.match(String(payload?.html), /techlabs<span[^>]*>\.<\/span>/);
     assert.match(String(payload?.html), /href="https:\/\/example\.invalid\/setup"/);
   } finally {
     globalThis.fetch = previousFetch;

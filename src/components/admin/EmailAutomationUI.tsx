@@ -194,10 +194,7 @@ export const EmailAutomationUI: React.FC<EmailAutomationUIProps> = ({
               </div>
               <div className="border-t pt-4">
                 <p className="text-xs text-[#707070] font-bold uppercase mb-3">Body</p>
-                <div
-                  className="prose prose-sm max-w-none bg-[#F5F5F5] p-4 rounded-lg"
-                  dangerouslySetInnerHTML={{ __html: preview.html }}
-                />
+                <iframe title="Email design preview" sandbox="" srcDoc={preview.html} className="h-[480px] w-full rounded-lg border border-[#E0E0E0] bg-white" />
               </div>
             </div>
           </div>
