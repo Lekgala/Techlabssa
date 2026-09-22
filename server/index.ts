@@ -8,7 +8,7 @@ import { yocoRouter, yocoWebhook } from './services/yoco-routes.ts';
 import { YocoError } from './services/yoco-ledger.ts';
 import { forwardAsyncErrors } from './services/async-express.ts';
 import { generateBrandedDocumentPDF, generateInvoiceHTML, generateInvoicePDF } from './services/invoice-service.ts';
-import { emailAutomationEngine } from './services/email-automation.ts';
+import { DEFAULT_EMAIL_TEMPLATES, emailAutomationEngine } from './services/email-automation.ts';
 import { bulkOperationsService } from './services/bulk-operations.ts';
 import { escapeHtml, sendEmail } from './services/email-service.ts';
 import { notifyAdmissions } from './services/application-notification.ts';
@@ -1069,7 +1069,11 @@ app.post('/api/invoices/:id/email', authenticate, requireRole('ADMIN'), async (r
   if (!delivery.sent) return res.status(502).json({ error: delivery.reason || 'Invoice email was not sent' });
   res.json({ ok: true, message: `Invoice sent to ${invoice.studentEmail}`, deliveryId: delivery.id });
 });
-app.get('/api/automation/templates', authenticate, requireRole('ADMIN'), async (_req, res) => res.json((await getDatabase()).emailTemplates));
+app.get('/api/automation/templates', authenticate, requireRole('ADMIN'), async (_req, res) => {
+  const templates = (await getDatabase()).emailTemplates;
+  const marketingTemplate = DEFAULT_EMAIL_TEMPLATES.find(template => template.id === 'tpl-lead-marketing');
+  res.json(marketingTemplate && !templates.some(template => template.id === marketingTemplate.id) ? [...templates, marketingTemplate] : templates);
+});
 app.get('/api/automation/workflows', authenticate, requireRole('ADMIN'), (_req, res) => res.json(emailAutomationEngine.getAllWorkflows()));
 app.put('/api/automation/templates/:id', authenticate, requireRole('ADMIN'), async (req: AuthedRequest, res) => {
   const db = await getDatabase(); const existing = db.emailTemplates.find(item => item.id === req.params.id);
