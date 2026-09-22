@@ -26,16 +26,17 @@ test('checkout sends cents, invoice metadata and stable idempotency key', async 
     const body = JSON.parse(options.body as string);
     assert.equal(body.amount, 100000);
     assert.equal(body.metadata.invoiceId, 'invoice-1');
+    assert.equal(body.metadata.invoiceNumber, 'INV-2026-0001');
     return Response.json({ id: 'checkout-1', amount: 100000, currency: 'ZAR', processingMode: 'test', redirectUrl: 'https://c.yoco.com/checkout/1' });
   }) as typeof fetch;
-  const intent = { id: 'intent-1', invoiceId: 'invoice-1', amountCents: 100000 };
+  const intent = { id: 'intent-1', invoiceId: 'invoice-1', invoiceNumber: 'INV-2026-0001', amountCents: 100000 };
   await createYocoCheckout(yocoConfig(env)!, intent, request);
   await createYocoCheckout(yocoConfig(env)!, intent, request);
   assert.equal(calls, 2);
   await assert.rejects(createYocoCheckout(yocoConfig(env)!, { ...intent, amountCents: 1.5 }, request));
 });
 test('checkout rejects unexpected redirects and suppresses provider error details', async () => {
-  const intent = { id: 'i', invoiceId: 'inv', amountCents: 100 };
+  const intent = { id: 'i', invoiceId: 'inv', invoiceNumber: 'INV-1', amountCents: 100 };
   await assert.rejects(createYocoCheckout(yocoConfig(env)!, intent, (async () => Response.json({ id: 'c', amount: 100, currency: 'ZAR', processingMode: 'test', redirectUrl: 'https://yoco.com.evil.example' })) as typeof fetch));
   await assert.rejects(createYocoCheckout(yocoConfig(env)!, intent, (async () => new Response('sensitive provider detail', { status: 403 })) as typeof fetch), /^Error: Yoco checkout request failed \(403\)$/);
 });

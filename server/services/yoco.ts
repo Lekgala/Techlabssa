@@ -24,10 +24,10 @@ export function yocoConfig(env: NodeJS.ProcessEnv = process.env) {
 }
 
 export type YocoConfig = NonNullable<ReturnType<typeof yocoConfig>>;
-export type CheckoutIntent = { id: string; invoiceId: string; amountCents: number };
+export type CheckoutIntent = { id: string; invoiceId: string; invoiceNumber: string; amountCents: number };
 
 export async function createYocoCheckout(config: YocoConfig, intent: CheckoutIntent, request: typeof fetch = fetch) {
-  if (!intent.id || !intent.invoiceId || !Number.isSafeInteger(intent.amountCents) || intent.amountCents <= 0) {
+  if (!intent.id || !intent.invoiceId || !intent.invoiceNumber || !Number.isSafeInteger(intent.amountCents) || intent.amountCents <= 0) {
     throw new Error('A persisted intent, invoice and positive amount in cents are required');
   }
   // Persist the intent before calling; retries MUST reuse this ID and identical body.
@@ -37,7 +37,7 @@ export async function createYocoCheckout(config: YocoConfig, intent: CheckoutInt
       method: 'POST',
       headers: { Authorization: `Bearer ${config.secretKey}`, 'Content-Type': 'application/json', 'Idempotency-Key': intent.id },
       body: JSON.stringify({ amount: intent.amountCents, currency: 'ZAR',
-        metadata: { invoiceId: intent.invoiceId, intentId: intent.id },
+        metadata: { invoiceId: intent.invoiceId, invoiceNumber: intent.invoiceNumber, intentId: intent.id },
         successUrl: `${config.origin}/student?yoco=returned`, cancelUrl: `${config.origin}/student?yoco=cancelled`, failureUrl: `${config.origin}/student?yoco=failed` }),
       signal: AbortSignal.timeout(15_000),
     });

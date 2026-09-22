@@ -45,8 +45,8 @@ export function yocoRouter(authenticate: RequestHandler, studentOnly: RequestHan
       if ((await getDatabase()).academySettings.onlinePaymentsEnabled === false) throw new YocoError(503, 'Online payments are temporarily unavailable');
       const config = yocoConfig();
       if (!config) throw new YocoError(503, 'Online payments are disabled');
-      const intent = await mutateDatabase(db => {
-        ownedInvoice(db, req.params.id, req.session.userId);
+      const { intent, invoiceNumber } = await mutateDatabase(db => {
+        const { invoice } = ownedInvoice(db, req.params.id, req.session.userId);
         const records = db.yocoCheckouts ??= [];
         if (records.some(i => i.invoiceId === req.params.id && i.status === 'REVIEW')) throw new YocoError(409, 'A payment needs admissions review');
         const pending = records.find(i => i.invoiceId === req.params.id && i.status === 'PENDING');
@@ -54,14 +54,14 @@ export function yocoRouter(authenticate: RequestHandler, studentOnly: RequestHan
         if (pending) {
           if (pending.mode !== config.mode || pending.origin !== config.origin) throw new YocoError(409, 'An earlier checkout needs reconciliation before changing payment settings');
           if (pending.amountCents !== due) throw new YocoError(409, 'Invoice changed since checkout. Contact admissions before paying.');
-          return pending;
+          return { intent: pending, invoiceNumber: invoice.invoiceNumber };
         }
         const item: YocoIntent = { id: randomUUID(), invoiceId: req.params.id as string, studentId: req.session.userId as string,
           amountCents: due, mode: config.mode, origin: config.origin,
           createdAt: new Date().toISOString(), status: 'PENDING' as const };
-        records.unshift(item); return item;
+        records.unshift(item); return { intent: item, invoiceNumber: invoice.invoiceNumber };
       });
-      const checkout = intent.checkoutId && intent.redirectUrl ? { checkoutId: intent.checkoutId, redirectUrl: intent.redirectUrl } : await checkoutRequest(config, intent);
+      const checkout = intent.checkoutId && intent.redirectUrl ? { checkoutId: intent.checkoutId, redirectUrl: intent.redirectUrl } : await checkoutRequest(config, { ...intent, invoiceNumber });
       await mutateDatabase(db => {
         const saved = db.yocoCheckouts!.find(i => i.id === intent.id)!;
         if (saved.checkoutId && saved.checkoutId !== checkout.checkoutId) throw new YocoError(409, 'Checkout identity mismatch');
