@@ -1133,7 +1133,11 @@ app.post('/api/bulk/send-emails', authenticate, requireRole('ADMIN'), async (req
   const results = [];
   for (const recipient of recipients) {
     const name = 'firstName' in recipient ? `${recipient.firstName} ${recipient.lastName}` : recipient.name;
-    const rendered = renderStoredTemplate(db, template.id, { studentName: escapeHtml(name), referenceNumber: 'referenceNumber' in recipient ? escapeHtml(recipient.referenceNumber) : '', cohortName: 'cohortId' in recipient ? escapeHtml(recipient.cohortId) : 'TechLabs Academy' });
+    const variables = { studentName: escapeHtml(name), referenceNumber: 'referenceNumber' in recipient ? escapeHtml(recipient.referenceNumber) : '', cohortName: 'cohortId' in recipient ? escapeHtml(recipient.cohortId) : 'TechLabs Academy' };
+    const rendered = renderStoredTemplate(db, template.id, variables) || {
+      subject: template.subject,
+      html: Object.entries(variables).reduce((content, [key, value]) => content.replaceAll(`{${key}}`, String(value)), template.htmlBody),
+    };
     const delivery = await sendEmail({ to: recipient.email, subject: rendered?.subject || template.subject, html: rendered?.html || template.htmlBody });
     db.emailDeliveries = [{ id: makeId('email'), providerId: delivery.id, recipient: recipient.email, subject: rendered?.subject || template.subject, category: 'APPLICATION_STATUS', status: delivery.sent ? 'SENT' : 'FAILED', reason: delivery.reason, createdAt: new Date().toISOString() }, ...db.emailDeliveries];
     results.push({ recipientId: recipient.id, email: recipient.email, ...delivery });
