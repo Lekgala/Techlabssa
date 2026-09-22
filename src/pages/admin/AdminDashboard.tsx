@@ -340,6 +340,15 @@ export const AdminDashboard: React.FC = () => {
       variables: ['studentName', 'amount', 'cohortName', 'courseStartDate']
     },
     {
+      id: 'tpl-lead-marketing',
+      name: 'Lead Marketing Campaign',
+      trigger: 'MANUAL_SEND',
+      subject: 'TechLabs Academy: explore your next IT career step',
+      htmlBody: 'We have an update from TechLabs Academy that may help with your next step in IT.',
+      enabled: true,
+      variables: ['studentName']
+    },
+    {
       id: 'tpl-app-rejected',
       name: 'Application Not Accepted',
       trigger: 'APPLICATION_REJECTED',
