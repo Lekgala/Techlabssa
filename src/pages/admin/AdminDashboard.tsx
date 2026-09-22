@@ -213,7 +213,7 @@ export const AdminDashboard: React.FC = () => {
 
   useEffect(() => {
     if (activeTab !== 'EMAIL_AUTOMATION' || currentRole !== 'ADMIN') return;
-    void apiRequest<any[]>('/automation/templates').then(setEmailTemplates).catch(error => showToast('error', 'Templates Unavailable', error instanceof Error ? error.message : 'Could not load email templates.'));
+    void apiRequest<any[]>('/automation/templates').then(templates => setEmailTemplates(templates.some(template => template.id === 'tpl-lead-marketing') ? templates : [...templates, { id: 'tpl-lead-marketing', name: 'Lead Marketing Campaign', trigger: 'MANUAL_SEND', subject: 'TechLabs Academy: explore your next IT career step', htmlBody: 'We have an update from TechLabs Academy that may help with your next step in IT.', enabled: true, variables: ['studentName'] }])).catch(error => showToast('error', 'Templates Unavailable', error instanceof Error ? error.message : 'Could not load email templates.'));
   }, [activeTab, currentRole]);
 
   const createStaffAccount = async (event: React.FormEvent) => {

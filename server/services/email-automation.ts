@@ -110,6 +110,33 @@ export const DEFAULT_EMAIL_TEMPLATES: EmailTemplate[] = [
     variables: ['studentName', 'amount', 'cohortName', 'courseStartDate']
   },
   {
+    id: 'tpl-lead-marketing',
+    name: 'Lead Marketing Campaign',
+    trigger: 'MANUAL_SEND',
+    subject: 'TechLabs Academy: explore your next IT career step',
+    htmlBody: `
+<table role="presentation" cellpadding="0" cellspacing="0" style="width:100%;border-collapse:collapse;background:#f4f5f7;font-family:Arial,Helvetica,sans-serif;color:#1a1a1a">
+  <tr><td align="center" style="padding:24px 12px">
+    <table role="presentation" cellpadding="0" cellspacing="0" style="width:100%;max-width:600px;border-collapse:collapse;background:#ffffff;border:1px solid #e1e1e1">
+      <tr><td style="padding:22px 28px;background:#000000;color:#ffffff;font-size:18px;font-weight:700;letter-spacing:1px">◆ TECHLABS <span style="color:#bdbdbd;font-size:10px;letter-spacing:2px">SA</span></td></tr>
+      <tr><td style="padding:36px 28px 28px">
+        <p style="margin:0 0 12px;color:#707070;font-size:11px;font-weight:700;letter-spacing:2px;text-transform:uppercase">A practical next step in IT</p>
+        <h1 style="margin:0 0 18px;color:#111111;font-size:30px;line-height:1.15;font-weight:700">Build skills that work in the real world.</h1>
+        <p style="margin:0 0 18px;color:#444444;font-size:16px;line-height:1.7">Hello {studentName}, explore upcoming TechLabs Academy cohorts, hands-on labs, and practical IT support training built for the workplace.</p>
+        <table role="presentation" cellpadding="0" cellspacing="0" style="width:100%;border-collapse:collapse;margin:24px 0;background:#f7f7f7;border-left:4px solid #000000"><tr><td style="padding:16px 18px;color:#333333;font-size:14px;line-height:1.6"><strong>Learn by doing.</strong><br/>Enterprise administration, troubleshooting, cloud foundations, and guided practical labs.</td></tr></table>
+        <p style="margin:0 0 24px;color:#444444;font-size:15px;line-height:1.6">See what is available for the next intake and choose the path that fits your goals.</p>
+        <p style="margin:0 0 8px"><a href="https://techlabssa.vercel.app/pricing" style="display:inline-block;padding:13px 20px;background:#000000;color:#ffffff;text-decoration:none;font-size:13px;font-weight:700;letter-spacing:.5px">Explore programmes</a></p>
+        <p style="margin:20px 0 0;color:#707070;font-size:13px;line-height:1.6">Questions? Reply to this email or contact our admissions team.</p>
+      </td></tr>
+      <tr><td style="padding:18px 28px;border-top:1px solid #e5e5e5;color:#8a8a8a;font-size:11px;line-height:1.5">TechLabs Academy SA · Practical IT training in South Africa</td></tr>
+    </table>
+  </td></tr>
+</table>
+    `,
+    enabled: true,
+    variables: ['studentName']
+  },
+  {
     id: 'tpl-app-rejected',
     name: 'Application Not Accepted',
     trigger: 'APPLICATION_REJECTED',
