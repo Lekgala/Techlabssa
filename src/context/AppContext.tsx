@@ -346,7 +346,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       setApplications(data.application ? [data.application] : []); setInvoices(data.invoices || []); setTickets(data.tickets || []);
       setAttendance(data.attendance || []); setAssessments(data.assessments || []); setCertificates(data.certificates || []);
       setPayments(data.payments || []); setPaymentSettings(data.paymentSettings);
-      showToast('success', 'Signed In', `Welcome back, ${response.user.name.split(' ')[0]}!`); navigate('/student'); return true;
+      showToast('success', 'Signed In', `Welcome back, ${response.user.name.split(' ')[0]}!`); navigate(window.location.pathname === '/student/payments' ? '/student/payments' : '/student'); return true;
     } catch (error) {
       const message = error instanceof ApiError && error.status === 401
         ? 'Check your email and password, or use the recovery options below.'

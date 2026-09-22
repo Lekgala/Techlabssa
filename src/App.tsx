@@ -13,7 +13,7 @@ import { Courses, VerifyCertificate, Terms, Privacy, RefundPolicy } from './page
 import { Labs, HowItWorks } from './pages/public/Labs';
 import { Pricing, Intakes } from './pages/public/Pricing';
 import { Career, About, FAQ, Contact } from './pages/public/Career';
-import { Apply, Payment } from './pages/public/Apply';
+import { Apply } from './pages/public/Apply';
 
 // Auth Portals
 import { StudentDashboard } from './pages/student/StudentDashboard';
@@ -33,6 +33,7 @@ const AppContent: React.FC = () => {
   const isAdminPortalRoute = path === '/admin' || path.startsWith('/admin/');
   const isMaintenancePage = Boolean(hasHydrated && settings.maintenanceMode && !isAdminPortalRoute && !isStudentRoute && path !== '/privacy' && path !== '/terms');
   const redirectPath = !hasHydrated ? undefined
+    : path === '/payment' ? '/student/payments'
     : isStudentRoute && currentRole === 'STUDENT' && path === '/student/login' ? '/student'
     : isStudentRoute && isStaff ? '/admin'
     : isAdminPortalRoute && isStaff && path === '/admin/login' ? '/admin'
@@ -73,7 +74,6 @@ const AppContent: React.FC = () => {
     if (path === '/faq') return <FAQ />;
     if (path === '/contact') return <Contact />;
     if (path === '/apply') return <Apply />;
-    if (path === '/payment') return <Payment />;
     if (path === '/student/login') return <StudentLogin />;
     if (path === '/student' || path.startsWith('/student/')) {
       return currentRole === 'STUDENT' ? <StudentDashboard /> : <StudentLogin />;

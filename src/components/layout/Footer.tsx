@@ -135,8 +135,8 @@ export const Footer: React.FC = () => {
                 </button>
               </li>
               <li>
-                <button onClick={() => navigate('/payment')} className="hover:text-[#000000] transition">
-                  EFT & Card Guide
+                <button onClick={() => navigate('/student/payments')} className="hover:text-[#000000] transition">
+                  Student payments
                 </button>
               </li>
               <li>

@@ -53,6 +53,7 @@ const DocumentCard: React.FC<{
 
 export const StudentDashboard: React.FC = () => {
   const { 
+    currentPath,
     currentStudent, 
     tickets, 
     updateTicketStatus, 
@@ -69,7 +70,8 @@ export const StudentDashboard: React.FC = () => {
     navigate 
   } = useApp();
 
-  const [activeTab, setActiveTab] = useState<'OVERVIEW' | 'CALENDAR' | 'MODULES' | 'PAYMENTS' | 'DOCUMENTS' | 'TICKETS' | 'CERTIFICATE'>(() => new URLSearchParams(window.location.search).has('yoco') ? 'PAYMENTS' : 'OVERVIEW');
+  const [activeTab, setActiveTab] = useState<'OVERVIEW' | 'CALENDAR' | 'MODULES' | 'PAYMENTS' | 'DOCUMENTS' | 'TICKETS' | 'CERTIFICATE'>(() => window.location.pathname === '/student/payments' || new URLSearchParams(window.location.search).has('yoco') ? 'PAYMENTS' : 'OVERVIEW');
+  useEffect(() => { if (currentPath === '/student/payments') setActiveTab('PAYMENTS'); }, [currentPath]);
   const [selectedTicketId, setSelectedTicketId] = useState<string | null>(null);
   const [showInvoiceModal, setShowInvoiceModal] = useState(false);
   const [documentError, setDocumentError] = useState('');
@@ -433,7 +435,7 @@ export const StudentDashboard: React.FC = () => {
             <p className="text-xs text-[#707070]">
               Need to send pop or query admissions? WhatsApp us with reference <strong className="text-[#000000]">{studentApp.referenceNumber}</strong>.
             </p>
-            {(studentApp.status === 'APPROVED' || studentApp.status === 'PAYMENT_REQUIRED') && !paymentAwaitingReview && <button onClick={() => navigate('/payment')} className="px-5 py-2.5 bg-[#000000] hover:bg-neutral-800 text-white font-bold text-xs uppercase tracking-wider rounded-xl shadow transition">Complete Payment / View Banking Details</button>}
+            {(studentApp.status === 'APPROVED' || studentApp.status === 'PAYMENT_REQUIRED') && !paymentAwaitingReview && <button onClick={() => setActiveTab('PAYMENTS')} className="px-5 py-2.5 bg-[#000000] hover:bg-neutral-800 text-white font-bold text-xs uppercase tracking-wider rounded-xl shadow transition">View payment options</button>}
             {paymentAwaitingReview && <button onClick={() => setActiveTab('DOCUMENTS')} className="px-5 py-2.5 bg-[#FAFAFA] border border-[#E0E0E0] text-black font-bold text-xs uppercase tracking-wider rounded-xl">View Submitted POP</button>}
           </div>
         </div>
