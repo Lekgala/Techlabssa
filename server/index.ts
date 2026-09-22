@@ -3,7 +3,7 @@ import cors from 'cors';
 import crypto from 'node:crypto';
 import 'dotenv/config';
 import express, { type NextFunction, type Request, type Response } from 'express';
-import { DatabaseConflict, getDatabase, saveDatabase } from './data/store.ts';
+import { DatabaseConflict, getDatabase, mutateDatabase, saveDatabase } from './data/store.ts';
 import { yocoRouter, yocoWebhook } from './services/yoco-routes.ts';
 import { YocoError } from './services/yoco-ledger.ts';
 import { forwardAsyncErrors } from './services/async-express.ts';
@@ -713,11 +713,19 @@ app.post('/api/applications', rateLimit('applications', 5, 60 * 60 * 1000), seri
   await saveDatabase(db);
   const submittedTemplate = renderStoredTemplate(db, 'tpl-app-submitted', { studentName: escapeHtml(`${application.firstName} ${application.lastName}`), cohortName: escapeHtml(selectedCohort.name), referenceNumber: escapeHtml(referenceNumber) });
   const submittedSubject = submittedTemplate?.subject || `Application received — ${referenceNumber}`;
-  const emailDelivery = await sendEmail({ to: application.email, subject: submittedSubject, html: submittedTemplate?.html || `<h2>Thank you, ${escapeHtml(application.firstName)}!</h2><p>We received your application.</p><p><strong>Reference:</strong> ${escapeHtml(referenceNumber)}</p><p>Regards,<br>TechLabs Academy</p>` });
-  db.emailDeliveries = [{ id: makeId('email'), providerId: emailDelivery.id, recipient: application.email, subject: submittedSubject, category: 'APPLICATION_SUBMITTED', status: emailDelivery.sent ? 'SENT' : 'FAILED', reason: emailDelivery.reason, createdAt: new Date().toISOString() }, ...db.emailDeliveries];
-  db.emailDeliveries.unshift(await notifyAdmissions(application, selectedCohort.name));
-  await saveDatabase(db);
-  res.status(201).json({ application, invoice, emailDelivery });
+  // The application is already durable. Return immediately so email-provider latency
+  // cannot make a successful submission look like a failed one in the browser.
+  res.status(201).json({ application, invoice, emailDelivery: { sent: false, queued: true } });
+  void (async () => {
+    const [studentDelivery, admissionsDelivery] = await Promise.all([
+      sendEmail({ to: application.email, subject: submittedSubject, html: submittedTemplate?.html || `<h2>Thank you, ${escapeHtml(application.firstName)}!</h2><p>We received your application.</p><p><strong>Reference:</strong> ${escapeHtml(referenceNumber)}</p><p>Regards,<br>TechLabs Academy</p>` }),
+      notifyAdmissions(application, selectedCohort.name),
+    ]);
+    await mutateDatabase(nextDb => {
+      nextDb.emailDeliveries.unshift({ id: makeId('email'), providerId: studentDelivery.id, recipient: application.email, subject: submittedSubject, category: 'APPLICATION_SUBMITTED', status: studentDelivery.sent ? 'SENT' : 'FAILED', reason: studentDelivery.reason, createdAt: new Date().toISOString() });
+      nextDb.emailDeliveries.unshift(admissionsDelivery);
+    });
+  })().catch(error => console.error('Application notification processing failed:', error instanceof Error ? error.message : 'Unknown error'));
 });
 
 app.post('/api/leads', rateLimit('leads', 10, 60 * 60 * 1000), async (req, res) => {

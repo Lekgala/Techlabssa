@@ -713,13 +713,15 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   const submitApplication = async (appData: Omit<Application, 'id' | 'referenceNumber' | 'submissionDate' | 'status'>): Promise<string> => {
     const amountZAR = getTierPrice(appData.selectedTier, settings).current;
-    const response = await apiRequest<{ application: Application; invoice: Invoice; emailDelivery: { sent: boolean } }>('/applications', {
+    const response = await apiRequest<{ application: Application; invoice: Invoice; emailDelivery: { sent: boolean; queued?: boolean } }>('/applications', {
       method: 'POST', body: JSON.stringify({ ...appData, amountZAR })
     });
     setApplications(prev => [response.application, ...prev.filter(a => a.id !== response.application.id)]);
     setInvoices(prev => [response.invoice, ...prev.filter(i => i.id !== response.invoice.id)]);
     showToast('success', 'Application Submitted!', `Your reference code is ${response.application.referenceNumber}. Save it securely to access your application portal.`);
-    if (response.emailDelivery.sent) {
+    if (response.emailDelivery.queued) {
+      showToast('info', 'Confirmation Processing', `We are sending a confirmation email to ${response.application.email}.`);
+    } else if (response.emailDelivery.sent) {
       showToast('info', 'Confirmation Sent', `A confirmation email was sent to ${response.application.email}.`);
     } else {
       showToast('info', 'Save Your Reference', 'Email confirmation is temporarily unavailable, so please save the reference shown on this page.');
