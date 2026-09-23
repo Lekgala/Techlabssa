@@ -54,7 +54,7 @@ import {
 const DEFAULT_STUDENT_USER: User = {
   id: 'usr-student-01',
   name: 'Bongani Dlamini',
-  email: 'bongani.dlamini@techlabs.co.za',
+  email: 'bongani.dlamini@techlabssa.co.za',
   role: 'STUDENT',
   whatsapp: '+27820000001',
   cohortId: 'cohort-oct-2026'
@@ -63,7 +63,7 @@ const DEFAULT_STUDENT_USER: User = {
 const DEFAULT_ADMIN_USER: User = {
   id: 'usr-admin-01',
   name: 'TechLabs Administrator',
-  email: 'admin@techlabs.co.za',
+  email: 'admin@techlabssa.co.za',
   role: 'ADMIN',
   whatsapp: '+27820000002'
 };
@@ -450,7 +450,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     const defaults: AcademySettings = {
       whatsappNumber: (import.meta as any).env?.VITE_WHATSAPP_NUMBER || '+27000000000',
       studentSupportWhatsappNumber: (import.meta as any).env?.VITE_STUDENT_SUPPORT_WHATSAPP_NUMBER || (import.meta as any).env?.VITE_WHATSAPP_NUMBER || '+27000000000',
-      admissionsEmail: (import.meta as any).env?.VITE_ACADEMY_EMAIL || 'admissions@techlabs.co.za',
+      admissionsEmail: (import.meta as any).env?.VITE_ACADEMY_EMAIL || 'admissions@techlabssa.co.za',
       campusAddress: 'Cape Town, South Africa',
       studentWelcomeMessage: 'Welcome to your TechLabs student portal.',
       studentSupportMessage: 'Need help with your schedule, course access, payments, or learning activities? Contact student support.',
@@ -464,7 +464,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       maintenanceMode: false,
       publicAnnouncement: '',
       defaultLandingPage: '/',
-      privacyContactEmail: 'privacy@techlabs.co.za',
+      privacyContactEmail: 'privacy@techlabssa.co.za',
       informationOfficerContact: 'Contact admissions for the Information Officer',
       privacyPolicyVersion: '2026.09',
       termsVersion: '2026.09',
@@ -1044,8 +1044,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       ...certData,
       id: 'cert-' + Date.now(),
       certificateNumber: num,
-      verificationUrl: `https://techlabs.co.za/verify/${num}`,
-      qrCodeData: `https://techlabs.co.za/verify/${num}`
+      verificationUrl: `https://techlabssa.co.za/verify/${num}`,
+      qrCodeData: `https://techlabssa.co.za/verify/${num}`
     };
     setCertificates(prev => [newCert, ...prev]);
     void apiRequest('/certificates', { method: 'POST', body: JSON.stringify(newCert) });

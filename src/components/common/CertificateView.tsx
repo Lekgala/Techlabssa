@@ -155,7 +155,7 @@ export const CertificateView: React.FC<CertificateViewProps> = ({ certificate, a
               {certificate.certificateNumber}
             </p>
             <p className="text-[10px] text-[#707070] font-mono block">
-              techlabs.co.za/verify/{certificate.certificateNumber}
+              techlabssa.co.za/verify/{certificate.certificateNumber}
             </p>
           </div>
         </div>

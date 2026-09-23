@@ -138,7 +138,7 @@ export const generateInvoiceHTML = (options: InvoiceGenerationOptions): string =
     </div>
 
     <div class="footer">
-      <p>TechLabs Academy SA | Cape Town, South Africa | www.techlabs.co.za</p>
+      <p>TechLabs Academy SA | Cape Town, South Africa | www.techlabssa.co.za</p>
       <p>This is a computer-generated document. No signature is required.</p>
     </div>
   </div>

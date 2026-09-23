@@ -155,7 +155,7 @@ export const VerifyCertificate: React.FC = () => {
               <AlertTriangle className="w-8 h-8 text-[#000000] mx-auto" />
               <h3 className="text-base font-bold text-[#000000]">Certificate Not Found</h3>
               <p className="text-xs text-[#707070] leading-relaxed">
-                No certificate found matching reference "<strong>{certInput}</strong>". Please check the spelling or contact admissions at <strong>admissions@techlabs.co.za</strong>.
+                No certificate found matching reference "<strong>{certInput}</strong>". Please check the spelling or contact admissions at <strong>admissions@techlabssa.co.za</strong>.
               </p>
             </div>
           )

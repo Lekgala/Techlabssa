@@ -27,7 +27,7 @@ export const CURRENT_USER_STUDENT: User = {
 export const CURRENT_USER_ADMIN: User = {
   id: 'usr-admin-01',
   name: 'TechLabs Administrator',
-  email: 'admin@techlabs.co.za',
+  email: 'admin@techlabssa.co.za',
   role: 'ADMIN',
   avatar: 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=150&auto=format&fit=crop&q=80',
   whatsapp: '+27 82 123 4567'
@@ -917,9 +917,9 @@ export const SAMPLE_CERTIFICATE: Certificate = {
   courseName: 'IT Support & Enterprise Administration Bootcamp',
   completionDate: '05 December 2026',
   instructorName: 'TechLabs Instructor',
-  verificationUrl: 'https://techlabs.co.za/verify/TLS-2026-00124',
+  verificationUrl: 'https://techlabssa.co.za/verify/TLS-2026-00124',
   gradeDistinction: 'Distinction (94.5% Practical Exam Score)',
-  qrCodeData: 'https://techlabs.co.za/verify/TLS-2026-00124',
+  qrCodeData: 'https://techlabssa.co.za/verify/TLS-2026-00124',
   skillsAcquired: [
     'VMware Enterprise Virtualization',
     'Windows Server 2022 & Active Directory DS',
