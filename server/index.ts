@@ -24,6 +24,11 @@ const app = express();
 forwardAsyncErrors(app);
 const PORT = Number(process.env.PORT || 4000);
 const appOrigin = process.env.APP_ORIGIN || 'http://localhost:3000';
+const allowedAppOrigins = new Set(
+  [appOrigin, ...(process.env.APP_ORIGINS || '').split(',')]
+    .map(value => value.trim().replace(/\/$/, ''))
+    .filter(Boolean),
+);
 const isProduction = process.env.NODE_ENV === 'production';
 const sessionCookieName = 'techlabs_session';
 const csrfCookieName = 'techlabs_csrf';
@@ -40,7 +45,12 @@ setInterval(() => {
 const trustProxy = process.env.TRUST_PROXY ?? (process.env.RENDER === 'true' ? '1' : '0');
 app.set('trust proxy', /^\d+$/.test(trustProxy) ? Number(trustProxy) : trustProxy.split(',').map(value => value.trim()));
 app.disable('x-powered-by');
-app.use(cors({ origin: appOrigin, credentials: true, methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'], allowedHeaders: ['Content-Type', 'Authorization', 'X-CSRF-Token', 'X-File-Name', 'X-EFT-Reference'] }));
+app.use(cors({
+  origin: (origin, callback) => callback(null, !origin || allowedAppOrigins.has(origin.replace(/\/$/, ''))),
+  credentials: true,
+  methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization', 'X-CSRF-Token', 'X-File-Name', 'X-EFT-Reference'],
+}));
 app.use((_req, res, next) => {
   res.setHeader('X-Content-Type-Options', 'nosniff');
   res.setHeader('X-Frame-Options', 'DENY');
