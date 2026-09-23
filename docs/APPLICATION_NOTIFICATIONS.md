@@ -1,6 +1,6 @@
 # New application alerts
 
-After saving a new application, the API sends the applicant their existing acknowledgement and sends admissions a separate review alert. The alert includes the applicant name, application reference, cohort, course tier, and a link to `/admin?application=...`. Staff must sign in to view the record.
+After saving a new application, the API sends the applicant their existing acknowledgement and sends admissions a separate review alert. Course-guide requests also send admissions the prospect's contact details and use the prospect's email as Reply-To. Staff must sign in to view saved records.
 
 Configure these server-side variables on the Render staging API service:
 
@@ -8,7 +8,7 @@ Configure these server-side variables on the Render staging API service:
 - `APP_ORIGIN=https://techlabssa.vercel.app`
 - `RESEND_API_KEY` and `EMAIL_FROM`: use the existing Resend credentials and verified sender.
 
-If `APPLICATION_NOTIFICATION_EMAIL` is absent, alerts use `ADMIN_EMAIL`. Never prefix these email configuration variables with `VITE_`.
+If `APPLICATION_NOTIFICATION_EMAIL` is absent, application and lead alerts use `ADMIN_EMAIL`. Never prefix these email configuration variables with `VITE_`.
 
 Deploy the API changes to Render and the admin link changes to Vercel. Local `.env` changes do not update Render environment variables.
 

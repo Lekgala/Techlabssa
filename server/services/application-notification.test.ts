@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { notifyAdmissions } from './application-notification.ts';
+import { notifyAdmissions, notifyAdmissionsOfLead } from './application-notification.ts';
 
 const application = { id: 'app-123', referenceNumber: 'TLS-2026-0001', firstName: '<script>', lastName: 'Applicant', selectedTier: 'STARTER' };
 const env = { APP_ORIGIN: 'https://techlabssa.vercel.app', ADMIN_EMAIL: 'admin@example.test', APPLICATION_NOTIFICATION_EMAIL: 'admissions@example.test' };
@@ -34,4 +34,20 @@ test('missing configuration and thrown delivery errors produce failure records',
   assert.match(missing.reason!, /require/);
   const failure = await notifyAdmissions(application, 'October', env, async () => { throw new Error('Network failed'); });
   assert.equal(failure.status, 'FAILED');
+});
+
+test('course guide lead alert goes to admissions and replies to the student', async () => {
+  const lead = { id: 'lead-123', name: '<b>Student</b>', email: 'student@example.test', whatsapp: '+27 82 123 4567', courseInterest: 'Professional course guide', source: 'Website' };
+  const result = await notifyAdmissionsOfLead(lead, env, async input => {
+    assert.equal(input.to, env.APPLICATION_NOTIFICATION_EMAIL);
+    assert.equal(input.replyTo, lead.email);
+    assert.match(input.subject, /Student/);
+    assert.match(input.html, /https:\/\/techlabssa\.vercel\.app\/admin/);
+    assert.match(input.html, /&lt;b&gt;Student&lt;\/b&gt;/);
+    assert.ok(!input.html.includes('<b>Student</b>'));
+    return { sent: true, id: 'provider-lead-1' };
+  });
+  assert.equal(result.category, 'LEAD_NOTIFICATION');
+  assert.equal(result.status, 'SENT');
+  assert.equal(result.providerId, 'provider-lead-1');
 });

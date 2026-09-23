@@ -11,7 +11,7 @@ import { generateBrandedDocumentPDF, generateInvoiceHTML, generateInvoicePDF } f
 import { DEFAULT_EMAIL_TEMPLATES, emailAutomationEngine } from './services/email-automation.ts';
 import { bulkOperationsService } from './services/bulk-operations.ts';
 import { escapeHtml, formatEmailHtml, sendEmail } from './services/email-service.ts';
-import { notifyAdmissions } from './services/application-notification.ts';
+import { notifyAdmissions, notifyAdmissionsOfLead } from './services/application-notification.ts';
 import { runPaymentReminders } from './services/payment-reminders.ts';
 import { createLabPilotRouter } from './services/lab-pilot.ts';
 import { createProofStorage, proofNotFound } from './services/proof-storage.ts';
@@ -748,6 +748,9 @@ app.post('/api/leads', rateLimit('leads', 10, 60 * 60 * 1000), async (req, res) 
   const db = await getDatabase();
   const lead = { ...data, id: makeId('lead'), email: data.email.trim().toLowerCase(), status: 'NEW_LEAD', notes: [`Inquiry received from ${data.source || 'Website'}`], createdAt: new Date().toISOString().slice(0, 10) };
   db.leads = [lead, ...db.leads] as any; await saveDatabase(db); res.status(201).json(lead);
+  void notifyAdmissionsOfLead(lead).then(async delivery => {
+    await mutateDatabase(nextDb => { nextDb.emailDeliveries.unshift(delivery); });
+  }).catch(error => console.error('Lead notification processing failed:', error instanceof Error ? error.message : 'Unknown error'));
 });
 
 app.put('/api/admin/leads/:id', authenticate, requireAnyRole('ADMIN', 'INSTRUCTOR'), async (req: AuthedRequest, res) => {
