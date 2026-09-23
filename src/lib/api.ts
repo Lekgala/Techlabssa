@@ -1,6 +1,18 @@
 const apiBaseUrl = (import.meta.env.VITE_API_URL || '').replace(/\/$/, '');
 const apiUrl = (path: string) => `${apiBaseUrl}/api${path}`;
-const csrfToken = () => document.cookie.split('; ').find(value => value.startsWith('techlabs_csrf='))?.split('=').slice(1).join('=') || '';
+let cachedCsrfToken = '';
+const readableCsrfToken = () => document.cookie.split('; ').find(value => value.startsWith('techlabs_csrf='))?.split('=').slice(1).join('=') || '';
+const csrfToken = async () => {
+  const readable = readableCsrfToken();
+  if (readable) return decodeURIComponent(readable);
+  if (cachedCsrfToken) return cachedCsrfToken;
+  const response = await fetch(apiUrl('/csrf'), { credentials: 'include' });
+  if (!response.ok) throw new ApiError('Could not establish a secure session with the Academy API.', response.status);
+  const result = await response.json() as { csrfToken?: string };
+  if (!result.csrfToken) throw new ApiError('The Academy API did not provide a security token.', 500);
+  cachedCsrfToken = result.csrfToken;
+  return cachedCsrfToken;
+};
 const getApiSession = () => typeof window !== 'undefined' ? sessionStorage.getItem('techlabs_session') || localStorage.getItem('techlabs_session') : null;
 
 export class ApiError extends Error {
@@ -9,12 +21,14 @@ export class ApiError extends Error {
 
 export async function apiRequest<T>(path: string, options: RequestInit = {}): Promise<T> {
   const token = getApiSession();
+  const mutating = !['GET', 'HEAD', 'OPTIONS'].includes(options.method?.toUpperCase() || 'GET');
+  const csrf = mutating ? await csrfToken() : '';
   const response = await fetch(apiUrl(path), {
     ...options,
     headers: {
       'Content-Type': 'application/json',
       ...(token ? { Authorization: `Bearer ${token}` } : {}),
-      ...(!['GET', 'HEAD', 'OPTIONS'].includes(options.method?.toUpperCase() || 'GET') && csrfToken() ? { 'X-CSRF-Token': decodeURIComponent(csrfToken()) } : {}),
+      ...(csrf ? { 'X-CSRF-Token': csrf } : {}),
       ...(options.headers || {}),
     },
     credentials: 'include',
@@ -49,9 +63,10 @@ export function setApiSession(token?: string): void {
 
 export async function apiDownload(path: string, body: unknown, filename: string): Promise<void> {
   const token = getApiSession();
+  const csrf = await csrfToken();
   const response = await fetch(apiUrl(path), {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}), ...(csrfToken() ? { 'X-CSRF-Token': decodeURIComponent(csrfToken()) } : {}) },
+    headers: { 'Content-Type': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}), 'X-CSRF-Token': csrf },
     credentials: 'include',
     body: JSON.stringify(body),
   });
@@ -64,9 +79,10 @@ export async function apiDownload(path: string, body: unknown, filename: string)
 
 export async function apiUpload<T>(path: string, file: File, extraHeaders: Record<string, string> = {}): Promise<T> {
   const token = getApiSession();
+  const csrf = await csrfToken();
   const response = await fetch(apiUrl(path), {
     method: 'POST',
-    headers: { 'Content-Type': file.type, 'X-File-Name': encodeURIComponent(file.name), ...(token ? { Authorization: `Bearer ${token}` } : {}), ...(csrfToken() ? { 'X-CSRF-Token': decodeURIComponent(csrfToken()) } : {}), ...extraHeaders },
+    headers: { 'Content-Type': file.type, 'X-File-Name': encodeURIComponent(file.name), ...(token ? { Authorization: `Bearer ${token}` } : {}), 'X-CSRF-Token': csrf, ...extraHeaders },
     credentials: 'include',
     body: file,
   });

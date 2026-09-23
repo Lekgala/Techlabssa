@@ -85,6 +85,7 @@ app.use((req, res, next) => {
   if (cookies[sessionCookieName] && !req.header('authorization') && req.header('x-csrf-token') !== csrf) return res.status(403).json({ error: 'CSRF validation failed' });
   next();
 });
+app.get('/api/csrf', (req, res) => res.json({ csrfToken: ensureCsrfCookie(req, res) }));
 
 const safeEqual = (left: string, right: string) => {
   const a = Buffer.from(left); const b = Buffer.from(right);
