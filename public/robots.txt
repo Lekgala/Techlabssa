@@ -1,3 +1,6 @@
 User-agent: *
 Allow: /
+Disallow: /admin
+Disallow: /student
+Disallow: /api
 Sitemap: https://techlabssa.co.za/sitemap.xml

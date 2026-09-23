@@ -5,6 +5,7 @@ import { Footer } from './components/layout/Footer';
 import { WhatsAppButton } from './components/layout/WhatsAppButton';
 import { ToastContainer } from './components/layout/ToastContainer';
 import { CookieNotice } from './components/layout/CookieNotice';
+import { Seo } from './components/layout/Seo';
 
 // Public Pages
 import { Home } from './pages/public/Home';
@@ -113,6 +114,7 @@ const AppContent: React.FC = () => {
 
   return (
     <div className="min-h-screen flex flex-col bg-[#FFFFFF] text-[#1A1A1A] font-sans antialiased selection:bg-black selection:text-white">
+      <Seo path={path} />
       <Navbar />
       <main className="flex-grow min-w-0">
         {renderPage()}
