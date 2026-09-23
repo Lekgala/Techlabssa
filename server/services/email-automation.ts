@@ -98,7 +98,7 @@ export const DEFAULT_EMAIL_TEMPLATES: EmailTemplate[] = [
 <p>Hello {studentName},</p>
 <p>Explore TechLabs Academy's hands-on IT support training, guided labs and small-group mentoring.</p>
 <p>See the upcoming programmes and choose the intake that suits your goals.</p>
-<p><a href="https://techlabssa.vercel.app/pricing" style="display:inline-block;padding:13px 20px;background:#111111;color:#ffffff;text-decoration:none;font-size:13px;font-weight:700">Explore programmes</a></p>
+<p><a href="https://techlabssa.co.za/pricing" style="display:inline-block;padding:13px 20px;background:#111111;color:#ffffff;text-decoration:none;font-size:13px;font-weight:700">Explore programmes</a></p>
 <p>Questions about the programme? Reply to this email and our admissions team will help.</p>
     `,
     enabled: true,

@@ -312,7 +312,7 @@ async function initializeStorage(): Promise<void> {
         'tpl-app-approved': ['a4f3634071e6c54a5f6cf10e24a05908', 'a081bee7fe2a849be9039662197be13a'],
         'tpl-payment-verified': ['13c557ee2e8084d77437bc996e04b722', '6882e1cae867464c155c80b09aa6322d'],
         'tpl-app-rejected': ['893fad29b9ab241a539939daba696a81'],
-        'tpl-lead-marketing': ['009fdac842d18027fa622d90615907a5'],
+        'tpl-lead-marketing': ['009fdac842d18027fa622d90615907a5', 'dff5584ee0f40548da7c63fb9634cf27'],
       };
       const oldDefaultSubjects: Record<string, string> = {
         'tpl-app-submitted': 'Application received: {referenceNumber}',

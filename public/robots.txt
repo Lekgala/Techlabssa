@@ -1,2 +1,3 @@
 User-agent: *
 Allow: /
+Sitemap: https://techlabssa.co.za/sitemap.xml
