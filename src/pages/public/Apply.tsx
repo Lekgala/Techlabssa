@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { useApp, getTierPrice } from '../../context/AppContext';
 import { CourseTier, PaymentOption } from '../../types';
+import { apiRequest } from '../../lib/api';
 import { getEmailValidationError } from '../../lib/emailValidation';
 import confetti from 'canvas-confetti';
 import { 
@@ -15,8 +16,94 @@ import {
   Shield, 
   Calendar, 
   FileCheck,
-  Zap
+  Zap,
+  BookOpen,
+  MessageSquare
 } from 'lucide-react';
+
+const CourseGuideCta: React.FC = () => {
+  const { settings } = useApp();
+  const [showForm, setShowForm] = useState(false);
+  const [submitted, setSubmitted] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState('');
+  const [lead, setLead] = useState({ name: '', email: '', whatsapp: '' });
+  const whatsappNumber = settings.whatsappNumber.replace(/[^0-9]/g, '');
+  const whatsappUrl = `https://wa.me/${whatsappNumber}?text=${encodeURIComponent("Hi TechLabs Academy, I'd like to learn more about the IT Support Bootcamp before applying.")}`;
+
+  const submitGuideRequest = async (event: React.FormEvent) => {
+    event.preventDefault();
+    const emailValidationError = getEmailValidationError(lead.email);
+    if (emailValidationError) return setError(emailValidationError);
+    if (lead.name.trim().length < 2 || lead.whatsapp.trim().length < 6) return setError('Please enter your name and a valid WhatsApp number.');
+    setSubmitting(true);
+    setError('');
+    try {
+      await apiRequest('/leads', {
+        method: 'POST',
+        body: JSON.stringify({
+          name: lead.name.trim(),
+          email: lead.email.trim(),
+          whatsapp: lead.whatsapp.trim(),
+          source: 'Website',
+          courseInterest: 'IT Support & Enterprise Administration Bootcamp course guide',
+        }),
+      });
+      setSubmitted(true);
+    } catch (requestError) {
+      setError(requestError instanceof Error ? requestError.message : 'Your request could not be submitted. Please use the WhatsApp option.');
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  return (
+    <section className="rounded-2xl border border-[#D8D8D8] bg-[#FAFAFA] p-5 sm:p-6" aria-labelledby="course-guide-heading">
+      <div className="flex flex-col gap-5 sm:flex-row sm:items-center sm:justify-between">
+        <div className="max-w-xl space-y-1.5">
+          <span className="text-[10px] font-mono font-bold uppercase tracking-[0.2em] text-[#707070]">Exploring your options?</span>
+          <h2 id="course-guide-heading" className="text-xl font-semibold text-black">Not ready for the full application?</h2>
+          <p className="text-xs leading-relaxed text-[#707070]">Request the course guide or chat to Admissions about the curriculum, timetable, laptop requirements and payment options.</p>
+        </div>
+        {!showForm && !submitted && (
+          <div className="flex shrink-0 flex-col gap-2 sm:flex-row">
+            <button type="button" onClick={() => setShowForm(true)} className="inline-flex items-center justify-center gap-2 rounded-xl bg-black px-5 py-3 text-xs font-bold uppercase tracking-wider text-white hover:bg-neutral-800">
+              <BookOpen className="h-4 w-4" /> Request Course Guide
+            </button>
+            <a href={whatsappUrl} target="_blank" rel="noopener noreferrer" className="inline-flex items-center justify-center gap-2 rounded-xl border border-[#CFCFCF] bg-white px-5 py-3 text-xs font-bold uppercase tracking-wider text-black hover:border-black">
+              <MessageSquare className="h-4 w-4" /> Chat to Admissions
+            </a>
+          </div>
+        )}
+      </div>
+
+      {showForm && !submitted && (
+        <form onSubmit={submitGuideRequest} className="mt-5 border-t border-[#E0E0E0] pt-5">
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+            <label className="space-y-1 text-xs"><span className="font-bold uppercase tracking-wider">Full name</span><input required value={lead.name} onChange={event => setLead(current => ({ ...current, name: event.target.value }))} autoComplete="name" className="w-full rounded-xl border border-[#D8D8D8] bg-white p-3 focus:border-black focus:outline-none" /></label>
+            <label className="space-y-1 text-xs"><span className="font-bold uppercase tracking-wider">Email</span><input required type="email" value={lead.email} onChange={event => setLead(current => ({ ...current, email: event.target.value }))} autoComplete="email" className="w-full rounded-xl border border-[#D8D8D8] bg-white p-3 focus:border-black focus:outline-none" /></label>
+            <label className="space-y-1 text-xs"><span className="font-bold uppercase tracking-wider">WhatsApp number</span><input required type="tel" value={lead.whatsapp} onChange={event => setLead(current => ({ ...current, whatsapp: event.target.value }))} autoComplete="tel" className="w-full rounded-xl border border-[#D8D8D8] bg-white p-3 focus:border-black focus:outline-none" /></label>
+          </div>
+          {error && <p role="alert" className="mt-3 text-xs font-semibold text-[#B42318]">{error}</p>}
+          <div className="mt-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+            <p className="text-[10px] leading-relaxed text-[#707070]">By requesting information, you agree that Admissions may contact you about this course. See our <a href="/privacy" className="font-semibold text-black underline">Privacy Policy</a>.</p>
+            <div className="flex gap-2">
+              <button type="button" onClick={() => { setShowForm(false); setError(''); }} className="rounded-xl border border-[#D8D8D8] bg-white px-4 py-2.5 text-xs font-bold">Cancel</button>
+              <button type="submit" disabled={submitting} className="rounded-xl bg-black px-5 py-2.5 text-xs font-bold uppercase tracking-wider text-white disabled:bg-[#A0A0A0]">{submitting ? 'Sending…' : 'Send My Request'}</button>
+            </div>
+          </div>
+        </form>
+      )}
+
+      {submitted && (
+        <div role="status" className="mt-5 flex items-start gap-3 border-t border-[#E0E0E0] pt-5">
+          <CheckCircle className="mt-0.5 h-5 w-5 shrink-0" />
+          <div><p className="text-sm font-bold">Course guide request received</p><p className="mt-1 text-xs text-[#707070]">Admissions will send course information to your email or WhatsApp contact.</p></div>
+        </div>
+      )}
+    </section>
+  );
+};
 
 export const Apply: React.FC = () => {
   const { submitApplication, studentLogin, cohorts, navigate, settings } = useApp();
@@ -254,7 +341,7 @@ export const Apply: React.FC = () => {
     );
   }
 
-  if (settings.applicationsEnabled === false) return <div className="max-w-2xl mx-auto px-4 py-24 text-center space-y-4"><h1 className="text-3xl font-light">Applications are temporarily closed</h1><p className="text-sm text-[#707070]">{settings.admissionsAcknowledgement || 'Please contact admissions for information about the next intake.'}</p><button type="button" onClick={() => navigate('/')} className="px-5 py-3 bg-black text-white rounded-xl text-xs font-bold uppercase tracking-wider">Return home</button></div>;
+  if (settings.applicationsEnabled === false) return <div className="max-w-3xl mx-auto px-4 py-20 space-y-8"><div className="text-center space-y-4"><h1 className="text-3xl font-light">Applications are temporarily closed</h1><p className="text-sm text-[#707070]">Please request the course guide or contact Admissions for information about the next intake.</p><button type="button" onClick={() => navigate('/')} className="px-5 py-3 bg-black text-white rounded-xl text-xs font-bold uppercase tracking-wider">Return home</button></div><CourseGuideCta /></div>;
 
   return (
     <div className="max-w-4xl mx-auto px-4 py-12 space-y-10 bg-[#FFFFFF] text-[#1A1A1A]">
@@ -274,6 +361,8 @@ export const Apply: React.FC = () => {
           <div className="h-2 overflow-hidden rounded-full bg-[#E0E0E0]"><div className="h-full rounded-full bg-black transition-all duration-300" style={{ width: `${(currentStep / 7) * 100}%` }} /></div>
         </div>
       </div>
+
+      <CourseGuideCta />
 
       {/* Progress Stepper Bar */}
       <div className="bg-[#FAFAFA] border border-[#E0E0E0] p-2 rounded-xl flex items-center justify-between gap-1 overflow-x-auto text-[10px] font-mono">
