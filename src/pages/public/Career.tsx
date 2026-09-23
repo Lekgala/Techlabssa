@@ -18,12 +18,12 @@ export const Career: React.FC = () => {
   const { navigate } = useApp();
 
   const targetRoles = [
-    { title: 'IT Support Technician', salary: 'R15,000 – R22,000 / mo', desc: 'First-line and second-line enterprise user support, workstation deployment, Active Directory password resets, and peripheral troubleshooting.' },
-    { title: 'Desktop Support Technician', salary: 'R18,000 – R28,000 / mo', desc: 'Hardware lifecycle, Windows 11 enterprise imaging, BitLocker encryption, driver diagnostics, and on-site user support.' },
-    { title: 'Service Desk Analyst (MSP)', salary: 'R16,000 – R25,000 / mo', desc: 'Multi-tenant client ticket triage, SLA compliance, remote diagnostics via PowerShell and RMM agents for managed service providers.' },
-    { title: 'Junior Systems Administrator', salary: 'R22,000 – R35,000 / mo', desc: 'Windows Server 2022 administration, Active Directory Domain Services, DNS/DHCP infrastructure, GPO deployment, and backup verification.' },
-    { title: 'Microsoft 365 Support Specialist', salary: 'R20,000 – R30,000 / mo', desc: 'Exchange Online mail flow, shared mailboxes, user license management, Entra ID MFA troubleshooting, and Microsoft Teams administration.' },
-    { title: 'Endpoint Support Technician (Intune)', salary: 'R22,000 – R32,000 / mo', desc: 'Enrolling client devices into Microsoft Intune MDM, managing compliance policies, deploying Company Portal apps, and remote wiping.' }
+    { title: 'IT Support Technician', desc: 'First-line and second-line enterprise user support, workstation deployment, Active Directory password resets, and peripheral troubleshooting.' },
+    { title: 'Desktop Support Technician', desc: 'Hardware lifecycle, Windows 11 enterprise imaging, BitLocker encryption, driver diagnostics, and on-site user support.' },
+    { title: 'Service Desk Analyst (MSP)', desc: 'Multi-tenant client ticket triage, SLA compliance, remote diagnostics via PowerShell and RMM agents for managed service providers.' },
+    { title: 'Junior Systems Administrator', desc: 'Windows Server 2022 administration, Active Directory Domain Services, DNS/DHCP infrastructure, GPO deployment, and backup verification.' },
+    { title: 'Microsoft 365 Support Specialist', desc: 'Exchange Online mail flow, shared mailboxes, user license management, Entra ID MFA troubleshooting, and Microsoft Teams administration.' },
+    { title: 'Endpoint Support Technician (Intune)', desc: 'Enrolling client devices into Microsoft Intune MDM, managing compliance policies, deploying Company Portal apps, and remote wiping.' }
   ];
 
   return (
@@ -63,16 +63,18 @@ export const Career: React.FC = () => {
           <p className="text-xs text-[#707070]">
             The skills you learn directly match the requirements of enterprise IT departments and Managed Service Providers (MSPs) across Cape Town, Johannesburg, and Durban.
           </p>
+          <p className="text-[11px] text-[#A0A0A0]">
+            Job titles, seniority and compensation vary by employer, location, experience and additional certifications.
+          </p>
         </div>
 
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
           {targetRoles.map((role, idx) => (
             <div key={idx} className="bg-[#FFFFFF] p-6 rounded-2xl border border-[#E0E0E0] space-y-3 hover:border-[#000000] transition">
-              <div className="flex items-center justify-between">
+              <div className="flex items-center">
                 <span className="text-[10px] font-mono font-bold bg-[#000000] text-white px-2 py-0.5 rounded">
                   Target Role
                 </span>
-                <span className="text-[11px] font-mono text-[#707070]">{role.salary}</span>
               </div>
               <h3 className="text-base font-bold text-[#000000]">{role.title}</h3>
               <p className="text-xs text-[#707070] leading-relaxed">{role.desc}</p>

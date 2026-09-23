@@ -666,7 +666,7 @@ export const INITIAL_LEADS: Lead[] = [
     courseInterest: 'Professional Tier (Weekend Sessions)',
     status: 'CONTACTED',
     notes: [
-      'Junior helpdesk agent at local ISP, wants to learn Microsoft 365, Intune and Defender for salary bump.',
+      'Junior helpdesk agent at local ISP, wants to learn Microsoft 365, Intune and Defender for career progression.',
       'Sent course brochure and curriculum breakdown.'
     ],
     followUpDate: '2026-09-03',
