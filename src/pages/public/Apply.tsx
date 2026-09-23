@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { useApp, getTierPrice } from '../../context/AppContext';
 import { CourseTier, PaymentOption } from '../../types';
+import { getEmailValidationError } from '../../lib/emailValidation';
 import confetti from 'canvas-confetti';
 import { 
   CheckCircle, 
@@ -26,6 +27,7 @@ export const Apply: React.FC = () => {
   const [currentStep, setCurrentStep] = useState(1);
   const [submittedRef, setSubmittedRef] = useState<string | null>(null);
   const [submissionError, setSubmissionError] = useState('');
+  const [emailError, setEmailError] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const formRef = React.useRef<HTMLDivElement>(null);
   const firstNameInputRef = React.useRef<HTMLInputElement>(null);
@@ -115,6 +117,12 @@ export const Apply: React.FC = () => {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    const currentEmailError = getEmailValidationError(formData.email);
+    if (currentEmailError) {
+      setEmailError(currentEmailError);
+      setCurrentStep(1);
+      return;
+    }
     if (!formData.acceptedTerms || !formData.acceptedPrivacy) {
       alert('Please accept the Terms & Conditions and Privacy Policy to proceed.');
       return;
@@ -164,6 +172,20 @@ export const Apply: React.FC = () => {
     } finally {
       setSubmitting(false);
     }
+  };
+
+  const handleFormSubmit = (e: React.FormEvent) => {
+    if (currentStep === 7) return void handleSubmit(e);
+    e.preventDefault();
+    if (currentStep === 1) {
+      const currentEmailError = getEmailValidationError(formData.email);
+      if (currentEmailError) {
+        setEmailError(currentEmailError);
+        return;
+      }
+      setEmailError('');
+    }
+    setCurrentStep(prev => Math.min(7, prev + 1));
   };
 
   if (submittedRef) {
@@ -281,7 +303,7 @@ export const Apply: React.FC = () => {
 
       {/* Form Container */}
       <div ref={formRef} className="bg-[#FFFFFF] rounded-2xl border border-[#E0E0E0] shadow-sm p-6 sm:p-10">
-        <form className="application-form" onSubmit={currentStep === 7 ? handleSubmit : (e) => { e.preventDefault(); setCurrentStep(prev => Math.min(7, prev + 1)); }}>
+        <form className="application-form" onSubmit={handleFormSubmit}>
           {/* STEP 1: PERSONAL */}
           {currentStep === 1 && (
             <div className="space-y-6 animate-in fade-in duration-200">
@@ -289,6 +311,7 @@ export const Apply: React.FC = () => {
                 <h3 className="text-lg font-bold text-[#000000]">Step 1: Personal Information</h3>
                 <p className="text-xs text-[#707070]">Provide your official contact details for admissions and WhatsApp cohort communication.</p>
               </div>
+
 
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 text-xs">
                 <div className="space-y-1">
@@ -322,11 +345,18 @@ export const Apply: React.FC = () => {
                   <input
                     type="email"
                     required
+                    aria-invalid={Boolean(emailError)}
+                    aria-describedby={emailError ? 'application-email-error' : undefined}
                     placeholder="e.g. bongani@gmail.com"
                     value={formData.email}
-                    onChange={(e) => setFormData({ ...formData, email: e.target.value })}
-                    className="w-full p-3 bg-[#FAFAFA] border border-[#E0E0E0] rounded-xl focus:border-[#000000] focus:outline-none"
+                    onChange={(e) => {
+                      setFormData({ ...formData, email: e.target.value });
+                      if (emailError) setEmailError(getEmailValidationError(e.target.value) || '');
+                    }}
+                    onBlur={(e) => setEmailError(getEmailValidationError(e.target.value) || '')}
+                    className={`w-full p-3 bg-[#FAFAFA] border rounded-xl focus:outline-none ${emailError ? 'border-[#B42318] focus:border-[#B42318]' : 'border-[#E0E0E0] focus:border-[#000000]'}`}
                   />
+                  {emailError && <p id="application-email-error" role="alert" className="text-[11px] font-semibold text-[#B42318]">{emailError}</p>}
                 </div>
                 <div className="space-y-1">
                   <label className="font-bold text-xs uppercase tracking-wider text-[#000000]">WhatsApp Phone Number *</label>

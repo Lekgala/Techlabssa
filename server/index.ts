@@ -16,6 +16,7 @@ import { runPaymentReminders } from './services/payment-reminders.ts';
 import { createLabPilotRouter } from './services/lab-pilot.ts';
 import { createProofStorage, proofNotFound } from './services/proof-storage.ts';
 import { buildCohortCalendar, buildCurriculumSchedule } from '../src/lib/curriculumSchedule.ts';
+import { getEmailValidationError, isValidEmail } from '../src/lib/emailValidation.ts';
 
 type Session = { role: 'ADMIN' | 'INSTRUCTOR' | 'STUDENT'; userId: string; email: string; expiresAt: number };
 type AuthedRequest = Request & { session?: Session; rawBody?: string };
@@ -80,7 +81,7 @@ const safeEqual = (left: string, right: string) => {
   return a.length === b.length && crypto.timingSafeEqual(a, b);
 };
 const requiredText = (value: unknown, max = 200) => typeof value === 'string' && value.trim().length > 0 && value.length <= max;
-const validEmail = (value: unknown) => requiredText(value, 254) && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value as string);
+const validEmail = isValidEmail;
 const renderStoredTemplate = (db: Awaited<ReturnType<typeof getDatabase>>, templateId: string, variables: Record<string, unknown>) => {
   const template = db.emailTemplates.find(item => item.id === templateId && item.enabled);
   if (!template) return null;
@@ -689,7 +690,9 @@ app.post('/api/admin/payments/:id/reject', authenticate, requireRole('ADMIN'), a
 // Application, CRM lead, and invoice are committed together.
 app.post('/api/applications', rateLimit('applications', 5, 60 * 60 * 1000), serializeEnrollment, async (req, res) => {
   const data = req.body || {};
-  if (!requiredText(data.firstName, 80) || !requiredText(data.lastName, 80) || !validEmail(data.email) || !requiredText(data.whatsapp, 30) || !requiredText(data.cohortId, 100) || data.acceptedTerms !== true || data.acceptedPrivacy !== true) return res.status(400).json({ error: 'Valid contact details, cohort and required consent are required' });
+  const emailError = getEmailValidationError(data.email);
+  if (emailError) return res.status(400).json({ error: emailError, field: 'email' });
+  if (!requiredText(data.firstName, 80) || !requiredText(data.lastName, 80) || !requiredText(data.whatsapp, 30) || !requiredText(data.cohortId, 100) || data.acceptedTerms !== true || data.acceptedPrivacy !== true) return res.status(400).json({ error: 'Valid contact details, cohort and required consent are required' });
   const db = await getDatabase();
   if (db.academySettings.applicationsEnabled === false) return res.status(403).json({ error: 'Applications are temporarily closed. Please contact admissions for the next intake.' });
   const normalizedEmail = data.email.trim().toLowerCase();
