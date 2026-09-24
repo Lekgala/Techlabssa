@@ -342,6 +342,8 @@ export interface SupportTicket {
   expectedFix: string;
   status: TicketStatus;
   assignedStudentId?: string;
+  sourceTicketId?: string;
+  assignedAt?: string;
   studentResolutionNotes?: string;
   studentRootCause?: string;
   instructorFeedback?: string;

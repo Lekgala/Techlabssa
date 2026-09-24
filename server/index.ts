@@ -555,6 +555,14 @@ app.get('/api/student/data', authenticate, requireRole('STUDENT'), async (req: A
   const db = await getDatabase();
   const application = db.applications.find(a => a.id === req.session!.userId);
   if (!application) return res.status(404).json({ error: 'Student record not found' });
+  const ticketTemplates = db.tickets.filter(ticket => !ticket.assignedStudentId);
+  let ticketsAssigned = false;
+  for (const template of ticketTemplates) {
+    if (db.tickets.some(ticket => ticket.assignedStudentId === application.id && ticket.sourceTicketId === template.id)) continue;
+    db.tickets.push({ ...template, id: makeId('tkt'), sourceTicketId: template.id, assignedStudentId: application.id, assignedAt: new Date().toISOString(), status: 'OPEN', studentRootCause: undefined, studentResolutionNotes: undefined, instructorFeedback: undefined, gradeScore: undefined, submittedAt: undefined });
+    ticketsAssigned = true;
+  }
+  if (ticketsAssigned) await saveDatabase(db);
   const email = application.email.toLowerCase();
   const canPay = ['APPROVED', 'PAYMENT_REQUIRED', 'ENROLLED'].includes(application.status);
   res.json({ application, cohort: db.cohorts.find(c => c.id === application.cohortId), invoices: db.invoices.filter(i => i.studentEmail.toLowerCase() === email), payments: db.payments.filter(p => p.studentId === application.id), paymentSettings: canPay ? { bankName: db.academySettings.bankName, accountName: db.academySettings.accountName, accountNumber: db.academySettings.accountNumber, branchCode: db.academySettings.branchCode, referenceFormat: db.academySettings.referenceFormat } : undefined, tickets: db.tickets.filter(t => t.assignedStudentId === application.id), attendance: db.attendance.filter(a => a.studentId === application.id), assessments: db.assessments.filter((a: any) => !a.studentId || a.studentId === application.id), certificates: db.certificates.filter((c: any) => c.studentId === application.id), labs: db.labs, courseModules: db.courseModules });
@@ -1031,7 +1039,7 @@ for (const collection of adminCollections) {
     const before = { ...list[index] };
     const updates = { ...(req.body || {}) };
     if (collection === 'tickets') {
-      const allowedFields = new Set(['priority', 'department', 'companyName', 'requestedBy', 'device', 'issueTitle', 'description', 'systemEnvironment', 'stepsToReproduce', 'troubleshootingGuidance', 'expectedFix', 'status', 'assignedStudentId', 'studentResolutionNotes', 'studentRootCause', 'instructorFeedback', 'gradeScore', 'submittedAt']);
+      const allowedFields = new Set(['priority', 'department', 'companyName', 'requestedBy', 'device', 'issueTitle', 'description', 'systemEnvironment', 'stepsToReproduce', 'troubleshootingGuidance', 'expectedFix', 'status', 'assignedStudentId', 'sourceTicketId', 'assignedAt', 'studentResolutionNotes', 'studentRootCause', 'instructorFeedback', 'gradeScore', 'submittedAt']);
       for (const key of Object.keys(updates)) if (!allowedFields.has(key)) delete updates[key];
       if (updates.priority !== undefined && !['P1', 'P2', 'P3', 'P4'].includes(String(updates.priority))) return res.status(400).json({ error: 'Ticket priority is invalid' });
       if (updates.status !== undefined && !['OPEN', 'IN_PROGRESS', 'RESOLVED', 'VERIFIED', 'CLOSED'].includes(String(updates.status))) return res.status(400).json({ error: 'Ticket status is invalid' });
@@ -1138,8 +1146,12 @@ app.post('/api/email/approval', authenticate, requireRole('ADMIN'), serializeEnr
 app.patch('/api/student/tickets/:id', authenticate, requireRole('STUDENT'), async (req: AuthedRequest, res) => {
   const db = await getDatabase(); const ticket = db.tickets.find(t => t.id === req.params.id && t.assignedStudentId === req.session!.userId);
   if (!ticket) return res.status(404).json({ error: 'Assigned ticket not found' });
+  if (ticket.status === 'VERIFIED' || ticket.status === 'CLOSED') return res.status(409).json({ error: 'This ticket has already been reviewed and cannot be resubmitted' });
+  if (!requiredText(req.body?.studentRootCause, 2000)) return res.status(400).json({ error: 'Root cause analysis is required' });
   if (!requiredText(req.body?.studentResolutionNotes, 4000)) return res.status(400).json({ error: 'Resolution notes are required' });
-  Object.assign(ticket, { status: 'RESOLVED', studentRootCause: String(req.body.studentRootCause || '').slice(0, 2000), studentResolutionNotes: req.body.studentResolutionNotes });
+  const before = { ...ticket };
+  Object.assign(ticket, { status: 'RESOLVED', studentRootCause: String(req.body.studentRootCause).trim(), studentResolutionNotes: String(req.body.studentResolutionNotes).trim(), submittedAt: new Date().toISOString() });
+  addAudit(db, req, 'TICKET_RESOLUTION_SUBMITTED', 'ticket', ticket.id, `Student submitted resolution for ${ticket.ticketNumber}`, auditChanges(before, ticket, ['status', 'studentRootCause', 'studentResolutionNotes', 'submittedAt']));
   await saveDatabase(db); res.json(ticket);
 });
 

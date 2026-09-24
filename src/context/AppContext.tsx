@@ -824,7 +824,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           status: 'RESOLVED',
           studentRootCause: rootCause,
           studentResolutionNotes: resolutionNotes,
-          submittedAt: new Date().toLocaleTimeString('en-ZA', { hour: '2-digit', minute: '2-digit' }) + ' SAST'
+          submittedAt: new Date().toISOString()
         };
       }
       return t;
@@ -840,7 +840,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           ...t,
           status,
           studentResolutionNotes: notes || t.studentResolutionNotes,
-          submittedAt: new Date().toLocaleTimeString('en-ZA', { hour: '2-digit', minute: '2-digit' }) + ' SAST'
+          submittedAt: new Date().toISOString()
         };
       }
       return t;

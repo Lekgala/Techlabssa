@@ -534,6 +534,20 @@ export const AdminDashboard: React.FC = () => {
   const selectedLead = leads.find(lead => lead.id === selectedLeadId);
   const leadApplication = selectedLead ? applications.find(application => application.email.toLowerCase() === selectedLead.email.toLowerCase()) : undefined;
   const dueLeadCount = leads.filter(lead => activeRecruitmentStatuses.includes(lead.status) && lead.followUpDate <= today).length;
+  const ticketTemplates = tickets.filter(ticket => !ticket.assignedStudentId);
+  const studentTicketReports = tickets.filter(ticket => Boolean(ticket.assignedStudentId)).sort((a, b) => String(b.submittedAt || b.assignedAt || '').localeCompare(String(a.submittedAt || a.assignedAt || '')));
+  const resolvedTicketReports = studentTicketReports.filter(ticket => ['RESOLVED', 'VERIFIED', 'CLOSED'].includes(ticket.status));
+  const ticketStudentName = (ticket: SupportTicket) => {
+    const student = students.find(item => item.id === ticket.assignedStudentId);
+    if (student?.name) return student.name;
+    const application = applications.find(item => item.id === ticket.assignedStudentId);
+    return application ? `${application.firstName} ${application.lastName}` : 'Unknown student';
+  };
+  const formatTicketTimestamp = (value?: string) => {
+    if (!value) return 'Previously assigned';
+    const date = new Date(value);
+    return Number.isNaN(date.getTime()) ? value : date.toLocaleString('en-ZA');
+  };
   const openLeadWorkspace = (leadId: string) => {
     setSelectedLeadId(leadId);
     setLeadNote('');
@@ -1586,7 +1600,7 @@ export const AdminDashboard: React.FC = () => {
           )}
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-            {tickets.map(ticket => {
+            {ticketTemplates.map(ticket => {
               const legacy = ticket as SupportTicket & Record<string, any>;
               return <div key={ticket.id} className="bg-[#FFFFFF] p-6 rounded-xl border border-[#E0E0E0] shadow-sm space-y-3">
                 <div className="flex items-center justify-between border-b border-[#E0E0E0] pb-2">
@@ -1601,7 +1615,28 @@ export const AdminDashboard: React.FC = () => {
                 </div>
               </div>;
             })}
+            {ticketTemplates.length === 0 && <div className="md:col-span-2 p-10 text-center border border-dashed border-[#D0D0D0] rounded-2xl text-sm text-[#707070]">Create a ticket scenario to assign it automatically to each student.</div>}
           </div>
+
+          <section className="space-y-4 pt-4 border-t border-[#E0E0E0]">
+            <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-3">
+              <div><h3 className="text-xl font-light">Student Resolution Reports</h3><p className="text-xs text-[#707070]">Each submission is linked to the student who resolved it.</p></div>
+              <div className="flex flex-wrap gap-2 text-[10px] font-bold uppercase"><button type="button" onClick={() => void refreshData()} className="px-3 py-2 rounded-lg bg-white border border-black">Refresh reports</button><span className="px-3 py-2 rounded-lg bg-[#FAFAFA] border">{studentTicketReports.length} Assigned</span><span className="px-3 py-2 rounded-lg bg-black text-white">{resolvedTicketReports.length} Submitted</span></div>
+            </div>
+            <div className="space-y-3">
+              {studentTicketReports.map(ticket => (
+                <article key={ticket.id} className="bg-white border border-[#E0E0E0] rounded-xl p-5 space-y-3">
+                  <div className="flex flex-wrap items-start justify-between gap-3">
+                    <div><span className="text-[10px] font-mono text-[#707070]">#{ticket.ticketNumber}</span><h4 className="font-bold text-sm">{ticket.issueTitle}</h4><p className="text-xs text-[#707070]">{ticketStudentName(ticket)}</p></div>
+                    <StatusBadge status={ticket.status} />
+                  </div>
+                  {ticket.studentResolutionNotes ? <div className="grid grid-cols-1 lg:grid-cols-2 gap-3 text-xs"><div className="bg-[#FAFAFA] border rounded-lg p-3"><span className="block text-[10px] font-bold uppercase text-[#707070] mb-1">Root cause analysis</span><p className="whitespace-pre-wrap">{ticket.studentRootCause || 'Not supplied'}</p></div><div className="bg-[#FAFAFA] border rounded-lg p-3"><span className="block text-[10px] font-bold uppercase text-[#707070] mb-1">Resolution and verification</span><p className="whitespace-pre-wrap">{ticket.studentResolutionNotes}</p></div></div> : <p className="text-xs text-[#707070]">Awaiting this student's resolution.</p>}
+                  <div className="flex flex-wrap gap-4 text-[10px] font-mono text-[#707070]"><span>Assigned: {formatTicketTimestamp(ticket.assignedAt)}</span>{ticket.submittedAt && <span>Submitted: {formatTicketTimestamp(ticket.submittedAt)}</span>}{ticket.gradeScore !== undefined && <span>Score: {ticket.gradeScore}%</span>}</div>
+                </article>
+              ))}
+              {studentTicketReports.length === 0 && <div className="p-8 text-center border border-dashed rounded-xl text-sm text-[#707070]">Student ticket assignments will appear after students next open their portals.</div>}
+            </div>
+          </section>
         </div>
       )}
 
