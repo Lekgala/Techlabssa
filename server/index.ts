@@ -30,6 +30,17 @@ const allowedAppOrigins = new Set(
     .map(value => value.trim().replace(/\/$/, ''))
     .filter(Boolean),
 );
+const isAllowedAppOrigin = (origin?: string) => {
+  if (!origin) return true;
+  const normalized = origin.replace(/\/$/, '');
+  if (allowedAppOrigins.has(normalized)) return true;
+  try {
+    const url = new URL(normalized);
+    return url.protocol === 'https:' && /^techlabssa-[a-z0-9-]+-ltkgawane1-gmailcoms-projects\.vercel\.app$/i.test(url.hostname);
+  } catch {
+    return false;
+  }
+};
 const isProduction = process.env.NODE_ENV === 'production';
 const sessionCookieName = 'techlabs_session';
 const csrfCookieName = 'techlabs_csrf';
@@ -47,7 +58,7 @@ const trustProxy = process.env.TRUST_PROXY ?? (process.env.RENDER === 'true' ? '
 app.set('trust proxy', /^\d+$/.test(trustProxy) ? Number(trustProxy) : trustProxy.split(',').map(value => value.trim()));
 app.disable('x-powered-by');
 app.use(cors({
-  origin: (origin, callback) => callback(null, !origin || allowedAppOrigins.has(origin.replace(/\/$/, ''))),
+  origin: (origin, callback) => callback(null, isAllowedAppOrigin(origin)),
   credentials: true,
   methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
   allowedHeaders: ['Content-Type', 'Authorization', 'X-CSRF-Token', 'X-File-Name', 'X-EFT-Reference'],
@@ -1019,6 +1030,19 @@ for (const collection of adminCollections) {
     if (index < 0) return res.status(404).json({ error: 'Record not found' });
     const before = { ...list[index] };
     const updates = { ...(req.body || {}) };
+    if (collection === 'tickets') {
+      const allowedFields = new Set(['priority', 'department', 'companyName', 'requestedBy', 'device', 'issueTitle', 'description', 'systemEnvironment', 'stepsToReproduce', 'troubleshootingGuidance', 'expectedFix', 'status', 'assignedStudentId', 'studentResolutionNotes', 'studentRootCause', 'instructorFeedback', 'gradeScore', 'submittedAt']);
+      for (const key of Object.keys(updates)) if (!allowedFields.has(key)) delete updates[key];
+      if (updates.priority !== undefined && !['P1', 'P2', 'P3', 'P4'].includes(String(updates.priority))) return res.status(400).json({ error: 'Ticket priority is invalid' });
+      if (updates.status !== undefined && !['OPEN', 'IN_PROGRESS', 'RESOLVED', 'VERIFIED', 'CLOSED'].includes(String(updates.status))) return res.status(400).json({ error: 'Ticket status is invalid' });
+      for (const field of ['department', 'companyName', 'requestedBy', 'device', 'issueTitle', 'description', 'systemEnvironment', 'expectedFix']) {
+        if (updates[field] !== undefined && (typeof updates[field] !== 'string' || !updates[field].trim())) return res.status(400).json({ error: `Ticket ${field} is required` });
+      }
+      for (const field of ['stepsToReproduce', 'troubleshootingGuidance']) {
+        if (updates[field] !== undefined && (!Array.isArray(updates[field]) || updates[field].some((item: unknown) => typeof item !== 'string'))) return res.status(400).json({ error: `Ticket ${field} must be a list of text items` });
+      }
+      if (updates.gradeScore !== undefined && (!Number.isFinite(Number(updates.gradeScore)) || Number(updates.gradeScore) < 0 || Number(updates.gradeScore) > 100)) return res.status(400).json({ error: 'Ticket grade must be between 0 and 100' });
+    }
     if (collection === 'applications' && ['REJECTED', 'WAITLISTED', 'WITHDRAWN'].includes(String(updates.status || ''))) return res.status(400).json({ error: 'A decision reason is required. Use the application decision workflow.' });
     if (collection === 'applications' && updates.status === 'APPROVED' && !['NEW', 'UNDER_REVIEW', 'WAITLISTED', 'APPROVED'].includes(before.status)) return res.status(409).json({ error: 'Application is not eligible for approval' });
     if (collection === 'applications' && updates.cohortId && updates.cohortId !== before.cohortId) return res.status(400).json({ error: 'Use the cohort transfer workflow to preserve capacity and history.' });

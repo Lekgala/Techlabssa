@@ -1,6 +1,6 @@
 import { calculateTuitionBreakdown } from '../lib/pricing';
 import React, { createContext, useContext, useState, useEffect } from 'react';
-import { ApiError, apiRequest, apiUpload, setApiSession } from '../lib/api';
+import { ApiError, apiRequest, apiUpload, requestTimeoutSignal, setApiSession } from '../lib/api';
 import {
   User,
   Lead,
@@ -191,9 +191,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         attendance?: AttendanceRecord[];
         courseModules?: CourseModule[];
         settings?: Partial<AcademySettings>;
-      }>('/data', { signal: AbortSignal.timeout(8000) });
+      }>('/data', { signal: requestTimeoutSignal(8000) });
 
-      const sessionPromise = apiRequest<{ user: User }>('/session', { signal: AbortSignal.timeout(8000) });
+      const sessionPromise = apiRequest<{ user: User }>('/session', { signal: requestTimeoutSignal(8000) });
 
       const [dataResult, sessionResult] = await Promise.allSettled([dataPromise, sessionPromise]);
 
@@ -232,7 +232,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         setCurrentRole(restored.user.role);
         try {
           if (restored.user.role === 'ADMIN' || restored.user.role === 'INSTRUCTOR') {
-            const adminData = await apiRequest<any>('/admin/data', { signal: AbortSignal.timeout(10000) });
+            const adminData = await apiRequest<any>('/admin/data', { signal: requestTimeoutSignal(10000) });
             setLeads(adminData.leads || []); setApplications(adminData.applications || []); setCohorts(adminData.cohorts || []);
             setTickets(adminData.tickets || []); setLabs(adminData.labs || []); setInvoices(adminData.invoices || []);
             setAssessments(adminData.assessments || []); setCertificates(adminData.certificates || []);
@@ -248,7 +248,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
               });
             }
           } else if (restored.user.role === 'STUDENT') {
-            const studentData = await apiRequest<any>('/student/data', { signal: AbortSignal.timeout(10000) });
+            const studentData = await apiRequest<any>('/student/data', { signal: requestTimeoutSignal(10000) });
             setApplications(studentData.application ? [studentData.application] : []); setInvoices(studentData.invoices || []);
             setTickets(studentData.tickets || []); setAttendance(studentData.attendance || []);
             setAssessments(studentData.assessments || []); setCertificates(studentData.certificates || []);
@@ -361,9 +361,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   const adminLogin = async (email: string, password: string): Promise<boolean> => {
     try {
-      const response = await apiRequest<{ token: string; user: User }>('/auth/admin', { method: 'POST', body: JSON.stringify({ email, password }), signal: AbortSignal.timeout(15000) });
+      const response = await apiRequest<{ token: string; user: User }>('/auth/admin', { method: 'POST', body: JSON.stringify({ email, password }), signal: requestTimeoutSignal(15000) });
       setApiSession(response.token); setCurrentRole(response.user.role); setCurrentUser(response.user);
-      const data = await apiRequest<any>('/admin/data', { signal: AbortSignal.timeout(15000) });
+      const data = await apiRequest<any>('/admin/data', { signal: requestTimeoutSignal(15000) });
       setLeads(data.leads || []); setApplications(data.applications || []); setCohorts(data.cohorts || []); setTickets(data.tickets || []); setLabs(data.labs || []); setInvoices(data.invoices || []); setAssessments(data.assessments || []); setCertificates(data.certificates || []); setAttendance(data.attendance || []); setCourseModules(data.courseModules || []);
       setPayments(data.payments || []);
       if (data.academySettings) {
@@ -379,7 +379,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     } catch (error) {
       const message = error instanceof Error && error.name === 'TimeoutError'
         ? 'The server took too long to respond. Check that the Academy API is running and can reach the database.'
-        : error instanceof TypeError ? 'Could not reach the Academy API. Check the local server connection.'
+        : error instanceof TypeError ? 'Could not reach the Academy API. Check your internet connection and try again.'
         : error instanceof Error ? error.message : 'Sign-in could not be completed. Please try again.';
       showToast('error', 'Sign-in could not be completed', message); return false;
     }

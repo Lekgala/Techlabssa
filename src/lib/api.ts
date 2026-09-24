@@ -1,5 +1,11 @@
 const apiBaseUrl = (import.meta.env.VITE_API_URL || '').replace(/\/$/, '');
 const apiUrl = (path: string) => `${apiBaseUrl}/api${path}`;
+export const requestTimeoutSignal = (milliseconds: number): AbortSignal => {
+  if (typeof AbortSignal.timeout === 'function') return AbortSignal.timeout(milliseconds);
+  const controller = new AbortController();
+  window.setTimeout(() => controller.abort(new DOMException('The request timed out.', 'TimeoutError')), milliseconds);
+  return controller.signal;
+};
 let cachedCsrfToken = '';
 const readableCsrfToken = () => document.cookie.split('; ').find(value => value.startsWith('techlabs_csrf='))?.split('=').slice(1).join('=') || '';
 const csrfToken = async () => {
