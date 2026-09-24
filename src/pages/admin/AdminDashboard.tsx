@@ -301,13 +301,16 @@ export const AdminDashboard: React.FC = () => {
   const [newTicketData, setNewTicketData] = useState({
     title: '',
     category: 'ACTIVE_DIRECTORY',
-    severity: 'MEDIUM' as 'P1_CRITICAL' | 'P2_HIGH' | 'P3_MEDIUM' | 'P4_LOW',
+    severity: 'P3_MEDIUM' as 'P1_CRITICAL' | 'P2_HIGH' | 'P3_MEDIUM' | 'P4_LOW',
     userImpact: '',
     symptoms: '',
     vmEnvironment: 'DC01 (corp.ubuntumanufacturing.local) & CLIENT01',
     brokenStateDetails: '',
     resolutionVerification: ''
   });
+  const [editingTicketId, setEditingTicketId] = useState<string | null>(null);
+  const [ticketSaving, setTicketSaving] = useState(false);
+  const [ticketEditForm, setTicketEditForm] = useState({ priority: 'P3' as SupportTicket['priority'], department: '', companyName: '', requestedBy: '', device: '', issueTitle: '', description: '', systemEnvironment: '', stepsToReproduce: '', troubleshootingGuidance: '', expectedFix: '', status: 'OPEN' as SupportTicket['status'] });
 
   // Certificate Generator State
   const [certificatePreview, setCertificatePreview] = useState<Certificate | null>(null);
@@ -730,29 +733,61 @@ export const AdminDashboard: React.FC = () => {
   const handleCreateTicket = (e: React.FormEvent) => {
     e.preventDefault();
     createTicket({
-      ticketNumber: `INT-${Math.floor(1000 + Math.random() * 9000)}`,
-      moduleNumber: 4,
-      title: newTicketData.title,
-      category: newTicketData.category,
-      severity: newTicketData.severity,
-      userImpact: newTicketData.userImpact,
-      symptoms: newTicketData.symptoms,
-      vmEnvironment: newTicketData.vmEnvironment,
-      brokenStateDetails: newTicketData.brokenStateDetails,
-      resolutionVerification: newTicketData.resolutionVerification,
-      status: 'OPEN'
+      priority: ({ P1_CRITICAL: 'P1', P2_HIGH: 'P2', P3_MEDIUM: 'P3', P4_LOW: 'P4' } as const)[newTicketData.severity],
+      department: newTicketData.category.replaceAll('_', ' '),
+      companyName: 'Ubuntu Manufacturing (Pty) Ltd',
+      requestedBy: newTicketData.userImpact || 'Training scenario user',
+      device: newTicketData.vmEnvironment,
+      issueTitle: newTicketData.title,
+      description: newTicketData.symptoms,
+      systemEnvironment: newTicketData.vmEnvironment,
+      stepsToReproduce: [newTicketData.symptoms],
+      troubleshootingGuidance: newTicketData.brokenStateDetails ? [newTicketData.brokenStateDetails] : [],
+      expectedFix: newTicketData.resolutionVerification || newTicketData.brokenStateDetails,
     });
     setNewTicketModal(false);
     setNewTicketData({
       title: '',
       category: 'ACTIVE_DIRECTORY',
-      severity: 'MEDIUM' as any,
+      severity: 'P3_MEDIUM',
       userImpact: '',
       symptoms: '',
       vmEnvironment: 'DC01 & CLIENT01',
       brokenStateDetails: '',
       resolutionVerification: ''
     });
+  };
+
+  const startTicketEdit = (ticket: SupportTicket) => {
+    const legacy = ticket as SupportTicket & Record<string, any>;
+    setEditingTicketId(ticket.id);
+    setTicketEditForm({
+      priority: ticket.priority || ({ P1_CRITICAL: 'P1', P2_HIGH: 'P2', P3_MEDIUM: 'P3', P4_LOW: 'P4' } as Record<string, SupportTicket['priority']>)[legacy.severity] || 'P3',
+      department: ticket.department || String(legacy.category || '').replaceAll('_', ' '),
+      companyName: ticket.companyName || 'Ubuntu Manufacturing (Pty) Ltd',
+      requestedBy: ticket.requestedBy || legacy.userImpact || 'Training scenario user',
+      device: ticket.device || legacy.vmEnvironment || '',
+      issueTitle: ticket.issueTitle || legacy.title || '',
+      description: ticket.description || legacy.symptoms || '',
+      systemEnvironment: ticket.systemEnvironment || legacy.vmEnvironment || '',
+      stepsToReproduce: ticket.stepsToReproduce?.join('\n') || legacy.symptoms || '',
+      troubleshootingGuidance: ticket.troubleshootingGuidance?.join('\n') || legacy.brokenStateDetails || '',
+      expectedFix: ticket.expectedFix || legacy.resolutionVerification || '',
+      status: ticket.status,
+    });
+  };
+
+  const saveTicketEdit = async (event: React.FormEvent) => {
+    event.preventDefault();
+    if (!editingTicketId) return;
+    setTicketSaving(true);
+    try {
+      await apiRequest(`/tickets/${encodeURIComponent(editingTicketId)}`, { method: 'PUT', body: JSON.stringify({ ...ticketEditForm, stepsToReproduce: ticketEditForm.stepsToReproduce.split('\n').map(item => item.trim()).filter(Boolean), troubleshootingGuidance: ticketEditForm.troubleshootingGuidance.split('\n').map(item => item.trim()).filter(Boolean) }) });
+      await refreshData();
+      setEditingTicketId(null);
+      showToast('success', 'Ticket Updated', 'The scenario changes are now visible in student portals.');
+    } catch (error) { showToast('error', 'Ticket Update Failed', error instanceof Error ? error.message : 'The ticket could not be updated.'); }
+    finally { setTicketSaving(false); }
   };
 
   const handleIssueCert = (e: React.FormEvent) => {
@@ -1524,21 +1559,48 @@ export const AdminDashboard: React.FC = () => {
             </div>
           )}
 
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-            {tickets.map(ticket => (
-              <div key={ticket.id} className="bg-[#FFFFFF] p-6 rounded-xl border border-[#E0E0E0] shadow-sm space-y-3">
-                <div className="flex items-center justify-between border-b border-[#E0E0E0] pb-2">
-                  <span className="text-[10px] font-mono font-bold text-[#707070]">#{ticket.ticketNumber} • Module {ticket.moduleNumber}</span>
-                  <span className="text-[10px] font-mono font-bold bg-[#000000] text-white px-2 py-0.5 rounded uppercase">{ticket.severity}</span>
-                </div>
-                <h4 className="font-bold text-sm text-[#000000]">{ticket.title}</h4>
-                <p className="text-xs text-[#707070] line-clamp-2 leading-relaxed">{ticket.symptoms}</p>
-                <div className="pt-2 border-t border-[#E0E0E0] flex items-center justify-between text-xs font-mono">
-                  <span className="text-[#707070] text-[11px]">Target: {ticket.vmEnvironment}</span>
-                  <StatusBadge status={ticket.status} />
-                </div>
+          {editingTicketId && (
+            <form onSubmit={saveTicketEdit} className="bg-[#FAFAFA] p-6 sm:p-8 rounded-2xl border-2 border-[#000000] shadow-xl space-y-5">
+              <div className="flex items-start justify-between gap-4 border-b border-[#E0E0E0] pb-3">
+                <div><h4 className="font-bold text-base">Edit Ticket Scenario</h4><p className="text-xs text-[#707070]">Saved changes appear in the student portal.</p></div>
+                <button type="button" onClick={() => setEditingTicketId(null)} className="text-xs font-mono uppercase text-[#707070]">Cancel</button>
               </div>
-            ))}
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 text-xs">
+                <label className="space-y-1"><span className="block font-bold uppercase text-[10px]">Priority</span><select required value={ticketEditForm.priority} onChange={event => setTicketEditForm({ ...ticketEditForm, priority: event.target.value as SupportTicket['priority'] })} className="w-full p-3 bg-white border rounded-xl"><option value="P1">P1 - Critical</option><option value="P2">P2 - High</option><option value="P3">P3 - Medium</option><option value="P4">P4 - Low</option></select></label>
+                <label className="space-y-1"><span className="block font-bold uppercase text-[10px]">Department</span><input required maxLength={100} value={ticketEditForm.department} onChange={event => setTicketEditForm({ ...ticketEditForm, department: event.target.value })} className="w-full p-3 bg-white border rounded-xl" /></label>
+                <label className="space-y-1"><span className="block font-bold uppercase text-[10px]">Status</span><select required value={ticketEditForm.status} onChange={event => setTicketEditForm({ ...ticketEditForm, status: event.target.value as SupportTicket['status'] })} className="w-full p-3 bg-white border rounded-xl"><option value="OPEN">Open</option><option value="IN_PROGRESS">In progress</option><option value="RESOLVED">Resolved</option><option value="VERIFIED">Verified</option><option value="CLOSED">Closed</option></select></label>
+              </div>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 text-xs">
+                <label className="space-y-1"><span className="block font-bold uppercase text-[10px]">Issue title</span><input required maxLength={180} value={ticketEditForm.issueTitle} onChange={event => setTicketEditForm({ ...ticketEditForm, issueTitle: event.target.value })} className="w-full p-3 bg-white border rounded-xl" /></label>
+                <label className="space-y-1"><span className="block font-bold uppercase text-[10px]">System environment</span><input required maxLength={200} value={ticketEditForm.systemEnvironment} onChange={event => setTicketEditForm({ ...ticketEditForm, systemEnvironment: event.target.value })} className="w-full p-3 bg-white border rounded-xl" /></label>
+                <label className="space-y-1"><span className="block font-bold uppercase text-[10px]">Company</span><input required maxLength={120} value={ticketEditForm.companyName} onChange={event => setTicketEditForm({ ...ticketEditForm, companyName: event.target.value })} className="w-full p-3 bg-white border rounded-xl" /></label>
+                <label className="space-y-1"><span className="block font-bold uppercase text-[10px]">Requested by</span><input required maxLength={120} value={ticketEditForm.requestedBy} onChange={event => setTicketEditForm({ ...ticketEditForm, requestedBy: event.target.value })} className="w-full p-3 bg-white border rounded-xl" /></label>
+                <label className="space-y-1 sm:col-span-2"><span className="block font-bold uppercase text-[10px]">Device</span><input required maxLength={160} value={ticketEditForm.device} onChange={event => setTicketEditForm({ ...ticketEditForm, device: event.target.value })} className="w-full p-3 bg-white border rounded-xl" /></label>
+                <label className="space-y-1 sm:col-span-2"><span className="block font-bold uppercase text-[10px]">Description</span><textarea required rows={3} maxLength={3000} value={ticketEditForm.description} onChange={event => setTicketEditForm({ ...ticketEditForm, description: event.target.value })} className="w-full p-3 bg-white border rounded-xl" /></label>
+                <label className="space-y-1"><span className="block font-bold uppercase text-[10px]">Steps to reproduce</span><textarea required rows={5} value={ticketEditForm.stepsToReproduce} onChange={event => setTicketEditForm({ ...ticketEditForm, stepsToReproduce: event.target.value })} className="w-full p-3 bg-white border rounded-xl" /><span className="text-[10px] text-[#707070]">One step per line.</span></label>
+                <label className="space-y-1"><span className="block font-bold uppercase text-[10px]">Troubleshooting guidance</span><textarea rows={5} value={ticketEditForm.troubleshootingGuidance} onChange={event => setTicketEditForm({ ...ticketEditForm, troubleshootingGuidance: event.target.value })} className="w-full p-3 bg-white border rounded-xl" /><span className="text-[10px] text-[#707070]">One item per line.</span></label>
+                <label className="space-y-1 sm:col-span-2"><span className="block font-bold uppercase text-[10px]">Expected fix</span><textarea required rows={3} maxLength={3000} value={ticketEditForm.expectedFix} onChange={event => setTicketEditForm({ ...ticketEditForm, expectedFix: event.target.value })} className="w-full p-3 bg-white border rounded-xl" /></label>
+              </div>
+              <div className="flex justify-end gap-3"><button type="button" onClick={() => setEditingTicketId(null)} className="px-5 py-2.5 border bg-white rounded-xl text-xs font-bold uppercase">Cancel</button><button type="submit" disabled={ticketSaving} className="px-5 py-2.5 bg-black disabled:bg-[#A0A0A0] text-white rounded-xl text-xs font-bold uppercase">{ticketSaving ? 'Saving...' : 'Save Ticket Changes'}</button></div>
+            </form>
+          )}
+
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+            {tickets.map(ticket => {
+              const legacy = ticket as SupportTicket & Record<string, any>;
+              return <div key={ticket.id} className="bg-[#FFFFFF] p-6 rounded-xl border border-[#E0E0E0] shadow-sm space-y-3">
+                <div className="flex items-center justify-between border-b border-[#E0E0E0] pb-2">
+                  <span className="text-[10px] font-mono font-bold text-[#707070]">#{ticket.ticketNumber || ticket.id} &bull; {ticket.department || legacy.category || 'General IT'}</span>
+                  <span className="text-[10px] font-mono font-bold bg-[#000000] text-white px-2 py-0.5 rounded uppercase">{ticket.priority || legacy.severity || 'P3'}</span>
+                </div>
+                <h4 className="font-bold text-sm text-[#000000]">{ticket.issueTitle || legacy.title || 'Untitled ticket'}</h4>
+                <p className="text-xs text-[#707070] line-clamp-2 leading-relaxed">{ticket.description || legacy.symptoms || 'No description provided.'}</p>
+                <div className="pt-2 border-t border-[#E0E0E0] flex items-center justify-between gap-3 text-xs font-mono">
+                  <span className="text-[#707070] text-[11px] truncate">Target: {ticket.systemEnvironment || ticket.device || legacy.vmEnvironment || 'Not specified'}</span>
+                  <div className="flex items-center gap-2 shrink-0"><StatusBadge status={ticket.status} /><button type="button" onClick={() => startTicketEdit(ticket)} className="px-3 py-1.5 border border-black rounded-lg text-[10px] font-bold uppercase hover:bg-black hover:text-white transition">Edit</button></div>
+                </div>
+              </div>;
+            })}
           </div>
         </div>
       )}
