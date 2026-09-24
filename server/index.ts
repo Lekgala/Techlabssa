@@ -943,6 +943,25 @@ app.get('/api/admin/cohorts/:id/completion-preview', authenticate, requireAnyRol
   res.json(preview);
 });
 
+app.put('/api/admin/applications/:id/completion-skills', authenticate, requireRole('ADMIN'), async (req: AuthedRequest, res) => {
+  const db = await getDatabase();
+  const application = db.applications.find(item => item.id === req.params.id);
+  if (!application) return res.status(404).json({ error: 'Application not found' });
+  if (!['ENROLLED', 'COMPLETED'].includes(application.status)) return res.status(409).json({ error: 'Only enrolled students can have completion skills verified' });
+  const verified = req.body?.verified === true;
+  const before = application.completionSkillsVerifiedAt;
+  if (verified) {
+    application.completionSkillsVerifiedAt = new Date().toISOString();
+    application.completionSkillsVerifiedBy = req.session!.email;
+  } else {
+    delete application.completionSkillsVerifiedAt;
+    delete application.completionSkillsVerifiedBy;
+  }
+  addAudit(db, req, verified ? 'COMPLETION_SKILLS_VERIFIED' : 'COMPLETION_SKILLS_REOPENED', 'application', application.id, `${verified ? 'Verified' : 'Reopened'} practical completion skills for ${application.referenceNumber}`, { completionSkillsVerifiedAt: { before, after: application.completionSkillsVerifiedAt } });
+  await saveDatabase(db);
+  res.json(application);
+});
+
 app.post('/api/admin/cohorts/:id/complete', authenticate, requireRole('ADMIN'), serializeEnrollment, async (req: AuthedRequest, res) => {
   const db = await getDatabase();
   const preview = buildCohortCompletionPreview(db, req.params.id);
@@ -964,9 +983,8 @@ app.post('/api/admin/cohorts/:id/complete', authenticate, requireRole('ADMIN'), 
     if (!certificate) {
       let certificateNumber = '';
       do { certificateNumber = `TLS-${completionDate.slice(0, 4)}-${String(certificateSequence++).padStart(5, '0')}`; } while (db.certificates.some(item => item.certificateNumber === certificateNumber));
-      const finalAssessment = db.assessments.find(item => item.studentId === application.id && item.moduleNumber === 15)!;
       const verificationUrl = new URL(`/verify/${encodeURIComponent(certificateNumber)}`, process.env.APP_ORIGIN || 'http://localhost:3000').href;
-      certificate = { id: makeId('cert'), studentId: application.id, certificateNumber, studentName: `${application.firstName} ${application.lastName}`, courseName: 'IT Support & Enterprise Administration Bootcamp', completionDate, instructorName: db.academySettings.leadInstructorName || 'TechLabs Instructor', verificationUrl, qrCodeData: verificationUrl, gradeDistinction: (finalAssessment.studentScore ?? 0) >= 90 ? 'Distinction' : 'Pass with Merit', skillsAcquired: skills };
+      certificate = { id: makeId('cert'), studentId: application.id, certificateNumber, studentName: `${application.firstName} ${application.lastName}`, courseName: 'IT Support & Enterprise Administration Bootcamp', completionDate, instructorName: db.academySettings.leadInstructorName || 'TechLabs Instructor', verificationUrl, qrCodeData: verificationUrl, gradeDistinction: 'Practical Skills Verified', skillsAcquired: skills };
       db.certificates.unshift(certificate);
     }
     addAudit(db, req, 'STUDENT_COMPLETED', 'application', application.id, `${application.referenceNumber} completed ${cohort.name}; certificate ${certificate.certificateNumber}`, previousStatus === application.status ? undefined : { status: { before: previousStatus, after: application.status } });
@@ -1046,9 +1064,8 @@ for (const collection of ['cohorts','tickets','labs','invoices','assessments','c
     const record = { ...req.body, id: req.body?.id || makeId(collection.slice(0, 3)) };
     if (collection === 'certificates') {
       const application = db.applications.find(item => item.id === record.studentId);
-      const finalAssessment = db.assessments.find(item => item.studentId === record.studentId && item.moduleNumber === 15);
       if (!application || application.status !== 'COMPLETED') return res.status(409).json({ error: 'Student must be marked COMPLETED before a certificate can be issued' });
-      if (!finalAssessment || finalAssessment.status !== 'Graded' || (finalAssessment.studentScore ?? 0) < 80) return res.status(409).json({ error: 'Final assessment must be graded at 80% or higher before a certificate can be issued' });
+      if (!application.completionSkillsVerifiedAt) return res.status(409).json({ error: 'Practical completion skills must be verified before a certificate can be issued' });
     }
     (db[collection] as any[]) = [record, ...(db[collection] as any[])];
     await saveDatabase(db);

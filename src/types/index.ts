@@ -221,6 +221,8 @@ export interface Application {
   assignedStaffId?: string;
   assignedStaffName?: string;
   assignedStaffEmail?: string;
+  completionSkillsVerifiedAt?: string;
+  completionSkillsVerifiedBy?: string;
 }
 
 export interface AdmissionNote {

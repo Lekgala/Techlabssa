@@ -5,15 +5,22 @@ import { buildCohortCompletionPreview } from './cohort-completion.ts';
 const cohort = { id: 'cohort-1', name: 'Test Cohort', courseId: 'course', startDate: '2026-01-01', endDate: '2026-03-01', scheduleFormat: 'Weekends', deliveryMode: '100% Virtual Learning' as const, location: 'Online', capacity: 10, enrolledCount: 2, status: 'In Progress' as const };
 const application = (id: string, email: string) => ({ id, referenceNumber: id, firstName: 'Test', lastName: id, email, whatsapp: '1', city: 'Cape Town', province: 'Western Cape', highestQualification: 'Matric', itExperienceYears: '0', currentEmploymentStatus: 'Student', currentRole: 'Student', technologiesKnown: [], laptopBrand: 'Test', cpu: 'Test', ramGB: 16, storageType: 'SSD', freeStorageGB: 100, os: 'Windows', hasVirtualizationEnabled: true, isLaptopCompliant: true, selectedTier: 'PROFESSIONAL' as const, cohortId: cohort.id, acceptedTerms: true, acceptedPrivacy: true, marketingConsent: false, status: 'ENROLLED' as const, submissionDate: '2026-01-01' });
 
-test('cohort completion preview blocks unpaid and ungraded students', () => {
-  const applications = [application('student-1', 'one@example.test'), application('student-2', 'two@example.test')];
+test('cohort completion preview blocks unpaid and skills-unverified students without using scores as a gate', () => {
+  const applications = [{ ...application('student-1', 'one@example.test'), completionSkillsVerifiedAt: '2026-03-01', completionSkillsVerifiedBy: 'admin@example.test' }, application('student-2', 'two@example.test')];
   const preview = buildCohortCompletionPreview({ cohorts: [cohort], applications, certificates: [], invoices: [
     { id: 'inv-1', invoiceNumber: '1', studentName: 'One', studentEmail: 'one@example.test', courseTier: 'PROFESSIONAL', amountZAR: 1000, depositZAR: 1000, balanceZAR: 0, paymentOption: 'FULL', status: 'VERIFIED', dueDate: '2026-01-01' },
     { id: 'inv-2', invoiceNumber: '2', studentName: 'Two', studentEmail: 'two@example.test', courseTier: 'PROFESSIONAL', amountZAR: 1000, depositZAR: 1000, balanceZAR: 500, paymentOption: 'FULL', status: 'PENDING', dueDate: '2026-01-01' },
   ], assessments: [{ id: 'assess-1', studentId: 'student-1', title: 'Final', moduleNumber: 15, type: 'Scenario Simulation', totalMarks: 100, dueDate: '2026-03-01', status: 'Graded', studentScore: 85, instructions: '' }] }, cohort.id);
   assert.equal(preview?.canComplete, false);
   assert.equal(preview?.eligibleCount, 1);
-  assert.deepEqual(preview?.students[1].blockers, ['Outstanding balance: R500', 'Final assessment is missing']);
+  assert.deepEqual(preview?.students[1].blockers, ['Outstanding balance: R500', 'Practical skills have not been verified by an administrator']);
+});
+
+test('a low assessment score remains informational after practical skills are verified', () => {
+  const student = { ...application('student-1', 'one@example.test'), completionSkillsVerifiedAt: '2026-03-01', completionSkillsVerifiedBy: 'admin@example.test' };
+  const preview = buildCohortCompletionPreview({ cohorts: [cohort], applications: [student], certificates: [], invoices: [{ id: 'inv-1', invoiceNumber: '1', studentName: 'One', studentEmail: student.email, courseTier: 'PROFESSIONAL', amountZAR: 1000, depositZAR: 1000, balanceZAR: 0, paymentOption: 'FULL', status: 'VERIFIED', dueDate: '2026-01-01' }], assessments: [{ id: 'assess-1', studentId: student.id, title: 'Practical evidence', moduleNumber: 15, type: 'Scenario Simulation', totalMarks: 100, dueDate: '2026-03-01', status: 'Graded', studentScore: 55, instructions: '' }] }, cohort.id);
+  assert.equal(preview?.canComplete, true);
+  assert.equal(preview?.students[0].finalAssessmentScore, 55);
 });
 
 test('an existing certificate keeps a graduate eligible and completion is idempotent', () => {

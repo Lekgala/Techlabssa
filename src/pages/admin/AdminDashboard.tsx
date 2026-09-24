@@ -49,7 +49,7 @@ const PIPELINE_STAGES: Array<{ id: Exclude<PipelineStage, 'OTHER'>; label: strin
 ];
 type ActionCentreGroup = { count: number; items: Array<{ id: string; label: string; detail: string }> };
 type ActionCentreData = { generatedAt: string; hardware: ActionCentreGroup; pops: ActionCentreGroup; overdue: ActionCentreGroup; cohorts: ActionCentreGroup; emails: ActionCentreGroup; followUps: ActionCentreGroup };
-type CohortCompletionPreview = { cohortId: string; cohortName: string; cohortStatus: string; endDate: string; canComplete: boolean; eligibleCount: number; blockedCount: number; students: Array<{ applicationId: string; name: string; email: string; status: string; eligible: boolean; blockers: string[]; invoiceBalanceZAR?: number; finalAssessmentScore?: number; certificateNumber?: string }> };
+type CohortCompletionPreview = { cohortId: string; cohortName: string; cohortStatus: string; endDate: string; canComplete: boolean; eligibleCount: number; blockedCount: number; students: Array<{ applicationId: string; name: string; email: string; status: string; eligible: boolean; blockers: string[]; invoiceBalanceZAR?: number; finalAssessmentScore?: number; certificateNumber?: string; skillsVerified: boolean; skillsVerifiedBy?: string }> };
 const friendlyStatus = (status: string) => status.replaceAll('_', ' ').toLowerCase().replace(/\b\w/g, letter => letter.toUpperCase());
 const statusTone = (status: string) => {
   if (/ENROLLED|PAID|VERIFIED|COMPLETED|RESOLVED|OPEN/i.test(status)) return 'border-emerald-200 bg-emerald-50 text-emerald-800';
@@ -703,6 +703,15 @@ export const AdminDashboard: React.FC = () => {
       showToast(result.emailsFailed ? 'info' : 'success', 'Cohort Completed', `${result.completedCount} students completed, ${result.certificatesIssued} certificates issued and ${result.emailsSent} graduation emails sent${result.emailsFailed ? `; ${result.emailsFailed} email${result.emailsFailed === 1 ? '' : 's'} require follow-up` : ''}.`);
     } catch (error) { showToast('error', 'Cohort Not Completed', error instanceof Error ? error.message : 'The completion workflow failed.'); }
     finally { setCompletingCohort(false); }
+  };
+
+  const setCompletionSkillsVerified = async (applicationId: string, verified: boolean) => {
+    if (!completionPreview) return;
+    try {
+      await apiRequest(`/admin/applications/${encodeURIComponent(applicationId)}/completion-skills`, { method: 'PUT', body: JSON.stringify({ verified }) });
+      setCompletionPreview(await apiRequest<CohortCompletionPreview>(`/admin/cohorts/${encodeURIComponent(completionPreview.cohortId)}/completion-preview`));
+      showToast('success', verified ? 'Practical Skills Verified' : 'Skills Verification Reopened', verified ? 'The student is now eligible once all other blockers are cleared.' : 'The student must be reviewed again before cohort completion.');
+    } catch (error) { showToast('error', 'Skills Verification Failed', error instanceof Error ? error.message : 'The verification could not be saved.'); }
   };
 
   const handleSaveCohort = (e: React.FormEvent) => {
@@ -1647,7 +1656,7 @@ export const AdminDashboard: React.FC = () => {
           <div className="flex items-center justify-between">
             <div>
               <h3 className="text-2xl font-light text-[#000000] tracking-tight">Certificate Generation & Verification Registry</h3>
-              <p className="text-xs text-[#707070]">Issue verifiable Certificates of Completion with audit score benchmarks.</p>
+              <p className="text-xs text-[#707070]">Issue verifiable Certificates of Completion after practical skills have been confirmed.</p>
             </div>
           </div>
 
@@ -1662,7 +1671,7 @@ export const AdminDashboard: React.FC = () => {
                   onChange={(e) => setCertStudentId(e.target.value)}
                   className="w-full p-3 bg-[#FFFFFF] border border-[#E0E0E0] rounded-xl text-[#000000] font-bold focus:border-[#000000] focus:outline-none"
                 >
-                  {students.filter(st => applications.some(application => application.id === st.id && application.status === 'COMPLETED' && assessments.some(assessment => assessment.studentId === st.id && assessment.moduleNumber === 15 && assessment.status === 'Graded' && (assessment.studentScore ?? 0) >= 80))).map((st) => (
+                  {students.filter(st => applications.some(application => application.id === st.id && application.status === 'COMPLETED' && application.completionSkillsVerifiedAt)).map((st) => (
                     <option key={st.id} value={st.id}>
                       {st.firstName} {st.lastName} ({st.email})
                     </option>
@@ -2326,10 +2335,10 @@ export const AdminDashboard: React.FC = () => {
             <div className="space-y-5 p-5 sm:p-6">
               {completionPreview.cohortStatus === 'Completed' ? <div className="rounded-xl border border-emerald-200 bg-emerald-50 p-4 text-sm text-emerald-900"><strong>This cohort is completed.</strong> Certificates and student records remain available.</div> : completionPreview.canComplete ? <div className="rounded-xl border border-emerald-200 bg-emerald-50 p-4 text-sm text-emerald-900"><strong>Ready to complete.</strong> Every enrolled student is fully paid and passed the final assessment.</div> : <div className="rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900"><strong>Action required.</strong> Resolve every blocker below before closing the cohort.</div>}
               <div className="overflow-x-auto rounded-xl border border-[#E0E0E0]">
-                <table className="w-full min-w-[720px] text-left text-xs"><thead className="bg-[#FAFAFA] text-[10px] uppercase tracking-wider text-[#707070]"><tr><th className="p-3">Student</th><th className="p-3">Payment</th><th className="p-3">Final assessment</th><th className="p-3">Readiness</th></tr></thead><tbody className="divide-y divide-[#E0E0E0]">{completionPreview.students.map(student => <tr key={student.applicationId}><td className="p-3"><strong className="block">{student.name}</strong><span className="text-[10px] text-[#707070]">{student.email}</span>{student.certificateNumber && <span className="mt-1 block font-mono text-[9px]">{student.certificateNumber}</span>}</td><td className="p-3">{student.invoiceBalanceZAR === undefined ? 'Missing invoice' : student.invoiceBalanceZAR === 0 ? 'Paid in full' : `R${student.invoiceBalanceZAR.toLocaleString('en-ZA')} due`}</td><td className="p-3">{student.finalAssessmentScore === undefined ? 'Not graded' : `${student.finalAssessmentScore}%`}</td><td className="p-3">{student.eligible ? <span className="inline-flex items-center gap-1 font-bold text-emerald-700"><CheckCircle className="h-4 w-4" /> Ready</span> : <ul className="space-y-1 text-red-700">{student.blockers.map(blocker => <li key={blocker} className="flex items-start gap-1"><XCircle className="mt-0.5 h-3.5 w-3.5 shrink-0" />{blocker}</li>)}</ul>}</td></tr>)}</tbody></table>
+                <table className="w-full min-w-[900px] text-left text-xs"><thead className="bg-[#FAFAFA] text-[10px] uppercase tracking-wider text-[#707070]"><tr><th className="p-3">Student</th><th className="p-3">Payment</th><th className="p-3">Assessment evidence</th><th className="p-3">Practical skills</th><th className="p-3">Readiness</th></tr></thead><tbody className="divide-y divide-[#E0E0E0]">{completionPreview.students.map(student => <tr key={student.applicationId}><td className="p-3"><strong className="block">{student.name}</strong><span className="text-[10px] text-[#707070]">{student.email}</span>{student.certificateNumber && <span className="mt-1 block font-mono text-[9px]">{student.certificateNumber}</span>}</td><td className="p-3">{student.invoiceBalanceZAR === undefined ? 'Missing invoice' : student.invoiceBalanceZAR === 0 ? 'Paid in full' : `R${student.invoiceBalanceZAR.toLocaleString('en-ZA')} due`}</td><td className="p-3">{student.finalAssessmentScore === undefined ? 'No score recorded' : `${student.finalAssessmentScore}% (informational)`}</td><td className="p-3"><span className={`mb-2 block font-bold ${student.skillsVerified ? 'text-emerald-700' : 'text-amber-700'}`}>{student.skillsVerified ? `Verified${student.skillsVerifiedBy ? ` by ${student.skillsVerifiedBy}` : ''}` : 'Review required'}</span>{!student.certificateNumber && <button type="button" onClick={() => void setCompletionSkillsVerified(student.applicationId, !student.skillsVerified)} className="rounded-lg border border-black px-2.5 py-1.5 text-[9px] font-bold uppercase">{student.skillsVerified ? 'Reopen review' : 'Confirm skills'}</button>}</td><td className="p-3">{student.eligible ? <span className="inline-flex items-center gap-1 font-bold text-emerald-700"><CheckCircle className="h-4 w-4" /> Ready</span> : <ul className="space-y-1 text-red-700">{student.blockers.map(blocker => <li key={blocker} className="flex items-start gap-1"><XCircle className="mt-0.5 h-3.5 w-3.5 shrink-0" />{blocker}</li>)}</ul>}</td></tr>)}</tbody></table>
               </div>
               {!completionPreview.students.length && <p className="rounded-xl border border-[#E0E0E0] p-5 text-center text-sm text-[#707070]">No enrolled students are assigned to this cohort.</p>}
-              <div className="rounded-xl bg-[#FAFAFA] p-4 text-xs text-[#505050]"><strong className="text-black">When confirmed:</strong> eligible students are marked completed, missing certificates are issued, graduation emails are sent, and the cohort status changes to Completed. Student portal access remains active.</div>
+              <div className="rounded-xl bg-[#FAFAFA] p-4 text-xs text-[#505050]"><strong className="text-black">Completion standard:</strong> an administrator confirms that each student demonstrated the practical workplace skills covered by the programme. Assessment scores remain supporting evidence and do not determine completion. Payment must also be settled.<br /><br /><strong className="text-black">When confirmed:</strong> students are marked completed, missing certificates are issued, graduation emails are sent, and the cohort status changes to Completed. Student portal access remains active.</div>
               {completionPreview.cohortStatus !== 'Completed' && <div className="flex justify-end"><button type="button" disabled={!completionPreview.canComplete || completingCohort} onClick={() => void completeCohort()} className="rounded-xl bg-black px-5 py-3 text-xs font-bold uppercase tracking-wider text-white disabled:bg-[#D0D0D0] disabled:text-[#707070]">{completingCohort ? 'Completing cohort…' : 'Complete cohort & notify graduates'}</button></div>}
             </div>
           </div>

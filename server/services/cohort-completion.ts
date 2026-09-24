@@ -18,6 +18,8 @@ export type CohortCompletionStudent = {
   invoiceBalanceZAR?: number;
   finalAssessmentScore?: number;
   certificateNumber?: string;
+  skillsVerified: boolean;
+  skillsVerifiedBy?: string;
 };
 
 export type CohortCompletionPreview = {
@@ -43,9 +45,7 @@ export function buildCohortCompletionPreview(data: CompletionData, cohortId: str
     if (!certificate) {
       if (!invoice) blockers.push('Invoice is missing');
       else if (invoice.balanceZAR > 0) blockers.push(`Outstanding balance: R${invoice.balanceZAR.toLocaleString('en-ZA')}`);
-      if (!finalAssessment) blockers.push('Final assessment is missing');
-      else if (finalAssessment.status !== 'Graded') blockers.push('Final assessment is not graded');
-      else if ((finalAssessment.studentScore ?? 0) < 80) blockers.push(`Final assessment score is below 80% (${finalAssessment.studentScore ?? 0}%)`);
+      if (!application.completionSkillsVerifiedAt) blockers.push('Practical skills have not been verified by an administrator');
     }
     return {
       applicationId: application.id,
@@ -57,6 +57,8 @@ export function buildCohortCompletionPreview(data: CompletionData, cohortId: str
       invoiceBalanceZAR: invoice?.balanceZAR,
       finalAssessmentScore: finalAssessment?.studentScore,
       certificateNumber: certificate?.certificateNumber,
+      skillsVerified: Boolean(application.completionSkillsVerifiedAt || certificate),
+      skillsVerifiedBy: application.completionSkillsVerifiedBy,
     };
   });
   const blockedCount = students.filter(item => !item.eligible).length;
