@@ -51,7 +51,15 @@ export function yocoRouter(authenticate: RequestHandler, studentOnly: RequestHan
   const router = express.Router();
   router.get('/admin/yoco/payments', authenticate, adminOnly, async (_req, res, next) => {
     if (yocoCheckoutHidden()) return res.json({ hidden: true, checkouts: [] });
-    try { res.json({ checkouts: (await getDatabase()).yocoCheckouts ?? [] }); } catch (error) { next(error); }
+    try {
+      const db = await getDatabase();
+      const checkouts = (db.yocoCheckouts ?? []).map(checkout => {
+        const invoice = db.invoices.find(item => item.id === checkout.invoiceId);
+        const student = db.applications.find(item => item.id === checkout.studentId);
+        return { ...checkout, invoiceNumber: invoice?.invoiceNumber, studentName: student ? `${student.firstName} ${student.lastName}` : invoice?.studentName };
+      });
+      res.json({ checkouts });
+    } catch (error) { next(error); }
   });
   router.get('/student/invoices/:id/yoco', authenticate, studentOnly, async (req: any, res, next) => {
     if (yocoCheckoutHidden()) return res.json({ hidden: true, enabled: false, reason: '', amountCents: 0, history: [] });
