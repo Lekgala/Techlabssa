@@ -13,6 +13,7 @@ import { bulkOperationsService } from './services/bulk-operations.ts';
 import { escapeHtml, formatEmailHtml, sendEmail } from './services/email-service.ts';
 import { notifyAdmissions, notifyAdmissionsOfLead, sendCourseGuideToLead } from './services/application-notification.ts';
 import { runPaymentReminders } from './services/payment-reminders.ts';
+import { buildCohortCompletionPreview } from './services/cohort-completion.ts';
 import { createLabPilotRouter } from './services/lab-pilot.ts';
 import { createProofStorage, proofNotFound } from './services/proof-storage.ts';
 import { buildCohortCalendar, buildCurriculumSchedule } from '../src/lib/curriculumSchedule.ts';
@@ -936,6 +937,62 @@ app.delete('/api/admin/applications/:id', authenticate, requireRole('ADMIN'), se
   res.status(204).send();
 });
 
+app.get('/api/admin/cohorts/:id/completion-preview', authenticate, requireAnyRole('ADMIN', 'INSTRUCTOR'), async (req, res) => {
+  const preview = buildCohortCompletionPreview(await getDatabase(), req.params.id);
+  if (!preview) return res.status(404).json({ error: 'Cohort not found' });
+  res.json(preview);
+});
+
+app.post('/api/admin/cohorts/:id/complete', authenticate, requireRole('ADMIN'), serializeEnrollment, async (req: AuthedRequest, res) => {
+  const db = await getDatabase();
+  const preview = buildCohortCompletionPreview(db, req.params.id);
+  if (!preview) return res.status(404).json({ error: 'Cohort not found' });
+  if (preview.cohortStatus === 'Completed') return res.status(409).json({ error: 'This cohort is already completed', preview });
+  if (!preview.students.length) return res.status(409).json({ error: 'The cohort has no enrolled students to complete', preview });
+  if (preview.blockedCount) return res.status(409).json({ error: `Resolve the completion blockers for ${preview.blockedCount} student${preview.blockedCount === 1 ? '' : 's'} first`, preview });
+  if (req.body?.confirm !== true) return res.status(400).json({ error: 'Completion confirmation is required', preview });
+
+  const cohort = db.cohorts.find(item => item.id === req.params.id)!;
+  const completionDate = new Date().toISOString().slice(0, 10);
+  const skills = [...new Set(db.courseModules.filter(item => item.published !== false).flatMap(item => item.technologies))];
+  let certificateSequence = db.certificates.length + 125;
+  const completed = preview.students.map(student => {
+    const application = db.applications.find(item => item.id === student.applicationId)!;
+    const previousStatus = application.status;
+    application.status = 'COMPLETED';
+    let certificate = db.certificates.find(item => item.studentId === application.id);
+    if (!certificate) {
+      let certificateNumber = '';
+      do { certificateNumber = `TLS-${completionDate.slice(0, 4)}-${String(certificateSequence++).padStart(5, '0')}`; } while (db.certificates.some(item => item.certificateNumber === certificateNumber));
+      const finalAssessment = db.assessments.find(item => item.studentId === application.id && item.moduleNumber === 15)!;
+      const verificationUrl = new URL(`/verify/${encodeURIComponent(certificateNumber)}`, process.env.APP_ORIGIN || 'http://localhost:3000').href;
+      certificate = { id: makeId('cert'), studentId: application.id, certificateNumber, studentName: `${application.firstName} ${application.lastName}`, courseName: 'IT Support & Enterprise Administration Bootcamp', completionDate, instructorName: db.academySettings.leadInstructorName || 'TechLabs Instructor', verificationUrl, qrCodeData: verificationUrl, gradeDistinction: (finalAssessment.studentScore ?? 0) >= 90 ? 'Distinction' : 'Pass with Merit', skillsAcquired: skills };
+      db.certificates.unshift(certificate);
+    }
+    addAudit(db, req, 'STUDENT_COMPLETED', 'application', application.id, `${application.referenceNumber} completed ${cohort.name}; certificate ${certificate.certificateNumber}`, previousStatus === application.status ? undefined : { status: { before: previousStatus, after: application.status } });
+    return { application, certificate };
+  });
+  const previousCohortStatus = cohort.status;
+  cohort.status = 'Completed';
+  cohort.enrolledCount = completed.length;
+  addAudit(db, req, 'COHORT_COMPLETED', 'cohort', cohort.id, `${cohort.name} completed with ${completed.length} graduate${completed.length === 1 ? '' : 's'}`, { status: { before: previousCohortStatus, after: cohort.status } });
+  await saveDatabase(db);
+
+  const emailResults = await Promise.all(completed.map(async ({ application, certificate }) => {
+    const subject = `Congratulations on completing ${cohort.name}`;
+    const delivery = await sendEmail({
+      to: application.email,
+      subject,
+      html: `<h2>Congratulations, ${escapeHtml(application.firstName)}!</h2><p>You have successfully completed the <strong>TechLabs IT Support &amp; Enterprise Administration Bootcamp</strong>.</p><p><strong>Cohort:</strong> ${escapeHtml(cohort.name)}<br><strong>Completion date:</strong> ${escapeHtml(completionDate)}<br><strong>Result:</strong> ${escapeHtml(certificate.gradeDistinction || 'Completed')}<br><strong>Certificate number:</strong> ${escapeHtml(certificate.certificateNumber)}</p><p><a href="${escapeHtml(certificate.verificationUrl)}" style="display:inline-block;padding:12px 18px;background:#111111;color:#ffffff;text-decoration:none;border-radius:8px;font-weight:700">View verified certificate</a></p><p>Your student portal will continue to show your course records and certificate.</p><p>Congratulations on reaching this milestone.<br>TechLabs Academy SA</p>`,
+    });
+    return { application, certificate, subject, delivery };
+  }));
+  await mutateDatabase(nextDb => {
+    for (const result of emailResults) nextDb.emailDeliveries.unshift({ id: makeId('email'), providerId: result.delivery.id, recipient: result.application.email, subject: result.subject, category: 'GRADUATION', status: result.delivery.sent ? 'SENT' : 'FAILED', reason: result.delivery.reason, createdAt: new Date().toISOString() });
+  });
+  res.json({ cohort, completedCount: completed.length, certificatesIssued: completed.filter(item => !preview.students.find(student => student.applicationId === item.application.id)?.certificateNumber).length, emailsSent: emailResults.filter(item => item.delivery.sent).length, emailsFailed: emailResults.filter(item => !item.delivery.sent).length });
+});
+
 const adminCollections = ['leads','applications','cohorts','tickets','labs','invoices','assessments','certificates','attendance','courseModules'] as const;
 for (const collection of adminCollections) {
   app.put(`/api/${collection}/:id`, authenticate, requireRole('ADMIN'), serializeEnrollment, async (req: AuthedRequest, res) => {
@@ -948,6 +1005,7 @@ for (const collection of adminCollections) {
     if (collection === 'applications' && updates.status === 'APPROVED' && !['NEW', 'UNDER_REVIEW', 'WAITLISTED', 'APPROVED'].includes(before.status)) return res.status(409).json({ error: 'Application is not eligible for approval' });
     if (collection === 'applications' && updates.cohortId && updates.cohortId !== before.cohortId) return res.status(400).json({ error: 'Use the cohort transfer workflow to preserve capacity and history.' });
     if (collection === 'cohorts') {
+      if (updates.status === 'Completed' && before.status !== 'Completed') return res.status(400).json({ error: 'Use the cohort completion workflow so student checks, certificates and graduation emails are processed.' });
       const enrolled = db.applications.filter(item => item.cohortId === req.params.id && ['ENROLLED', 'COMPLETED'].includes(item.status)).length;
       if (updates.capacity !== undefined && (!Number.isInteger(Number(updates.capacity)) || Number(updates.capacity) < enrolled)) return res.status(409).json({ error: `Capacity cannot be lower than the ${enrolled} currently enrolled students` });
       const nextStart = String(updates.startDate || before.startDate); const nextEnd = String(updates.endDate || before.endDate);

@@ -49,6 +49,7 @@ const PIPELINE_STAGES: Array<{ id: Exclude<PipelineStage, 'OTHER'>; label: strin
 ];
 type ActionCentreGroup = { count: number; items: Array<{ id: string; label: string; detail: string }> };
 type ActionCentreData = { generatedAt: string; hardware: ActionCentreGroup; pops: ActionCentreGroup; overdue: ActionCentreGroup; cohorts: ActionCentreGroup; emails: ActionCentreGroup; followUps: ActionCentreGroup };
+type CohortCompletionPreview = { cohortId: string; cohortName: string; cohortStatus: string; endDate: string; canComplete: boolean; eligibleCount: number; blockedCount: number; students: Array<{ applicationId: string; name: string; email: string; status: string; eligible: boolean; blockers: string[]; invoiceBalanceZAR?: number; finalAssessmentScore?: number; certificateNumber?: string }> };
 const friendlyStatus = (status: string) => status.replaceAll('_', ' ').toLowerCase().replace(/\b\w/g, letter => letter.toUpperCase());
 const statusTone = (status: string) => {
   if (/ENROLLED|PAID|VERIFIED|COMPLETED|RESOLVED|OPEN/i.test(status)) return 'border-emerald-200 bg-emerald-50 text-emerald-800';
@@ -184,6 +185,9 @@ export const AdminDashboard: React.FC = () => {
   const [creatingModule, setCreatingModule] = useState(false);
   const [curriculumSaving, setCurriculumSaving] = useState(false);
   const [moduleForm, setModuleForm] = useState({ title: '', duration: '', summary: '', learningOutcomes: '', practicalLabs: '', exampleTickets: '', technologies: '', published: true });
+  const [completionPreview, setCompletionPreview] = useState<CohortCompletionPreview | null>(null);
+  const [completionLoadingId, setCompletionLoadingId] = useState<string | null>(null);
+  const [completingCohort, setCompletingCohort] = useState(false);
 
   useEffect(() => {
     if (!['ADMIN', 'INSTRUCTOR'].includes(currentRole || '') || activeTab !== 'AUDIT_LOG') return;
@@ -680,6 +684,25 @@ export const AdminDashboard: React.FC = () => {
       capacity: cohort.capacity,
       status: cohort.status
     });
+  };
+
+  const reviewCohortCompletion = async (cohortId: string) => {
+    setCompletionLoadingId(cohortId);
+    try { setCompletionPreview(await apiRequest<CohortCompletionPreview>(`/admin/cohorts/${encodeURIComponent(cohortId)}/completion-preview`)); }
+    catch (error) { showToast('error', 'Completion Review Failed', error instanceof Error ? error.message : 'The cohort could not be reviewed.'); }
+    finally { setCompletionLoadingId(null); }
+  };
+
+  const completeCohort = async () => {
+    if (!completionPreview?.canComplete || completingCohort) return;
+    setCompletingCohort(true);
+    try {
+      const result = await apiRequest<{ completedCount: number; certificatesIssued: number; emailsSent: number; emailsFailed: number }>(`/admin/cohorts/${encodeURIComponent(completionPreview.cohortId)}/complete`, { method: 'POST', body: JSON.stringify({ confirm: true }) });
+      await refreshData();
+      setCompletionPreview(null);
+      showToast(result.emailsFailed ? 'info' : 'success', 'Cohort Completed', `${result.completedCount} students completed, ${result.certificatesIssued} certificates issued and ${result.emailsSent} graduation emails sent${result.emailsFailed ? `; ${result.emailsFailed} email${result.emailsFailed === 1 ? '' : 's'} require follow-up` : ''}.`);
+    } catch (error) { showToast('error', 'Cohort Not Completed', error instanceof Error ? error.message : 'The completion workflow failed.'); }
+    finally { setCompletingCohort(false); }
   };
 
   const handleSaveCohort = (e: React.FormEvent) => {
@@ -1393,6 +1416,11 @@ export const AdminDashboard: React.FC = () => {
                     Toggle Status
                   </button>
                 </div>
+                {currentRole === 'ADMIN' && (
+                  <button type="button" disabled={completionLoadingId === cohort.id} onClick={() => void reviewCohortCompletion(cohort.id)} className="w-full py-2.5 border border-black bg-white hover:bg-black hover:text-white disabled:border-[#D0D0D0] disabled:text-[#A0A0A0] rounded-lg font-bold text-[10px] uppercase tracking-wider transition">
+                    {completionLoadingId === cohort.id ? 'Reviewing…' : cohort.status === 'Completed' ? 'View completion summary' : 'Review cohort completion'}
+                  </button>
+                )}
               </div>
             ))}
           </div>
@@ -2283,6 +2311,26 @@ export const AdminDashboard: React.FC = () => {
               ) : (
                 <div className="p-6 text-center text-[#707070] text-xs">No invoices generated yet</div>
               )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {completionPreview && (
+        <div role="dialog" aria-modal="true" aria-label="Complete cohort" className="fixed inset-0 z-[80] overflow-y-auto bg-black/70 p-4 backdrop-blur-sm">
+          <div className="mx-auto my-6 w-full max-w-4xl overflow-hidden rounded-2xl bg-white shadow-2xl">
+            <header className="flex items-start justify-between gap-4 border-b border-[#E0E0E0] p-5 sm:p-6">
+              <div><span className="font-mono text-[10px] font-bold uppercase tracking-[0.18em] text-[#707070]">Completion review</span><h3 className="mt-1 text-xl font-semibold">{completionPreview.cohortName}</h3><p className="mt-1 text-xs text-[#707070]">End date: {completionPreview.endDate} · {completionPreview.eligibleCount} ready · {completionPreview.blockedCount} blocked</p></div>
+              <button type="button" onClick={() => setCompletionPreview(null)} className="rounded-lg border border-[#E0E0E0] px-4 py-2 text-[10px] font-bold uppercase">Close</button>
+            </header>
+            <div className="space-y-5 p-5 sm:p-6">
+              {completionPreview.cohortStatus === 'Completed' ? <div className="rounded-xl border border-emerald-200 bg-emerald-50 p-4 text-sm text-emerald-900"><strong>This cohort is completed.</strong> Certificates and student records remain available.</div> : completionPreview.canComplete ? <div className="rounded-xl border border-emerald-200 bg-emerald-50 p-4 text-sm text-emerald-900"><strong>Ready to complete.</strong> Every enrolled student is fully paid and passed the final assessment.</div> : <div className="rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900"><strong>Action required.</strong> Resolve every blocker below before closing the cohort.</div>}
+              <div className="overflow-x-auto rounded-xl border border-[#E0E0E0]">
+                <table className="w-full min-w-[720px] text-left text-xs"><thead className="bg-[#FAFAFA] text-[10px] uppercase tracking-wider text-[#707070]"><tr><th className="p-3">Student</th><th className="p-3">Payment</th><th className="p-3">Final assessment</th><th className="p-3">Readiness</th></tr></thead><tbody className="divide-y divide-[#E0E0E0]">{completionPreview.students.map(student => <tr key={student.applicationId}><td className="p-3"><strong className="block">{student.name}</strong><span className="text-[10px] text-[#707070]">{student.email}</span>{student.certificateNumber && <span className="mt-1 block font-mono text-[9px]">{student.certificateNumber}</span>}</td><td className="p-3">{student.invoiceBalanceZAR === undefined ? 'Missing invoice' : student.invoiceBalanceZAR === 0 ? 'Paid in full' : `R${student.invoiceBalanceZAR.toLocaleString('en-ZA')} due`}</td><td className="p-3">{student.finalAssessmentScore === undefined ? 'Not graded' : `${student.finalAssessmentScore}%`}</td><td className="p-3">{student.eligible ? <span className="inline-flex items-center gap-1 font-bold text-emerald-700"><CheckCircle className="h-4 w-4" /> Ready</span> : <ul className="space-y-1 text-red-700">{student.blockers.map(blocker => <li key={blocker} className="flex items-start gap-1"><XCircle className="mt-0.5 h-3.5 w-3.5 shrink-0" />{blocker}</li>)}</ul>}</td></tr>)}</tbody></table>
+              </div>
+              {!completionPreview.students.length && <p className="rounded-xl border border-[#E0E0E0] p-5 text-center text-sm text-[#707070]">No enrolled students are assigned to this cohort.</p>}
+              <div className="rounded-xl bg-[#FAFAFA] p-4 text-xs text-[#505050]"><strong className="text-black">When confirmed:</strong> eligible students are marked completed, missing certificates are issued, graduation emails are sent, and the cohort status changes to Completed. Student portal access remains active.</div>
+              {completionPreview.cohortStatus !== 'Completed' && <div className="flex justify-end"><button type="button" disabled={!completionPreview.canComplete || completingCohort} onClick={() => void completeCohort()} className="rounded-xl bg-black px-5 py-3 text-xs font-bold uppercase tracking-wider text-white disabled:bg-[#D0D0D0] disabled:text-[#707070]">{completingCohort ? 'Completing cohort…' : 'Complete cohort & notify graduates'}</button></div>}
             </div>
           </div>
         </div>
