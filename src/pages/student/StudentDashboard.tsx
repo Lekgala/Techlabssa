@@ -56,7 +56,7 @@ export const StudentDashboard: React.FC = () => {
     currentPath,
     currentStudent, 
     tickets, 
-    updateTicketStatus, 
+    updateTicketResolution,
     cohorts, 
     certificates, 
     settings,
@@ -86,6 +86,7 @@ export const StudentDashboard: React.FC = () => {
   const [cardPaymentAvailable, setCardPaymentAvailable] = useState<boolean | undefined>(undefined);
 
   // Resolution modal state
+  const [rootCauseText, setRootCauseText] = useState('');
   const [resolutionText, setResolutionText] = useState('');
 
   const studentCohort = (cohorts || []).find(c => c.id === currentStudent?.cohortId);
@@ -217,12 +218,13 @@ export const StudentDashboard: React.FC = () => {
   }, [modulesToUse, assessments]);
 
   const handleResolveTicket = (ticketId: string) => {
-    if (!resolutionText.trim()) {
-      alert('Please describe your root cause analysis and resolution steps.');
+    if (!rootCauseText.trim() || !resolutionText.trim()) {
+      alert('Please provide both the root cause analysis and the resolution steps.');
       return;
     }
-    updateTicketStatus(ticketId, 'RESOLVED', resolutionText);
+    updateTicketResolution(ticketId, rootCauseText.trim(), resolutionText.trim());
     setSelectedTicketId(null);
+    setRootCauseText('');
     setResolutionText('');
   };
 
@@ -702,13 +704,18 @@ export const StudentDashboard: React.FC = () => {
 
               {/* Root Cause & Resolution Documentation */}
               <div className="space-y-2 text-xs">
+                <label className="font-bold text-xs uppercase tracking-wider text-[#000000] block">Root Cause Analysis (RCA): *</label>
+                <textarea rows={3} required maxLength={2000} placeholder="State the underlying technical cause you identified..." value={rootCauseText} onChange={(e) => setRootCauseText(e.target.value)} className="w-full p-3 bg-[#FFFFFF] border border-[#E0E0E0] rounded-xl text-[#000000] text-xs focus:border-[#000000] focus:outline-none" />
+              </div>
+              <div className="space-y-2 text-xs">
                 <label className="font-bold text-xs uppercase tracking-wider text-[#000000] block">
-                  Root Cause Analysis (RCA) & Helpdesk Resolution Notes: *
+                  Resolution Steps and Verification: *
                 </label>
                 <textarea
                   rows={4}
                   required
-                  placeholder="Document the exact root cause discovered (e.g. DNS SRV record was missing, BitLocker key failed to escrow to Entra ID) and the verification steps taken to confirm resolution..."
+                  maxLength={4000}
+                  placeholder="Document the commands or actions taken and how you verified that the issue was resolved..."
                   value={resolutionText}
                   onChange={(e) => setResolutionText(e.target.value)}
                   className="w-full p-3 bg-[#FFFFFF] border border-[#E0E0E0] rounded-xl text-[#000000] text-xs focus:border-[#000000] focus:outline-none"
@@ -738,7 +745,7 @@ export const StudentDashboard: React.FC = () => {
             {assignedTickets.map(ticket => (
               <div key={ticket.id} className="space-y-2">
                 <TicketCard ticket={ticket} />
-                {ticket.status !== 'RESOLVED' && (
+                {['OPEN', 'IN_PROGRESS'].includes(ticket.status) && (
                   <button
                     onClick={() => setSelectedTicketId(ticket.id)}
                     className="w-full py-2.5 bg-[#000000] hover:bg-neutral-800 text-white font-mono font-bold text-xs uppercase tracking-wider rounded-xl transition flex items-center justify-center gap-2"
@@ -749,6 +756,7 @@ export const StudentDashboard: React.FC = () => {
                 )}
               </div>
             ))}
+            {assignedTickets.length === 0 && <div className="md:col-span-2 p-10 text-center border border-dashed border-[#D0D0D0] rounded-2xl text-sm text-[#707070]">No ticket scenarios have been assigned yet.</div>}
           </div>
         </div>
       )}
