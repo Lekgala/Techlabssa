@@ -399,7 +399,12 @@ export async function getDatabase(): Promise<TechlabsDatabase> {
     yocoCheckouts: recordMap.yocoCheckouts ?? [],
     currentUser: null,
     currentRole: 'VISITOR',
-    leads: recordMap.leads ?? defaultDatabase.leads,
+    leads: (recordMap.leads ?? defaultDatabase.leads).map((lead: Lead) => ({
+      ...lead,
+      // Leads created before the CRM follow-up fields were introduced do not
+      // have a follow-up date. Keep those records usable in the admin console.
+      followUpDate: lead.followUpDate || lead.createdAt || new Date().toISOString().slice(0, 10),
+    })),
     applications,
     cohorts: (recordMap.cohorts ?? defaultDatabase.cohorts).map((c: any) => ({
       ...c,

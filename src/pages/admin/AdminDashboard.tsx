@@ -523,7 +523,7 @@ export const AdminDashboard: React.FC = () => {
     const matchesSearch = !query || [lead.name, lead.email, lead.whatsapp, lead.courseInterest, lead.source].some(value => String(value).toLowerCase().includes(query));
     const matchesStatus = leadStatusFilter === 'ALL' || (leadStatusFilter === 'DUE' ? activeRecruitmentStatuses.includes(lead.status) && lead.followUpDate <= today : lead.status === leadStatusFilter);
     return matchesSearch && matchesStatus;
-  }).sort((a, b) => a.followUpDate.localeCompare(b.followUpDate) || b.createdAt.localeCompare(a.createdAt));
+  }).sort((a, b) => String(a.followUpDate || a.createdAt || '').localeCompare(String(b.followUpDate || b.createdAt || '')) || String(b.createdAt || '').localeCompare(String(a.createdAt || '')));
   const selectedLead = leads.find(lead => lead.id === selectedLeadId);
   const leadApplication = selectedLead ? applications.find(application => application.email.toLowerCase() === selectedLead.email.toLowerCase()) : undefined;
   const dueLeadCount = leads.filter(lead => activeRecruitmentStatuses.includes(lead.status) && lead.followUpDate <= today).length;
