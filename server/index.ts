@@ -30,6 +30,17 @@ const allowedAppOrigins = new Set(
     .map(value => value.trim().replace(/\/$/, ''))
     .filter(Boolean),
 );
+const isAllowedAppOrigin = (origin?: string) => {
+  if (!origin) return true;
+  const normalized = origin.replace(/\/$/, '');
+  if (allowedAppOrigins.has(normalized)) return true;
+  try {
+    const url = new URL(normalized);
+    return url.protocol === 'https:' && /^techlabssa-[a-z0-9-]+-ltkgawane1-gmailcoms-projects\.vercel\.app$/i.test(url.hostname);
+  } catch {
+    return false;
+  }
+};
 const isProduction = process.env.NODE_ENV === 'production';
 const sessionCookieName = 'techlabs_session';
 const csrfCookieName = 'techlabs_csrf';
@@ -47,7 +58,7 @@ const trustProxy = process.env.TRUST_PROXY ?? (process.env.RENDER === 'true' ? '
 app.set('trust proxy', /^\d+$/.test(trustProxy) ? Number(trustProxy) : trustProxy.split(',').map(value => value.trim()));
 app.disable('x-powered-by');
 app.use(cors({
-  origin: (origin, callback) => callback(null, !origin || allowedAppOrigins.has(origin.replace(/\/$/, ''))),
+  origin: (origin, callback) => callback(null, isAllowedAppOrigin(origin)),
   credentials: true,
   methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
   allowedHeaders: ['Content-Type', 'Authorization', 'X-CSRF-Token', 'X-File-Name', 'X-EFT-Reference'],
