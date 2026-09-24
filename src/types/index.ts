@@ -160,7 +160,7 @@ export interface EmailDeliveryRecord {
   providerId?: string;
   recipient: string;
   subject: string;
-  category: 'APPLICATION_SUBMITTED' | 'APPLICATION_STATUS' | 'LEAD_NOTIFICATION';
+  category: 'APPLICATION_SUBMITTED' | 'APPLICATION_STATUS' | 'LEAD_NOTIFICATION' | 'COURSE_GUIDE';
   status: 'SENT' | 'DELIVERED' | 'BOUNCED' | 'SUPPRESSED' | 'COMPLAINED' | 'FAILED';
   reason?: string;
   createdAt: string;

@@ -25,6 +25,7 @@ const CourseGuideCta: React.FC = () => {
   const { settings } = useApp();
   const [showForm, setShowForm] = useState(false);
   const [submitted, setSubmitted] = useState(false);
+  const [courseGuideSent, setCourseGuideSent] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState('');
   const [lead, setLead] = useState({ name: '', email: '', whatsapp: '' });
@@ -39,7 +40,7 @@ const CourseGuideCta: React.FC = () => {
     setSubmitting(true);
     setError('');
     try {
-      await apiRequest('/leads', {
+      const response = await apiRequest<{ courseGuideSent?: boolean }>('/leads', {
         method: 'POST',
         body: JSON.stringify({
           name: lead.name.trim(),
@@ -47,8 +48,10 @@ const CourseGuideCta: React.FC = () => {
           whatsapp: lead.whatsapp.trim(),
           source: 'Website',
           courseInterest: 'IT Support & Enterprise Administration Bootcamp course guide',
+          requestCourseGuide: true,
         }),
       });
+      setCourseGuideSent(response.courseGuideSent === true);
       setSubmitted(true);
     } catch (requestError) {
       setError(requestError instanceof Error ? requestError.message : 'Your request could not be submitted. Please use the WhatsApp option.');
@@ -98,7 +101,7 @@ const CourseGuideCta: React.FC = () => {
       {submitted && (
         <div role="status" className="mt-5 flex items-start gap-3 border-t border-[#E0E0E0] pt-5">
           <CheckCircle className="mt-0.5 h-5 w-5 shrink-0" />
-          <div><p className="text-sm font-bold">Course guide request received</p><p className="mt-1 text-xs text-[#707070]">Admissions will send course information to your email or WhatsApp contact.</p></div>
+          <div><p className="text-sm font-bold">{courseGuideSent ? 'Course guide sent' : 'Course guide request received'}</p><p className="mt-1 text-xs text-[#707070]">{courseGuideSent ? `We emailed the course guide to ${lead.email}. Check your inbox and spam folder.` : 'Your details were saved, but the guide email could not be confirmed. Admissions will contact you directly.'}</p></div>
         </div>
       )}
     </section>

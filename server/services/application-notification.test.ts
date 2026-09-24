@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { notifyAdmissions, notifyAdmissionsOfLead } from './application-notification.ts';
+import { notifyAdmissions, notifyAdmissionsOfLead, sendCourseGuideToLead } from './application-notification.ts';
 
 const application = { id: 'app-123', referenceNumber: 'TLS-2026-0001', firstName: '<script>', lastName: 'Applicant', selectedTier: 'STARTER' };
 const env = { APP_ORIGIN: 'https://techlabssa.vercel.app', ADMIN_EMAIL: 'admin@example.test', APPLICATION_NOTIFICATION_EMAIL: 'admissions@example.test' };
@@ -50,4 +50,20 @@ test('course guide lead alert goes to admissions and replies to the student', as
   assert.equal(result.category, 'LEAD_NOTIFICATION');
   assert.equal(result.status, 'SENT');
   assert.equal(result.providerId, 'provider-lead-1');
+});
+
+test('course guide is sent to the prospect with production-safe links and admissions reply-to', async () => {
+  const lead = { id: 'lead-456', name: 'Lerato Student', email: 'LERATO@example.test', whatsapp: '+27 82 555 0101' };
+  const result = await sendCourseGuideToLead(lead, env, async input => {
+    assert.equal(input.to, 'lerato@example.test');
+    assert.equal(input.replyTo, env.APPLICATION_NOTIFICATION_EMAIL);
+    assert.match(input.subject, /course guide/i);
+    assert.match(input.html, /https:\/\/techlabssa\.vercel\.app\/courses\/it-support/);
+    assert.match(input.html, /https:\/\/techlabssa\.vercel\.app\/pricing/);
+    assert.match(input.html, /https:\/\/techlabssa\.vercel\.app\/apply/);
+    return { sent: true, id: 'provider-guide-1' };
+  });
+  assert.equal(result.category, 'COURSE_GUIDE');
+  assert.equal(result.status, 'SENT');
+  assert.equal(result.providerId, 'provider-guide-1');
 });
