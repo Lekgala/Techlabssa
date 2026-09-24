@@ -749,13 +749,26 @@ app.post('/api/leads', rateLimit('leads', 10, 60 * 60 * 1000), async (req, res) 
   const source = requiredText(data.source, 50) ? data.source.trim() : 'Website';
   const lead = { id: makeId('lead'), name: data.name.trim(), email: data.email.trim().toLowerCase(), whatsapp: data.whatsapp.trim(), source, courseInterest: requiredText(data.courseInterest, 300) ? data.courseInterest.trim() : 'IT Support & Enterprise Administration Bootcamp', status: 'NEW_LEAD', notes: [`Inquiry received from ${source}`], followUpDate: new Date().toISOString().slice(0, 10), createdAt: new Date().toISOString().slice(0, 10) };
   db.leads = [lead, ...db.leads] as any; await saveDatabase(db);
-  const [admissionsDelivery, guideDelivery] = await Promise.all([
+  const requestedGuide = data.requestCourseGuide === true;
+  const results = await Promise.allSettled([
     notifyAdmissionsOfLead(lead),
-    data.requestCourseGuide === true ? sendCourseGuideToLead(lead) : Promise.resolve(undefined),
+    requestedGuide ? sendCourseGuideToLead(lead) : Promise.resolve(undefined),
   ]);
+  const failedDelivery = (category: 'LEAD_NOTIFICATION' | 'COURSE_GUIDE', recipient: string, subject: string, result: PromiseRejectedResult) => ({ id: makeId('email'), recipient, subject, category, status: 'FAILED' as const, reason: result.reason instanceof Error ? result.reason.message : 'Email processing failed unexpectedly', createdAt: new Date().toISOString() });
+  const admissionsDelivery = results[0].status === 'fulfilled' ? results[0].value : failedDelivery('LEAD_NOTIFICATION', (process.env.APPLICATION_NOTIFICATION_EMAIL || process.env.ADMIN_EMAIL || '').trim(), `New course guide request: ${lead.name}`, results[0]);
+  const guideDelivery = requestedGuide ? (results[1].status === 'fulfilled' ? results[1].value : failedDelivery('COURSE_GUIDE', lead.email, 'Your TechLabs IT Support Bootcamp course guide', results[1])) : undefined;
   const deliveries = guideDelivery ? [admissionsDelivery, guideDelivery] : [admissionsDelivery];
   await mutateDatabase(nextDb => { nextDb.emailDeliveries.unshift(...deliveries); });
-  res.status(201).json({ ...lead, courseGuideSent: guideDelivery?.status === 'SENT' });
+  res.status(201).json({ ...lead, admissionsNotified: admissionsDelivery.status === 'SENT', courseGuideSent: guideDelivery?.status === 'SENT' });
+});
+
+app.post('/api/admin/leads/:id/send-course-guide', authenticate, requireAnyRole('ADMIN', 'INSTRUCTOR'), async (req, res) => {
+  const db = await getDatabase();
+  const lead = db.leads.find(item => item.id === req.params.id);
+  if (!lead) return res.status(404).json({ error: 'Lead not found' });
+  const [admissionsDelivery, guideDelivery] = await Promise.all([notifyAdmissionsOfLead(lead), sendCourseGuideToLead(lead)]);
+  await mutateDatabase(nextDb => { nextDb.emailDeliveries.unshift(admissionsDelivery, guideDelivery); });
+  res.json({ admissionsNotified: admissionsDelivery.status === 'SENT', courseGuideSent: guideDelivery.status === 'SENT', deliveries: [admissionsDelivery, guideDelivery] });
 });
 
 app.put('/api/admin/leads/:id', authenticate, requireAnyRole('ADMIN', 'INSTRUCTOR'), async (req: AuthedRequest, res) => {
