@@ -1453,20 +1453,6 @@ export const AdminDashboard: React.FC = () => {
             </button>
           </div>
 
-          <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
-            {[
-              ['All leads', leads.length, 'ALL'],
-              ['Follow-up due', dueLeadCount, 'DUE'],
-              ['New', leads.filter(lead => lead.status === 'NEW_LEAD').length, 'NEW_LEAD'],
-              ['Interested', leads.filter(lead => lead.status === 'INTERESTED').length, 'INTERESTED']
-            ].map(([label, count, filter]) => <button key={String(filter)} type="button" onClick={() => setLeadStatusFilter(filter as LeadStatus | 'ALL' | 'DUE')} className={`p-4 text-left rounded-xl border ${leadStatusFilter === filter ? 'bg-black text-white border-black' : 'bg-white border-[#E0E0E0]'}`}><span className="block text-2xl font-light">{count}</span><span className="text-[10px] font-bold uppercase tracking-wider">{label}</span></button>)}
-          </div>
-
-          <div className="flex flex-col md:flex-row gap-3 bg-white border border-[#E0E0E0] rounded-xl p-4">
-            <div className="relative flex-1"><Search className="w-4 h-4 absolute left-3 top-3 text-[#A0A0A0]" /><input value={leadSearch} onChange={event => setLeadSearch(event.target.value)} placeholder="Search name, phone, email, source or course…" className="w-full pl-9 pr-3 py-2.5 border border-[#E0E0E0] rounded-lg text-xs" /></div>
-            <select aria-label="Lead status filter" value={leadStatusFilter} onChange={event => setLeadStatusFilter(event.target.value as LeadStatus | 'ALL' | 'DUE')} className="md:w-64 p-2.5 border border-[#E0E0E0] rounded-lg bg-white text-xs font-bold"><option value="ALL">All statuses</option><option value="DUE">Follow-up due</option><option value="NEW_LEAD">New leads</option><option value="CONTACTED">Contacted</option><option value="INTERESTED">Interested</option><option value="APPLICATION_STARTED">Application started</option><option value="APPLICATION_SUBMITTED">Application submitted</option><option value="APPROVED">Approved</option><option value="PAYMENT_PENDING">Payment pending</option><option value="ENROLLED">Enrolled</option></select>
-          </div>
-
           {/* New Ticket Modal */}
           {newTicketModal && (
             <div className="bg-[#FAFAFA] text-[#1A1A1A] p-6 sm:p-8 rounded-2xl border-2 border-[#000000] shadow-xl space-y-4">
@@ -1571,6 +1557,20 @@ export const AdminDashboard: React.FC = () => {
             >
               Export Leads CSV
             </button>
+          </div>
+
+          <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+            {[
+              ['All leads', leads.length, 'ALL'],
+              ['Follow-up due', dueLeadCount, 'DUE'],
+              ['New', leads.filter(lead => lead.status === 'NEW_LEAD').length, 'NEW_LEAD'],
+              ['Interested', leads.filter(lead => lead.status === 'INTERESTED').length, 'INTERESTED']
+            ].map(([label, count, filter]) => <button key={String(filter)} type="button" onClick={() => setLeadStatusFilter(filter as LeadStatus | 'ALL' | 'DUE')} className={`p-4 text-left rounded-xl border ${leadStatusFilter === filter ? 'bg-black text-white border-black' : 'bg-white border-[#E0E0E0]'}`}><span className="block text-2xl font-light">{count}</span><span className="text-[10px] font-bold uppercase tracking-wider">{label}</span></button>)}
+          </div>
+
+          <div className="flex flex-col md:flex-row gap-3 bg-white border border-[#E0E0E0] rounded-xl p-4">
+            <div className="relative flex-1"><Search className="w-4 h-4 absolute left-3 top-3 text-[#A0A0A0]" /><input value={leadSearch} onChange={event => setLeadSearch(event.target.value)} placeholder="Search name, phone, email, source or course…" className="w-full pl-9 pr-3 py-2.5 border border-[#E0E0E0] rounded-lg text-xs" /></div>
+            <select aria-label="Lead status filter" value={leadStatusFilter} onChange={event => setLeadStatusFilter(event.target.value as LeadStatus | 'ALL' | 'DUE')} className="md:w-64 p-2.5 border border-[#E0E0E0] rounded-lg bg-white text-xs font-bold"><option value="ALL">All statuses</option><option value="DUE">Follow-up due</option><option value="NEW_LEAD">New leads</option><option value="CONTACTED">Contacted</option><option value="INTERESTED">Interested</option><option value="APPLICATION_STARTED">Application started</option><option value="APPLICATION_SUBMITTED">Application submitted</option><option value="APPROVED">Approved</option><option value="PAYMENT_PENDING">Payment pending</option><option value="ENROLLED">Enrolled</option></select>
           </div>
 
           <div className="bg-[#FFFFFF] rounded-xl border border-[#E0E0E0] overflow-hidden shadow-sm">
