@@ -2108,6 +2108,7 @@ export const AdminDashboard: React.FC = () => {
                           <option value="20">20% OFF</option>
                           <option value="25">25% OFF</option>
                           <option value="30">30% OFF</option>
+                          <option value="40">40% OFF</option>
                           <option value="50">50% OFF</option>
                         </select>
                       </div>
