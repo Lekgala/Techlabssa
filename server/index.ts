@@ -544,6 +544,18 @@ app.put('/api/settings', authenticate, requireRole('ADMIN'), async (req: AuthedR
     if (tiers.some(tier => (pricing[tier].displayName !== undefined && !requiredText(pricing[tier].displayName, 80)) || (pricing[tier].description !== undefined && !requiredText(pricing[tier].description, 400)) || (pricing[tier].badgeLabel !== undefined && !requiredText(pricing[tier].badgeLabel, 40)) || (pricing[tier].features !== undefined && (!Array.isArray(pricing[tier].features) || pricing[tier].features.length > 10 || pricing[tier].features.some(feature => !requiredText(feature, 160)))))) return res.status(400).json({ error: 'Tier card content is invalid' });
     safeUpdates.courseTierPricing = Object.fromEntries(tiers.map(tier => [tier, { ...pricing[tier], priceZAR: Math.round(Number(pricing[tier].priceZAR) * 100) / 100, ...(Array.isArray(pricing[tier].features) ? { features: pricing[tier].features.map(feature => String(feature).trim()).filter(Boolean) } : {}) }]));
   }
+  if (safeUpdates.flashSale !== undefined) {
+    const sale = safeUpdates.flashSale as Record<string, unknown>;
+    const datePattern = /^\d{4}-\d{2}-\d{2}$/;
+    const startDate = String(sale?.startDate || '');
+    const endDate = String(sale?.endDate || '');
+    const tiers = ['STARTER', 'PROFESSIONAL', 'CAREER_ACCELERATOR'];
+    if (!sale || typeof sale !== 'object' || typeof sale.enabled !== 'boolean' || !requiredText(sale.title, 160) || !Number.isFinite(Number(sale.discountPercent)) || Number(sale.discountPercent) <= 0 || Number(sale.discountPercent) >= 100) return res.status(400).json({ error: 'Flash sale settings require a title and a discount between 1% and 99%' });
+    if ((startDate && !datePattern.test(startDate)) || (endDate && !datePattern.test(endDate)) || (startDate && endDate && endDate < startDate)) return res.status(400).json({ error: 'Flash sale dates are invalid or the end date is before the start date' });
+    if (sale.showCountdown !== undefined && typeof sale.showCountdown !== 'boolean') return res.status(400).json({ error: 'Flash sale countdown setting must be true or false' });
+    if (sale.targetTiers !== undefined && (!Array.isArray(sale.targetTiers) || sale.targetTiers.some(tier => !tiers.includes(String(tier))))) return res.status(400).json({ error: 'Flash sale course tiers are invalid' });
+    safeUpdates.flashSale = { ...sale, title: String(sale.title).trim(), discountPercent: Number(sale.discountPercent), startDate, endDate };
+  }
   const before = { ...db.academySettings };
   db.academySettings = { ...db.academySettings, ...safeUpdates };
   const changes = auditChanges(before, db.academySettings, Object.keys(safeUpdates));

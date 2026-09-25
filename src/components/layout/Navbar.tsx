@@ -20,13 +20,16 @@ export const Navbar: React.FC = () => {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [coursesDropdownOpen, setCoursesDropdownOpen] = useState(false);
   const [countdown, setCountdown] = useState('');
+  const [saleClock, setSaleClock] = useState(() => Date.now());
   const flashSale = settings?.flashSale;
-  const isSaleActive = isFlashSaleActive(flashSale);
+  const isSaleActive = isFlashSaleActive(flashSale, new Date(saleClock));
 
   useEffect(() => {
     const updateCountdown = () => {
-      if (!isSaleActive || !flashSale?.showCountdown || !flashSale?.endDate) { setCountdown(''); return; }
-      const remaining = new Date(`${flashSale.endDate}T23:59:59`).getTime() - Date.now();
+      const currentTime = Date.now();
+      setSaleClock(currentTime);
+      if (!isFlashSaleActive(flashSale, new Date(currentTime)) || !flashSale?.showCountdown || !flashSale?.endDate) { setCountdown(''); return; }
+      const remaining = new Date(`${flashSale.endDate}T23:59:59.999+02:00`).getTime() - currentTime;
       if (!Number.isFinite(remaining) || remaining <= 0) { setCountdown(''); return; }
       const days = Math.floor(remaining / 86400000);
       const hours = Math.floor((remaining % 86400000) / 3600000);
@@ -37,7 +40,7 @@ export const Navbar: React.FC = () => {
     updateCountdown();
     const timer = window.setInterval(updateCountdown, 1000);
     return () => window.clearInterval(timer);
-  }, [isSaleActive, flashSale?.showCountdown, flashSale?.endDate]);
+  }, [flashSale?.enabled, flashSale?.startDate, flashSale?.endDate, flashSale?.showCountdown, flashSale?.discountPercent]);
 
   const handleNav = (path: string) => {
     navigate(path);

@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { useApp } from '../../context/AppContext';
+import { isFlashSaleActive, useApp } from '../../context/AppContext';
 import { LabPilotPanel } from '../../components/common/LabPilotPanel';
 import { YocoPayments } from '../../components/common/YocoPayments';
 import { apiDownload, apiGetPrivateBlob, apiOpenPrivate, apiRequest } from '../../lib/api';
@@ -112,6 +112,7 @@ export const AdminDashboard: React.FC = () => {
     showToast,
     navigate
   } = useApp();
+  const flashSaleIsLive = isFlashSaleActive(settings.flashSale);
 
   const [activeTab, setActiveTab] = useState<AdminTab>(() => new URLSearchParams(window.location.search).has('application') ? 'APPLICATIONS' : 'OVERVIEW');
   const [selectedAppId, setSelectedAppId] = useState<string | null>(() => new URLSearchParams(window.location.search).get('application'));
@@ -2060,6 +2061,7 @@ export const AdminDashboard: React.FC = () => {
                         enabled: e.target.checked,
                         title: settings.flashSale?.title || '⚡ SPECIAL FLASH SALE: 20% OFF ALL COURSES!',
                         discountPercent: settings.flashSale?.discountPercent || 20,
+                        startDate: settings.flashSale?.startDate || new Date().toISOString().split('T')[0],
                         endDate: settings.flashSale?.endDate || new Date(Date.now() + 7 * 86400000).toISOString().split('T')[0],
                         showCountdown: settings.flashSale?.showCountdown ?? false,
                         targetTiers: settings.flashSale?.targetTiers || ['STARTER', 'PROFESSIONAL', 'CAREER_ACCELERATOR'],
@@ -2069,7 +2071,7 @@ export const AdminDashboard: React.FC = () => {
                     className="w-4 h-4 accent-[#000000]"
                   />
                   <span className="font-bold text-xs uppercase text-[#000000] font-mono">
-                    {settings.flashSale?.enabled ? '⚡ FLASH SALE ACTIVE' : 'FLASH SALE INACTIVE'}
+                    {settings.flashSale?.enabled ? (flashSaleIsLive ? '⚡ FLASH SALE LIVE' : 'FLASH SALE SCHEDULED') : 'FLASH SALE INACTIVE'}
                   </span>
                 </label>
               </div>
@@ -2091,7 +2093,7 @@ export const AdminDashboard: React.FC = () => {
 
                     <label className="flex items-center gap-2 text-xs font-bold uppercase tracking-wider"><input type="checkbox" checked={Boolean(settings.flashSale.showCountdown)} onChange={event => updateSettings({ flashSale: { ...settings.flashSale!, showCountdown: event.target.checked } })} className="accent-black" /> Show countdown on sale banner</label>
 
-                    <div className="grid grid-cols-2 gap-2 font-mono">
+                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 font-mono sm:col-span-2">
                       <div className="space-y-1">
                         <label className="font-bold text-[#000000] uppercase text-[10px] tracking-wider font-sans">Discount (%)</label>
                         <select
@@ -2111,10 +2113,24 @@ export const AdminDashboard: React.FC = () => {
                       </div>
 
                       <div className="space-y-1">
+                        <label className="font-bold text-[#000000] uppercase text-[10px] tracking-wider font-sans">Sale Start Date</label>
+                        <input
+                          type="date"
+                          required
+                          value={settings.flashSale.startDate || ''}
+                          max={settings.flashSale.endDate || undefined}
+                          onChange={(e) => updateSettings({ flashSale: { ...settings.flashSale!, startDate: e.target.value } })}
+                          className="w-full p-3 bg-white border border-[#E0E0E0] rounded-xl text-[#000000] focus:border-[#000000] focus:outline-none font-mono"
+                        />
+                      </div>
+
+                      <div className="space-y-1">
                         <label className="font-bold text-[#000000] uppercase text-[10px] tracking-wider font-sans">Sale End Date</label>
                         <input
                           type="date"
+                          required
                           value={settings.flashSale.endDate}
+                          min={settings.flashSale.startDate || undefined}
                           onChange={(e) => updateSettings({
                             flashSale: { ...settings.flashSale!, endDate: e.target.value }
                           })}
@@ -2134,6 +2150,7 @@ export const AdminDashboard: React.FC = () => {
                           enabled: true,
                           title: '⚡ WEEKEND FLASH SALE: 20% OFF ALL BOOTCAMP TIERS!',
                           discountPercent: 20,
+                          startDate: new Date().toISOString().split('T')[0],
                           endDate: new Date(Date.now() + 3 * 86400000).toISOString().split('T')[0],
                           targetTiers: ['STARTER', 'PROFESSIONAL', 'CAREER_ACCELERATOR'],
                           manuallySet: true
@@ -2150,6 +2167,7 @@ export const AdminDashboard: React.FC = () => {
                           enabled: true,
                           title: '⚡ END OF MONTH FLASH SALE: 30% OFF ALL COURSES!',
                           discountPercent: 30,
+                          startDate: new Date().toISOString().split('T')[0],
                           endDate: new Date(Date.now() + 5 * 86400000).toISOString().split('T')[0],
                           targetTiers: ['STARTER', 'PROFESSIONAL', 'CAREER_ACCELERATOR'],
                           manuallySet: true
@@ -2168,6 +2186,11 @@ export const AdminDashboard: React.FC = () => {
                     >
                       Turn Off Flash Sale
                     </button>
+                  </div>
+
+                  <div className={`rounded-lg border p-3 text-xs ${flashSaleIsLive ? 'border-emerald-200 bg-emerald-50 text-emerald-900' : 'border-blue-200 bg-blue-50 text-blue-900'}`}>
+                    <strong>{flashSaleIsLive ? 'Sale is live.' : 'Sale is scheduled.'}</strong>{' '}
+                    {flashSaleIsLive ? `Discounted pricing remains active through ${settings.flashSale.endDate}.` : `It will activate automatically at 00:00 SAST on ${settings.flashSale.startDate || 'the selected start date'}.`}
                   </div>
 
                   {/* Realtime Result Preview */}

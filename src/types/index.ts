@@ -59,6 +59,7 @@ export interface FlashSaleConfig {
   enabled: boolean;
   title: string;
   discountPercent: number;
+  startDate?: string;
   endDate: string;
   showCountdown?: boolean;
   targetTiers?: CourseTier[];
