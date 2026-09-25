@@ -1,4 +1,4 @@
-import { calculateTuitionBreakdown } from '../lib/pricing';
+import { calculateTuitionBreakdown, isFlashSaleActive } from '../lib/pricing';
 import React, { createContext, useContext, useState, useEffect } from 'react';
 import { ApiError, apiRequest, apiUpload, requestTimeoutSignal, setApiSession } from '../lib/api';
 import {
@@ -18,17 +18,11 @@ import {
   Role,
   CourseTier,
   CourseModule,
-  AcademySettings,
-  FlashSaleConfig
+  AcademySettings
   ,PaymentRecord
 } from '../types';
 
-export const isFlashSaleActive = (flashSale?: FlashSaleConfig): boolean => {
-  if (!flashSale || !flashSale.enabled) return false;
-  const discount = Number(flashSale.discountPercent);
-  if (!Number.isFinite(discount) || discount <= 0 || discount >= 100) return false;
-  return true;
-};
+export { isFlashSaleActive };
 
 export const getTierPrice = (
   tier: CourseTier,
@@ -480,6 +474,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         enabled: false,
         title: '⚡ SPECIAL FLASH SALE: 20% OFF ALL COURSES & BOOTCAMP TIERS!',
         discountPercent: 20,
+        startDate: new Date().toISOString().split('T')[0],
         endDate: new Date(Date.now() + 7 * 86400000).toISOString().split('T')[0],
         showCountdown: false,
         targetTiers: ['STARTER', 'PROFESSIONAL', 'CAREER_ACCELERATOR']

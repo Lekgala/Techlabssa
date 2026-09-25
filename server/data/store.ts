@@ -245,6 +245,7 @@ const defaultDatabase: TechlabsDatabase = {
       enabled: false,
       title: 'Special course offer',
       discountPercent: 20,
+      startDate: '',
       endDate: '',
       targetTiers: ['STARTER', 'PROFESSIONAL', 'CAREER_ACCELERATOR'],
     },

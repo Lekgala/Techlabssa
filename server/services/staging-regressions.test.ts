@@ -5,13 +5,22 @@ import { mkdtemp } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import http from 'node:http';
-import { calculateTuitionBreakdown } from '../../src/lib/pricing.ts';
+import { calculateTuitionBreakdown, isFlashSaleActive } from '../../src/lib/pricing.ts';
 
 test('shared tuition retains cents and respects targeted discounts', () => {
   const settings: any = { flashSale: { enabled: true, discountPercent: 10, targetTiers: ['STARTER'] } };
   assert.equal(calculateTuitionBreakdown('STARTER', settings).amountZAR, 1799.1);
   assert.equal(calculateTuitionBreakdown('PROFESSIONAL', settings).amountZAR, 3499);
   assert.equal(calculateTuitionBreakdown('__proto__', settings).amountZAR, 0);
+});
+
+test('flash sales activate and expire on South African calendar dates', () => {
+  const sale: any = { enabled: true, discountPercent: 20, startDate: '2026-10-01', endDate: '2026-10-03' };
+  assert.equal(isFlashSaleActive(sale, new Date('2026-09-30T21:59:59.999Z')), false);
+  assert.equal(isFlashSaleActive(sale, new Date('2026-09-30T22:00:00.000Z')), true);
+  assert.equal(isFlashSaleActive(sale, new Date('2026-10-03T21:59:59.999Z')), true);
+  assert.equal(isFlashSaleActive(sale, new Date('2026-10-03T22:00:00.000Z')), false);
+  assert.equal(calculateTuitionBreakdown('STARTER', { flashSale: { ...sale, startDate: '2099-01-01' } }).amountZAR, 1999);
 });
 
 test('staging approval and proxy regressions with isolated storage and mock email', async t => {
