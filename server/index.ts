@@ -765,9 +765,11 @@ app.post('/api/applications', rateLimit('applications', 5, 60 * 60 * 1000), seri
 app.post('/api/leads', rateLimit('leads', 10, 60 * 60 * 1000), async (req, res) => {
   const data = req.body || {};
   if (!requiredText(data.name, 160) || !validEmail(data.email) || !requiredText(data.whatsapp, 30)) return res.status(400).json({ error: 'Valid name, email and WhatsApp number are required' });
+  if (data.inquiryMessage !== undefined && !requiredText(data.inquiryMessage, 2000)) return res.status(400).json({ error: 'Enter an inquiry message of no more than 2,000 characters' });
   const db = await getDatabase();
   const source = requiredText(data.source, 50) ? data.source.trim() : 'Website';
-  const lead = { id: makeId('lead'), name: data.name.trim(), email: data.email.trim().toLowerCase(), whatsapp: data.whatsapp.trim(), source, courseInterest: requiredText(data.courseInterest, 300) ? data.courseInterest.trim() : 'IT Support & Enterprise Administration Bootcamp', status: 'NEW_LEAD', notes: [`Inquiry received from ${source}`], followUpDate: new Date().toISOString().slice(0, 10), createdAt: new Date().toISOString().slice(0, 10) };
+  const inquiryMessage = data.inquiryMessage === undefined ? undefined : data.inquiryMessage.trim();
+  const lead = { id: makeId('lead'), name: data.name.trim(), email: data.email.trim().toLowerCase(), whatsapp: data.whatsapp.trim(), source, courseInterest: requiredText(data.courseInterest, 300) ? data.courseInterest.trim() : 'IT Support & Enterprise Administration Bootcamp', ...(inquiryMessage ? { inquiryMessage } : {}), status: 'NEW_LEAD', notes: [`Inquiry received from ${source}`, ...(inquiryMessage ? [`Inquiry: ${inquiryMessage}`] : [])], followUpDate: new Date().toISOString().slice(0, 10), createdAt: new Date().toISOString().slice(0, 10) };
   db.leads = [lead, ...db.leads] as any; await saveDatabase(db);
   const requestedGuide = data.requestCourseGuide === true;
   const results = await Promise.allSettled([
@@ -775,7 +777,7 @@ app.post('/api/leads', rateLimit('leads', 10, 60 * 60 * 1000), async (req, res) 
     requestedGuide ? sendCourseGuideToLead(lead) : Promise.resolve(undefined),
   ]);
   const failedDelivery = (category: 'LEAD_NOTIFICATION' | 'COURSE_GUIDE', recipient: string, subject: string, result: PromiseRejectedResult) => ({ id: makeId('email'), recipient, subject, category, status: 'FAILED' as const, reason: result.reason instanceof Error ? result.reason.message : 'Email processing failed unexpectedly', createdAt: new Date().toISOString() });
-  const admissionsDelivery = results[0].status === 'fulfilled' ? results[0].value : failedDelivery('LEAD_NOTIFICATION', (process.env.APPLICATION_NOTIFICATION_EMAIL || process.env.ADMIN_EMAIL || '').trim(), `New course guide request: ${lead.name}`, results[0]);
+  const admissionsDelivery = results[0].status === 'fulfilled' ? results[0].value : failedDelivery('LEAD_NOTIFICATION', (process.env.APPLICATION_NOTIFICATION_EMAIL || process.env.ADMIN_EMAIL || '').trim(), `${lead.inquiryMessage ? 'New admissions inquiry' : 'New course guide request'}: ${lead.name}`, results[0]);
   const guideDelivery = requestedGuide ? (results[1].status === 'fulfilled' ? results[1].value : failedDelivery('COURSE_GUIDE', lead.email, 'Your TechLabs IT Support Bootcamp course guide', results[1])) : undefined;
   const deliveries = guideDelivery ? [admissionsDelivery, guideDelivery] : [admissionsDelivery];
   await mutateDatabase(nextDb => { nextDb.emailDeliveries.unshift(...deliveries); });

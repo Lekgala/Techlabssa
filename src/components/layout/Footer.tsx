@@ -144,6 +144,16 @@ export const Footer: React.FC = () => {
                   Admissions FAQ
                 </button>
               </li>
+              <li>
+                <button onClick={() => navigate('/contact')} className="hover:text-[#000000] transition">
+                  Contact Admissions
+                </button>
+              </li>
+              <li>
+                <button onClick={() => navigate('/about')} className="hover:text-[#000000] transition">
+                  About TechLabs
+                </button>
+              </li>
             </ul>
           </div>
 
@@ -173,6 +183,11 @@ export const Footer: React.FC = () => {
               <li>
                 <button onClick={() => navigate('/privacy')} className="hover:text-[#000000] transition">
                   Privacy Policy (POPIA)
+                </button>
+              </li>
+              <li>
+                <button onClick={() => navigate('/refund-policy')} className="hover:text-[#000000] transition">
+                  Refund Policy
                 </button>
               </li>
               <li>

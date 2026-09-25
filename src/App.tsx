@@ -10,7 +10,7 @@ import { Seo } from './components/layout/Seo';
 // Public Pages
 import { Home } from './pages/public/Home';
 import { CourseDetail, Curriculum } from './pages/public/Curriculum';
-import { Courses, VerifyCertificate, Terms, Privacy, RefundPolicy } from './pages/public/LegalPages';
+import { VerifyCertificate, Terms, Privacy, RefundPolicy } from './pages/public/LegalPages';
 import { Labs, HowItWorks } from './pages/public/Labs';
 import { Pricing, Intakes } from './pages/public/Pricing';
 import { Career, About, FAQ, Contact } from './pages/public/Career';
@@ -36,6 +36,8 @@ const AppContent: React.FC = () => {
   const isMaintenancePage = Boolean(hasHydrated && settings.maintenanceMode && !isAdminPortalRoute && !isStudentRoute && path !== '/privacy' && path !== '/terms');
   const redirectPath = !hasHydrated ? undefined
     : path === '/payment' ? '/student/payments'
+    : path === '/courses' ? '/courses/it-support'
+    : path === '/refunds' ? '/refund-policy'
     : isStudentRoute && currentRole === 'STUDENT' && path === '/student/login' ? '/student'
     : isStudentRoute && isStaff ? '/admin'
     : isAdminPortalRoute && isStaff && path === '/admin/login' ? '/admin'
@@ -81,7 +83,6 @@ const AppContent: React.FC = () => {
     if (redirectPath) return null;
 
     if (path === '/' || path === '') return <Home />;
-    if (path === '/courses') return <Courses />;
     if (path === '/courses/it-support') return <CourseDetail />;
     if (path === '/courses/it-support/curriculum') return <Curriculum />;
     if (path === '/labs') return <Labs />;
@@ -100,7 +101,7 @@ const AppContent: React.FC = () => {
     if (path === '/admin' || path === '/admin/login' || path.startsWith('/admin/')) return <AdminDashboard />;
     if (path === '/terms') return <Terms />;
     if (path === '/privacy') return <Privacy />;
-    if (path === '/refunds' || path === '/refund-policy') return <RefundPolicy />;
+    if (path === '/refund-policy') return <RefundPolicy />;
     if (path.startsWith('/verify')) return <VerifyCertificate />;
 
     return (

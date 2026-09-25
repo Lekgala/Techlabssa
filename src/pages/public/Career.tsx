@@ -288,23 +288,27 @@ export const Contact: React.FC = () => {
     name: '',
     email: '',
     whatsapp: '',
-    courseInterest: 'IT Support Bootcamp',
+    courseInterest: 'Professional Tier (R3,499)',
     message: ''
   });
   const [submitted, setSubmitted] = React.useState(false);
+  const [submitting, setSubmitting] = React.useState(false);
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    addLead({
+    setSubmitting(true);
+    const saved = await addLead({
       name: formData.name,
       email: formData.email,
       whatsapp: formData.whatsapp,
       source: 'Website',
       courseInterest: formData.courseInterest,
+      inquiryMessage: formData.message.trim(),
       status: 'NEW_LEAD',
       followUpDate: new Date(Date.now() + 86400000).toISOString().split('T')[0]
     });
-    setSubmitted(true);
+    setSubmitting(false);
+    if (saved) setSubmitted(true);
   };
 
   return (
@@ -431,6 +435,9 @@ export const Contact: React.FC = () => {
                 <label className="font-bold text-xs uppercase tracking-wider text-[#000000]">Your Message / Questions</label>
                 <textarea
                   rows={4}
+                  required
+                  minLength={10}
+                  maxLength={2000}
                   value={formData.message}
                   onChange={(e) => setFormData({ ...formData, message: e.target.value })}
                   placeholder="Tell us about your IT goals or ask about laptop specifications..."
@@ -440,9 +447,10 @@ export const Contact: React.FC = () => {
 
               <button
                 type="submit"
-                className="w-full py-3.5 bg-[#000000] hover:bg-neutral-800 text-white font-bold text-xs uppercase tracking-[0.2em] rounded-xl transition"
+                disabled={submitting}
+                className="w-full py-3.5 bg-[#000000] hover:bg-neutral-800 disabled:bg-[#A0A0A0] text-white font-bold text-xs uppercase tracking-[0.2em] rounded-xl transition"
               >
-                Send Inquiry to Admissions Team
+                {submitting ? 'Sending Inquiry...' : 'Send Inquiry to Admissions Team'}
               </button>
             </form>
           )}

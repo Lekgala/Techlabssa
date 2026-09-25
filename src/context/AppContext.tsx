@@ -116,7 +116,7 @@ interface AppContextType {
   paymentSettings?: Pick<AcademySettings, 'bankName' | 'accountName' | 'accountNumber' | 'branchCode' | 'referenceFormat'>;
   
   // Actions
-  addLead: (lead: Omit<Lead, 'id' | 'createdAt' | 'notes'>) => void;
+  addLead: (lead: Omit<Lead, 'id' | 'createdAt' | 'notes'>) => Promise<boolean>;
   updateLeadStatus: (id: string, status: LeadStatus) => void;
   addLeadNote: (id: string, note: string) => void;
   updateLeadFollowUp: (id: string, followUpDate: string) => void;
@@ -650,7 +650,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   };
 
   // Business Actions
-  const addLead = (leadData: Omit<Lead, 'id' | 'createdAt' | 'notes'>) => {
+  const addLead = async (leadData: Omit<Lead, 'id' | 'createdAt' | 'notes'>): Promise<boolean> => {
     const newLead: Lead = {
       ...leadData,
       id: 'lead-' + Date.now(),
@@ -658,10 +658,16 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       notes: [`Inquiry received from ${leadData.source}`]
     };
     setLeads(prev => [newLead, ...prev]);
-    void apiRequest<Lead>('/leads', { method: 'POST', body: JSON.stringify(leadData) })
-      .then(saved => setLeads(prev => [saved, ...prev.filter(item => item.id !== newLead.id)]))
-      .catch(() => showToast('error', 'Inquiry Not Saved', 'We could not save your inquiry. Please use the WhatsApp contact option.'));
-    showToast('success', 'Inquiry Received', 'Thank you. Your inquiry has been submitted to admissions.');
+    try {
+      const saved = await apiRequest<Lead>('/leads', { method: 'POST', body: JSON.stringify(leadData) });
+      setLeads(prev => [saved, ...prev.filter(item => item.id !== newLead.id)]);
+      showToast('success', 'Inquiry Received', 'Thank you. Your inquiry has been submitted to admissions.');
+      return true;
+    } catch {
+      setLeads(prev => prev.filter(item => item.id !== newLead.id));
+      showToast('error', 'Inquiry Not Saved', 'We could not save your inquiry. Please use the WhatsApp contact option.');
+      return false;
+    }
   };
 
   const updateLeadStatus = (id: string, status: LeadStatus) => {
