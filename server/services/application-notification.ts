@@ -3,7 +3,7 @@ import type { EmailDeliveryRecord } from '../../src/types';
 import { escapeHtml, sendEmail } from './email-service.ts';
 
 type Submission = { id: string; referenceNumber: string; firstName: string; lastName: string; selectedTier: string };
-type LeadSubmission = { id: string; name: string; email: string; whatsapp: string; courseInterest?: string; source?: string };
+type LeadSubmission = { id: string; name: string; email: string; whatsapp: string; courseInterest?: string; source?: string; inquiryMessage?: string };
 
 export async function notifyAdmissions(application: Submission, cohortName: string, env = process.env, send = sendEmail): Promise<EmailDeliveryRecord> {
   const recipient = (env.APPLICATION_NOTIFICATION_EMAIL || env.ADMIN_EMAIL || '').trim();
@@ -25,7 +25,7 @@ export async function notifyAdmissions(application: Submission, cohortName: stri
 
 export async function notifyAdmissionsOfLead(lead: LeadSubmission, env = process.env, send = sendEmail): Promise<EmailDeliveryRecord> {
   const recipient = (env.APPLICATION_NOTIFICATION_EMAIL || env.ADMIN_EMAIL || '').trim();
-  const subject = `New course guide request: ${lead.name}`;
+  const subject = `${lead.inquiryMessage ? 'New admissions inquiry' : 'New course guide request'}: ${lead.name}`;
   let delivery;
   if (!recipient || !env.APP_ORIGIN) {
     delivery = { sent: false, reason: 'Lead notifications require APPLICATION_NOTIFICATION_EMAIL (or ADMIN_EMAIL) and APP_ORIGIN' };
@@ -36,7 +36,7 @@ export async function notifyAdmissionsOfLead(lead: LeadSubmission, env = process
         to: recipient,
         replyTo: lead.email,
         subject,
-        html: `<h2>New course guide request</h2><p>A prospective student requested information before completing the full application.</p><p><strong>Name:</strong> ${escapeHtml(lead.name)}<br><strong>Email:</strong> <a href="mailto:${escapeHtml(lead.email)}">${escapeHtml(lead.email)}</a><br><strong>WhatsApp:</strong> ${escapeHtml(lead.whatsapp)}<br><strong>Interest:</strong> ${escapeHtml(lead.courseInterest || 'IT Support & Enterprise Administration Bootcamp')}<br><strong>Source:</strong> ${escapeHtml(lead.source || 'Website')}</p><p>You can reply directly to this email to respond to the student, or contact them on WhatsApp.</p><p><a href="${escapeHtml(link.href)}" style="display:inline-block;padding:12px 18px;background:#111827;color:#ffffff;text-decoration:none;border-radius:8px">Open admissions dashboard</a></p>`,
+        html: `<h2>${lead.inquiryMessage ? 'New admissions inquiry' : 'New course guide request'}</h2><p>A prospective student requested information before completing the full application.</p><p><strong>Name:</strong> ${escapeHtml(lead.name)}<br><strong>Email:</strong> <a href="mailto:${escapeHtml(lead.email)}">${escapeHtml(lead.email)}</a><br><strong>WhatsApp:</strong> ${escapeHtml(lead.whatsapp)}<br><strong>Interest:</strong> ${escapeHtml(lead.courseInterest || 'IT Support & Enterprise Administration Bootcamp')}<br><strong>Source:</strong> ${escapeHtml(lead.source || 'Website')}</p>${lead.inquiryMessage ? `<div style="margin:18px 0;padding:14px 18px;background:#f5f5f5;border-left:3px solid #111111"><strong>Student's message</strong><p style="white-space:pre-wrap">${escapeHtml(lead.inquiryMessage)}</p></div>` : ''}<p>You can reply directly to this email to respond to the student, or contact them on WhatsApp.</p><p><a href="${escapeHtml(link.href)}" style="display:inline-block;padding:12px 18px;background:#111827;color:#ffffff;text-decoration:none;border-radius:8px">Open admissions dashboard</a></p>`,
       });
     } catch {
       delivery = { sent: false, reason: 'Lead notification could not be sent; check email and APP_ORIGIN configuration' };

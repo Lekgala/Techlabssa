@@ -37,14 +37,16 @@ test('missing configuration and thrown delivery errors produce failure records',
 });
 
 test('course guide lead alert goes to admissions and replies to the student', async () => {
-  const lead = { id: 'lead-123', name: '<b>Student</b>', email: 'student@example.test', whatsapp: '+27 82 123 4567', courseInterest: 'Professional course guide', source: 'Website' };
+  const lead = { id: 'lead-123', name: '<b>Student</b>', email: 'student@example.test', whatsapp: '+27 82 123 4567', courseInterest: 'Professional course guide', source: 'Website', inquiryMessage: '<script>Question about schedules</script>' };
   const result = await notifyAdmissionsOfLead(lead, env, async input => {
     assert.equal(input.to, env.APPLICATION_NOTIFICATION_EMAIL);
     assert.equal(input.replyTo, lead.email);
     assert.match(input.subject, /Student/);
     assert.match(input.html, /https:\/\/techlabssa\.vercel\.app\/admin/);
     assert.match(input.html, /&lt;b&gt;Student&lt;\/b&gt;/);
+    assert.match(input.html, /&lt;script&gt;Question about schedules&lt;\/script&gt;/);
     assert.ok(!input.html.includes('<b>Student</b>'));
+    assert.ok(!input.html.includes('<script>'));
     return { sent: true, id: 'provider-lead-1' };
   });
   assert.equal(result.category, 'LEAD_NOTIFICATION');

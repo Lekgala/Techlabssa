@@ -14,7 +14,6 @@ type SeoPage = {
 
 const pages: Record<string, SeoPage> = {
   '/': { title: 'Practical IT Support Training in Cape Town | TechLabs Academy SA', description: DEFAULT_DESCRIPTION, schema: 'academy' },
-  '/courses': { title: 'Practical IT Training Courses in Cape Town | TechLabs Academy SA', description: 'Explore practical IT support and enterprise administration training built around real labs, troubleshooting tickets and instructor guidance.' },
   '/courses/it-support': { title: 'IT Support & Enterprise Administration Bootcamp | TechLabs Academy SA', description: 'Build practical IT support skills through VMware, Windows Server, Active Directory, Microsoft 365, Entra ID, Intune, Defender and PowerShell labs.', schema: 'course' },
   '/courses/it-support/curriculum': { title: 'IT Support Bootcamp Curriculum | TechLabs Academy SA', description: 'Review the practical TechLabs curriculum covering hardware, networking, Windows Server, Active Directory, Microsoft cloud administration, security and helpdesk operations.', schema: 'course' },
   '/labs': { title: 'Hands-on Enterprise IT Labs | TechLabs Academy SA', description: 'Practise IT support in guided VMware labs covering Windows clients, servers, identity, networking, Microsoft cloud services and troubleshooting.' },

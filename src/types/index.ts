@@ -173,6 +173,7 @@ export interface Lead {
   whatsapp: string;
   source: LeadSource;
   courseInterest: string;
+  inquiryMessage?: string;
   status: LeadStatus;
   notes: string[];
   followUpDate: string;
