@@ -14,6 +14,7 @@ import { escapeHtml, formatEmailHtml, sendEmail } from './services/email-service
 import { notifyAdmissions, notifyAdmissionsOfLead, sendCourseGuideToLead } from './services/application-notification.ts';
 import { runPaymentReminders } from './services/payment-reminders.ts';
 import { buildCohortCompletionPreview } from './services/cohort-completion.ts';
+import { CohortLifecycleError, publicCohorts, setCohortArchiveState } from './services/cohort-lifecycle.ts';
 import { createLabPilotRouter } from './services/lab-pilot.ts';
 import { createProofStorage, proofNotFound } from './services/proof-storage.ts';
 import { buildCohortCalendar, buildCurriculumSchedule } from '../src/lib/curriculumSchedule.ts';
@@ -241,7 +242,7 @@ app.post('/api/webhooks/resend', async (req: AuthedRequest, res) => {
 app.get('/api/data', async (_req, res) => {
   const db = await getDatabase();
   const { bankName: _bankName, accountName: _accountName, accountNumber: _accountNumber, branchCode: _branchCode, ...publicSettings } = db.academySettings;
-  res.json({ cohorts: db.cohorts, labs: db.labs, courseModules: db.courseModules, settings: publicSettings });
+  res.json({ cohorts: publicCohorts(db.cohorts), labs: db.labs, courseModules: db.courseModules, settings: publicSettings });
 });
 
 app.post('/api/auth/admin', rateLimit('admin-login', 5, 15 * 60 * 1000), async (req, res) => {
@@ -1044,6 +1045,19 @@ app.post('/api/admin/cohorts/:id/complete', authenticate, requireRole('ADMIN'), 
   res.json({ cohort, completedCount: completed.length, certificatesIssued: completed.filter(item => !preview.students.find(student => student.applicationId === item.application.id)?.certificateNumber).length, emailsSent: emailResults.filter(item => item.delivery.sent).length, emailsFailed: emailResults.filter(item => !item.delivery.sent).length });
 });
 
+app.post('/api/admin/cohorts/:id/archive', authenticate, requireRole('ADMIN'), async (req: AuthedRequest, res) => {
+  const db = await getDatabase();
+  const cohort = db.cohorts.find(item => item.id === req.params.id);
+  if (!cohort) return res.status(404).json({ error: 'Cohort not found' });
+  const restore = req.body?.archived === false;
+  const before = cohort.archivedAt;
+  try { setCohortArchiveState(cohort, !restore, req.session!.email); }
+  catch (error) { if (error instanceof CohortLifecycleError) return res.status(error.status).json({ error: error.message }); throw error; }
+  addAudit(db, req, restore ? 'COHORT_RESTORED' : 'COHORT_ARCHIVED', 'cohort', cohort.id, `${cohort.name} ${restore ? 'restored to cohort management' : 'archived'}`, { archivedAt: { before, after: cohort.archivedAt } });
+  await saveDatabase(db);
+  res.json(cohort);
+});
+
 const adminCollections = ['leads','applications','cohorts','tickets','labs','invoices','assessments','certificates','attendance','courseModules'] as const;
 for (const collection of adminCollections) {
   app.put(`/api/${collection}/:id`, authenticate, requireRole('ADMIN'), serializeEnrollment, async (req: AuthedRequest, res) => {
@@ -1070,6 +1084,7 @@ for (const collection of adminCollections) {
     if (collection === 'applications' && updates.cohortId && updates.cohortId !== before.cohortId) return res.status(400).json({ error: 'Use the cohort transfer workflow to preserve capacity and history.' });
     if (collection === 'cohorts') {
       if (updates.status === 'Completed' && before.status !== 'Completed') return res.status(400).json({ error: 'Use the cohort completion workflow so student checks, certificates and graduation emails are processed.' });
+      if (before.status === 'Completed' && updates.status !== undefined && updates.status !== 'Completed') return res.status(409).json({ error: 'Completed cohorts cannot be reopened. Create a new cohort for the next intake.' });
       const enrolled = db.applications.filter(item => item.cohortId === req.params.id && ['ENROLLED', 'COMPLETED'].includes(item.status)).length;
       if (updates.capacity !== undefined && (!Number.isInteger(Number(updates.capacity)) || Number(updates.capacity) < enrolled)) return res.status(409).json({ error: `Capacity cannot be lower than the ${enrolled} currently enrolled students` });
       const nextStart = String(updates.startDate || before.startDate); const nextEnd = String(updates.endDate || before.endDate);
@@ -1108,6 +1123,17 @@ for (const collection of ['cohorts','tickets','labs','invoices','assessments','c
   app.post(`/api/${collection}`, authenticate, requireRole('ADMIN'), async (req, res) => {
     const db = await getDatabase();
     const record = { ...req.body, id: req.body?.id || makeId(collection.slice(0, 3)) };
+    if (collection === 'cohorts') {
+      const validStatuses = ['Open', 'Filling Fast', 'Closed', 'In Progress'];
+      if (!requiredText(record.name, 160) || !requiredText(record.scheduleFormat, 300) || !requiredText(record.location, 240)) return res.status(400).json({ error: 'Cohort name, schedule and location are required' });
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(String(record.startDate || '')) || !/^\d{4}-\d{2}-\d{2}$/.test(String(record.endDate || '')) || record.endDate < record.startDate) return res.status(400).json({ error: 'Cohort end date must be on or after its valid start date' });
+      if (!Number.isInteger(Number(record.capacity)) || Number(record.capacity) < 1 || Number(record.capacity) > 200) return res.status(400).json({ error: 'Cohort capacity must be between 1 and 200' });
+      if (!validStatuses.includes(record.status)) return res.status(400).json({ error: 'A new cohort must use an active status' });
+      record.courseId = record.courseId || 'it-support-bootcamp';
+      record.enrolledCount = 0;
+      delete record.archivedAt;
+      delete record.archivedBy;
+    }
     if (collection === 'certificates') {
       const application = db.applications.find(item => item.id === record.studentId);
       if (!application || application.status !== 'COMPLETED') return res.status(409).json({ error: 'Student must be marked COMPLETED before a certificate can be issued' });

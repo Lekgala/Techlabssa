@@ -62,6 +62,17 @@ test('staging approval and proxy regressions with isolated storage and mock emai
   });
   const login = await call('/auth/admin', { email: 'audit@example.test', password: 'AuditTestPassword123' });
   assert.equal(login.status, 200); const token = login.body.token;
+  await t.test('cohort creation is validated and incomplete cohorts cannot be archived', async () => {
+    const invalid = await call('/cohorts', { name: 'Invalid', startDate: '2027-02-01', endDate: '2027-01-01', scheduleFormat: 'Weekends', deliveryMode: '100% Virtual Learning', location: 'Online', capacity: 20, status: 'Open' }, token);
+    assert.equal(invalid.status, 400);
+    const created = await call('/cohorts', { name: 'February 2027 Intake', startDate: '2027-02-06', endDate: '2027-04-10', scheduleFormat: 'Saturdays', deliveryMode: '100% Virtual Learning', location: 'Online', capacity: 20, status: 'Open' }, token);
+    assert.equal(created.status, 201, JSON.stringify(created.body));
+    assert.equal(created.body.enrolledCount, 0);
+    assert.ok((await call('/data')).body.cohorts.some((item: any) => item.id === created.body.id));
+    const archive = await call(`/admin/cohorts/${created.body.id}/archive`, { archived: true }, token);
+    assert.equal(archive.status, 409);
+    assert.match(archive.body.error, /Complete the cohort/);
+  });
   await t.test('settings can be saved with the optional announcement empty', async () => {
     const settings = (await call('/admin/data', undefined, token)).body.academySettings;
     const response = await fetch(base + '/settings', {

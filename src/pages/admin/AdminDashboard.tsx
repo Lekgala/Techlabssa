@@ -117,6 +117,7 @@ export const AdminDashboard: React.FC = () => {
   const [activeTab, setActiveTab] = useState<AdminTab>(() => new URLSearchParams(window.location.search).has('application') ? 'APPLICATIONS' : 'OVERVIEW');
   const [selectedAppId, setSelectedAppId] = useState<string | null>(() => new URLSearchParams(window.location.search).get('application'));
   const [editingCohortId, setEditingCohortId] = useState<string | null>(null);
+  const [archivingCohortId, setArchivingCohortId] = useState<string | null>(null);
   const [selectedInvoiceForPdf, setSelectedInvoiceForPdf] = useState<Invoice | null>(null);
   const [cohortForm, setCohortForm] = useState({
     name: '',
@@ -711,6 +712,21 @@ export const AdminDashboard: React.FC = () => {
     });
   };
 
+  const openNewCohortForm = () => {
+    setEditingCohortId('new');
+    setCohortForm({ name: '', startDate: '', endDate: '', scheduleFormat: '', deliveryMode: 'Hybrid (Cape Town Lab + Virtual)', location: '', teamsChannelUrl: '', capacity: 20, status: 'Open' });
+  };
+
+  const setCohortArchived = async (cohortId: string, archived: boolean) => {
+    setArchivingCohortId(cohortId);
+    try {
+      await apiRequest(`/admin/cohorts/${encodeURIComponent(cohortId)}/archive`, { method: 'POST', body: JSON.stringify({ archived }) });
+      await refreshData();
+      showToast('success', archived ? 'Cohort Archived' : 'Cohort Restored', archived ? 'The cohort history remains available in the archive.' : 'The cohort is visible in cohort management again.');
+    } catch (error) { showToast('error', archived ? 'Archive Failed' : 'Restore Failed', error instanceof Error ? error.message : 'The cohort could not be updated.'); }
+    finally { setArchivingCohortId(null); }
+  };
+
   const reviewCohortCompletion = async (cohortId: string) => {
     setCompletionLoadingId(cohortId);
     try { setCompletionPreview(await apiRequest<CohortCompletionPreview>(`/admin/cohorts/${encodeURIComponent(cohortId)}/completion-preview`)); }
@@ -739,16 +755,20 @@ export const AdminDashboard: React.FC = () => {
     } catch (error) { showToast('error', 'Skills Verification Failed', error instanceof Error ? error.message : 'The verification could not be saved.'); }
   };
 
-  const handleSaveCohort = (e: React.FormEvent) => {
+  const handleSaveCohort = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!editingCohortId) return;
-
+    if (editingCohortId === 'new') {
+      try {
+        await apiRequest('/cohorts', { method: 'POST', body: JSON.stringify({ ...cohortForm, courseId: 'it-support-bootcamp', capacity: Number(cohortForm.capacity) }) });
+        await refreshData();
+        setEditingCohortId(null);
+        showToast('success', 'Cohort Created', `${cohortForm.name} is ready for applications.`);
+      } catch (error) { showToast('error', 'Cohort Creation Failed', error instanceof Error ? error.message : 'The cohort could not be created.'); }
+      return;
+    }
     const selectedCohort = cohorts.find((cohort) => cohort.id === editingCohortId);
-    updateCohort(editingCohortId, {
-      ...cohortForm,
-      capacity: Number(cohortForm.capacity),
-      enrolledCount: selectedCohort?.enrolledCount ?? 0
-    });
+    await updateCohort(editingCohortId, { ...cohortForm, capacity: Number(cohortForm.capacity), enrolledCount: selectedCohort?.enrolledCount ?? 0 });
     setEditingCohortId(null);
   };
 
@@ -1289,17 +1309,18 @@ export const AdminDashboard: React.FC = () => {
       {/* TAB 3: COHORTS */}
       {activeTab === 'COHORTS' && (
         <div className="space-y-6 animate-in fade-in">
-          <div className="flex items-center justify-between">
+          <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
             <div>
               <h3 className="text-2xl font-light text-[#000000] tracking-tight">Cape Town & Hybrid Cohorts</h3>
-              <p className="text-xs text-[#707070]">Manage cohort start dates, capacity constraints, and enrollment status.</p>
+              <p className="text-xs text-[#707070]">Create the next intake and archive completed cohorts without losing student records.</p>
             </div>
+            {currentRole === 'ADMIN' && <button type="button" onClick={openNewCohortForm} className="inline-flex items-center gap-2 rounded-xl bg-black px-4 py-3 text-xs font-bold uppercase tracking-wider text-white hover:bg-neutral-800"><Plus className="h-4 w-4" /> Create New Cohort</button>}
           </div>
 
           {editingCohortId && (
             <form onSubmit={handleSaveCohort} className="bg-[#FAFAFA] border border-[#E0E0E0] rounded-2xl p-6 space-y-4">
               <div className="flex items-center justify-between">
-                <h4 className="font-bold text-base text-[#000000]">Edit Cohort</h4>
+                <h4 className="font-bold text-base text-[#000000]">{editingCohortId === 'new' ? 'Create New Cohort' : 'Edit Cohort'}</h4>
                 <button type="button" onClick={() => setEditingCohortId(null)} className="text-xs font-mono uppercase text-[#707070]">Cancel</button>
               </div>
 
@@ -1316,14 +1337,15 @@ export const AdminDashboard: React.FC = () => {
                   <label className="text-[#000000] font-bold uppercase text-[10px] tracking-wider">Status</label>
                   <select
                     value={cohortForm.status}
+                    disabled={editingCohortId !== 'new' && cohorts.find(cohort => cohort.id === editingCohortId)?.status === 'Completed'}
                     onChange={(e) => setCohortForm({ ...cohortForm, status: e.target.value as any })}
-                    className="w-full p-3 bg-[#FFFFFF] border border-[#E0E0E0] rounded-xl text-[#000000]"
+                    className="w-full p-3 bg-[#FFFFFF] border border-[#E0E0E0] rounded-xl text-[#000000] disabled:bg-[#F5F5F5] disabled:text-[#707070]"
                   >
                     <option value="Open">Open</option>
                     <option value="Filling Fast">Filling Fast</option>
                     <option value="Closed">Closed</option>
                     <option value="In Progress">In Progress</option>
-                    <option value="Completed">Completed</option>
+                    {editingCohortId !== 'new' && <option value="Completed">Completed</option>}
                   </select>
                 </div>
                 <div className="space-y-1">
@@ -1396,14 +1418,14 @@ export const AdminDashboard: React.FC = () => {
 
               <div className="flex justify-end">
                 <button type="submit" className="px-5 py-2.5 bg-[#000000] hover:bg-neutral-800 text-white font-bold rounded-xl text-xs uppercase tracking-[0.2em]">
-                  Save Cohort
+                  {editingCohortId === 'new' ? 'Create Cohort' : 'Save Cohort'}
                 </button>
               </div>
             </form>
           )}
 
           <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-            {cohorts.map((cohort) => (
+            {cohorts.filter(cohort => !cohort.archivedAt).map((cohort) => (
               <div key={cohort.id} className="bg-[#FFFFFF] p-6 rounded-xl border border-[#E0E0E0] shadow-sm space-y-4">
                 <div className="flex items-center justify-between border-b border-[#E0E0E0] pb-3">
                   <h4 className="font-bold text-base text-[#000000]">{cohort.name}</h4>
@@ -1475,21 +1497,32 @@ export const AdminDashboard: React.FC = () => {
                   >
                     Edit
                   </button>
-                  <button
+                  {cohort.status !== 'Completed' && <button
                     onClick={() => updateCohort(cohort.id, { status: cohort.status === 'Open' ? 'Filling Fast' : cohort.status === 'Filling Fast' ? 'Closed' : 'Open' })}
                     className="flex-1 py-2 bg-[#FAFAFA] hover:bg-[#E0E0E0] text-[#000000] font-bold rounded-lg text-xs uppercase tracking-wider border border-[#E0E0E0] transition"
                   >
                     Toggle Status
-                  </button>
+                  </button>}
                 </div>
-                {currentRole === 'ADMIN' && (
+                {currentRole === 'ADMIN' && <div className="space-y-2">
                   <button type="button" disabled={completionLoadingId === cohort.id} onClick={() => void reviewCohortCompletion(cohort.id)} className="w-full py-2.5 border border-black bg-white hover:bg-black hover:text-white disabled:border-[#D0D0D0] disabled:text-[#A0A0A0] rounded-lg font-bold text-[10px] uppercase tracking-wider transition">
                     {completionLoadingId === cohort.id ? 'Reviewing…' : cohort.status === 'Completed' ? 'View completion summary' : 'Review cohort completion'}
                   </button>
-                )}
+                  {cohort.status === 'Completed' && <button type="button" disabled={archivingCohortId === cohort.id} onClick={() => void setCohortArchived(cohort.id, true)} className="w-full rounded-lg border border-neutral-300 bg-neutral-100 py-2.5 text-[10px] font-bold uppercase tracking-wider hover:bg-neutral-200 disabled:opacity-50">{archivingCohortId === cohort.id ? 'Archiving…' : 'Archive Cohort'}</button>}
+                </div>}
               </div>
             ))}
           </div>
+
+          {cohorts.some(cohort => cohort.archivedAt) && <section className="space-y-3 border-t border-[#E0E0E0] pt-6">
+            <div><h4 className="text-base font-bold">Archived Cohorts</h4><p className="text-xs text-[#707070]">Historical students, payments, attendance and certificates remain linked to these cohorts.</p></div>
+            <div className="overflow-hidden rounded-xl border border-[#E0E0E0] bg-white">
+              {cohorts.filter(cohort => cohort.archivedAt).map(cohort => <div key={cohort.id} className="flex flex-col gap-3 border-b border-[#E0E0E0] p-4 last:border-b-0 sm:flex-row sm:items-center sm:justify-between">
+                <div><p className="text-sm font-bold">{cohort.name}</p><p className="text-xs text-[#707070]">{cohort.startDate} – {cohort.endDate} · {cohort.enrolledCount} completed student{cohort.enrolledCount === 1 ? '' : 's'} · Archived {new Date(cohort.archivedAt!).toLocaleDateString('en-ZA')}</p></div>
+                {currentRole === 'ADMIN' && <button type="button" disabled={archivingCohortId === cohort.id} onClick={() => void setCohortArchived(cohort.id, false)} className="shrink-0 rounded-lg border border-[#E0E0E0] px-3 py-2 text-[10px] font-bold uppercase tracking-wider hover:bg-[#FAFAFA] disabled:opacity-50">{archivingCohortId === cohort.id ? 'Restoring…' : 'Restore'}</button>}
+              </div>)}
+            </div>
+          </section>}
         </div>
       )}
 

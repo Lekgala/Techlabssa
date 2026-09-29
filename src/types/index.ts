@@ -299,6 +299,8 @@ export interface Cohort {
   enrolledCount: number;
   status: 'Open' | 'Filling Fast' | 'Closed' | 'In Progress' | 'Completed';
   earlyBirdCutoff?: string;
+  archivedAt?: string;
+  archivedBy?: string;
 }
 
 export interface CourseModule {
